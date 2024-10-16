@@ -11,18 +11,15 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using Autodesk.Revit.DB;
-using BoltFramePlugin.Services;
-using BoltFramePlugin.ViewModels;
 
-namespace BoltFramePlugin
+namespace BoltFramePlugin.Views
 {
     /// <summary>
-    /// Interaction logic for TypeSelectionWindow.xaml
+    /// Interaction logic for ConfigurationWindow.xaml
     /// </summary>
-    public partial class TypeSelectionWindow : Window
+    public partial class ConfigurationWindow : Window
     {
-        public TypeSelectionWindow()
+        public ConfigurationWindow()
         {
             InitializeComponent();
         }

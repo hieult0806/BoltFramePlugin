@@ -31,11 +31,10 @@ namespace BoltFramePlugin.Services
         private string _message;
         private ElementSet _elementSet;
 
-        public RevitService(UIDocument uidoc, ref string message, ElementSet elements)
+        public RevitService(ExternalCommandData commandData, ElementSet elements)
         {
-            _uidoc = uidoc;
-            _doc = uidoc.Document;
-            _message = message;
+            _uidoc = commandData.Application.ActiveUIDocument;
+            _doc = _uidoc.Document;
             _elementSet = elements;
         }
 

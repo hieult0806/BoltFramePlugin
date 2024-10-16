@@ -14,9 +14,12 @@ using BoltFramePlugin.Helpers;
 
 namespace BoltFramePlugin.ViewModels
 {
-    public class TypeSelectionPopupViewModel
+    public class TypeSelectionPopupVM : IWindowViewModel
     {
-        public readonly IDialogService _dialogService;
+        public readonly IWindowManager _windowManager;
+
+        public event EventHandler RequestClose;
+
         public ICommand ItemDoubleClick { get; set; }
         public ICommand ConfirmCommand { get; set; }
         public ICommand CancelCommand { get; set; }
@@ -24,10 +27,11 @@ namespace BoltFramePlugin.ViewModels
         public ObservableCollection<CustomElement> Elements { get; set; }
 
         public CustomElement SelectedItem { get; set; }
+        public bool DialogResult { get; set; }
 
-        public TypeSelectionPopupViewModel(IDialogService dialogService, IList<FamilySymbol> elements)
+        public TypeSelectionPopupVM(IWindowManager windowManager, IList<FamilySymbol> elements)
         {
-            _dialogService = dialogService;
+            _windowManager = windowManager;
 
             ItemDoubleClick = new RelayCommand(SelectElement);
             ConfirmCommand = new RelayCommand(Confirm);
@@ -46,18 +50,15 @@ namespace BoltFramePlugin.ViewModels
         }
         public void Confirm(object parameter)
         {
-            if (SelectedItem != null)
-            {
-                _dialogService.ConfirmAndClose();
-            }
-            else
-            {
-                Autodesk.Revit.UI.TaskDialog.Show("Error", "No item has been selected.");
-            }
+            DialogResult = true;
+
+            RequestClose.Invoke(this, new EventArgs());
         }
         public void Cancel(object parameter)
         {
-            _dialogService.CancelAndClose();
+            DialogResult = false;
+
+            RequestClose.Invoke(this, new EventArgs());
         }
     }
 

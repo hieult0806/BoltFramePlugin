@@ -1,13 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Autodesk.Revit.DB.Structure;
+﻿using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.DB;
 using BoltFramePlugin.Services;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 using System.Windows.Controls;
+using System.Drawing.Design;
 
 namespace BoltFramePlugin.FramingStrategies
 {
@@ -212,6 +208,8 @@ namespace BoltFramePlugin.FramingStrategies
                 return;
             }
 
+            List<ElementId> elements = new List<ElementId>();
+
             BoundingBoxUV faceBounds = bestFlatFace.GetBoundingBox();
             UV min = faceBounds.Min;
             UV max = faceBounds.Max;
@@ -243,7 +241,8 @@ namespace BoltFramePlugin.FramingStrategies
                     {
                         if (trimmedCurve.Length > MIN_BEAM_LENGTH)
                         {
-                            floor.Document.Create.NewFamilyInstance(trimmedCurve, beamSymbol, level, StructuralType.Beam);
+                            var e = floor.Document.Create.NewFamilyInstance(trimmedCurve, beamSymbol, level, StructuralType.Beam);
+                            elements.Add(e.Id);
                         }
                     }
                 }
@@ -268,13 +267,16 @@ namespace BoltFramePlugin.FramingStrategies
                             XYZ translation = new XYZ(0, 0, Model.Z_Offset);
                             Curve offsetCurve = trimmedCurve.CreateTransformed(Transform.CreateTranslation(translation));
 
-                            floor.Document.Create.NewFamilyInstance(offsetCurve, beamSymbol, level, StructuralType.Beam);
+                            var e = floor.Document.Create.NewFamilyInstance(offsetCurve, beamSymbol, level, StructuralType.Beam);
+                            elements.Add(e.Id);
                         }
                     }
                 }
-
                 tx.Commit();
             }
+
+            CreateAssembly(floor.Document, elements, BuiltInCategory.OST_StructuralFraming);
+
         }
 
         public Face GetBestFlatSurface(Floor floor)
@@ -326,6 +328,19 @@ namespace BoltFramePlugin.FramingStrategies
             //}
 
             return bestFlatFace;
+        }
+
+        public void CreateAssembly(Document doc, List<ElementId> elementIds, BuiltInCategory category)
+        {
+            using (Transaction tx = new Transaction(doc, "Create Assembly"))
+            {
+                tx.Start();
+
+                // Create the assembly
+                AssemblyInstance assembly = AssemblyInstance.Create(doc, elementIds, new ElementId(category));
+
+                tx.Commit();
+            }
         }
     }
 }

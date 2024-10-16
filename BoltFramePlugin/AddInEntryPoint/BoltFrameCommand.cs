@@ -1,27 +1,29 @@
-﻿using System;
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.UI;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
-using TextBox = System.Windows.Forms.TextBox;
-using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 using BoltFramePlugin.Services;
+using BoltFramePlugin.ViewModels;
+using SimpleInjector.Lifestyles;
 
 namespace BoltFramePlugin.AddInEntryPoint
 {
     [Transaction(TransactionMode.Manual)]
     public class BoltFrameCommand : IExternalCommand
     {
-        private IRevitService _revitService;
-        private IDialogService _dialogService;
+        private IWindowManager _windowService;
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             try
             {
-                _revitService = new RevitService(commandData.Application.ActiveUIDocument, ref message, elements);
-                _dialogService = new DialogService(_revitService);
+                ContainerConfigurator.RegisterServices(commandData, elements);
+                var container = ContainerConfigurator.Container;
 
-                BoltFrameConfiguration bfcWindow = new BoltFrameConfiguration(_revitService, _dialogService);
-                bfcWindow.Show();
+                // Resolve WindowManager and ViewModel
+                var windowManager = container.GetInstance<IWindowManager>();
+                var mainWindowViewModel = container.GetInstance<BoltFrameMainWindowVM>();
+
+                // Open the dialog
+                windowManager.Open(mainWindowViewModel);
 
                 return Result.Succeeded;
             }

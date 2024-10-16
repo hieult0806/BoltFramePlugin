@@ -31,14 +31,11 @@ namespace BoltFramePlugin
     /// <summary>
     /// Interaction logic for BoltFrameConfiguration.xaml
     /// </summary>
-    public partial class BoltFrameConfiguration : Window
+    public partial class BoltFrameMainWindow : Window
     {
-        public BoltFrameConfiguration(IRevitService revitService, IDialogService dialogService)
+        public BoltFrameMainWindow()
         {
             InitializeComponent();
-
-            // Set DataContext for command bindings
-            DataContext = new BoltFrameConfigurationViewModel(revitService, dialogService);
         }
     }
 }

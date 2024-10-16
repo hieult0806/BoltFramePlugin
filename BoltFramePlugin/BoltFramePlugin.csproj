@@ -18,7 +18,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3">
+      <ExcludeAssets>runtime</ExcludeAssets>
+      <PrivateAssets>false</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="SimpleInjector" Version="5.5.0">
+      <ExcludeAssets>runtime</ExcludeAssets>
+      <PrivateAssets>false</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

@@ -15,7 +15,7 @@ using BoltFramePlugin.FramingStrategies;
 
 namespace BoltFramePlugin.ViewModels
 {
-    internal class BoltFrameConfigurationViewModel : INotifyPropertyChanged
+    internal class BoltFrameMainWindowVM : IWindowViewModel, INotifyPropertyChanged
     {
         private ExternalEvent _externalEvent;
         private GenerateEventHandler _generateEventHandler;
@@ -28,17 +28,18 @@ namespace BoltFramePlugin.ViewModels
         public ICommand ColumnTypeCommand { get; }
         public ICommand BeamTypeCommand { get; }
         public ICommand OpenConfigurationWindowCommand { get; }
+        public bool DialogResult { get; set; }
 
         private IRevitService _revitService;
-        private IDialogService _dialogService;
+        private IWindowManager _windowManager;
 
-        public BoltFrameConfigurationViewModel(IRevitService revitService, IDialogService dialogService)
+        public BoltFrameMainWindowVM(IRevitService revitService, IWindowManager dialogService)
         {
             _generateEventHandler = new GenerateEventHandler();
             _externalEvent = ExternalEvent.Create(_generateEventHandler);
 
             _revitService = revitService;
-            _dialogService = dialogService;
+            _windowManager = dialogService;
 
             // Initialize commands
             GenerateFrameCommand = new RelayCommand(GenerateFrame);
@@ -75,6 +76,8 @@ namespace BoltFramePlugin.ViewModels
 
         // Implement INotifyPropertyChanged for data binding
         public event PropertyChangedEventHandler PropertyChanged;
+        public event EventHandler RequestClose;
+
         protected virtual void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
@@ -83,26 +86,26 @@ namespace BoltFramePlugin.ViewModels
         // Command action for Column Type selection
         private void OnColumnTypeSelect(object parameter)
         {
-            FamilySymbol selectedType;
-            if (_dialogService.OpenElementSelectPopup("Select a Column Type", out selectedType, _revitService.LoadColumnTypesFromRevit()))
+            var viewModel = new TypeSelectionPopupVM(_windowManager, _revitService.LoadColumnTypesFromRevit());
+            if (_windowManager.OpenDialog(viewModel))
             {
-                TextboxRebinding(parameter, selectedType);
+                TextboxRebinding(parameter, viewModel.SelectedItem.Symbol);
             }
         }
 
         // Command action for Beam Type selection
         private void OnBeamTypeSelect(object parameter)
         {
-            FamilySymbol selectedType;
-            if (_dialogService.OpenElementSelectPopup("Select a Beam Type", out selectedType, _revitService.LoadBeamTypesFromRevit()))
+            var viewModel = new TypeSelectionPopupVM(_windowManager, _revitService.LoadBeamTypesFromRevit());
+            if (_windowManager.OpenDialog(viewModel))
             {
-                TextboxRebinding(parameter, selectedType);
+                TextboxRebinding(parameter, viewModel.SelectedItem.Symbol);
             }
         }
 
         private void OpenConfigurationWindow(object parameter)
         {
-
+            _windowManager.OpenDialog(ContainerConfigurator.Container.GetInstance<ConfigurationWindowVM>());
         }
 
         void TextboxRebinding(object parameter, FamilySymbol selectedType)
