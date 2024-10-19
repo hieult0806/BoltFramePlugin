@@ -15,7 +15,7 @@ namespace BoltFramePlugin.AddInEntryPoint
         {
             try
             {
-                var container = ContainerConfigurator.Container;
+                var container = DIContainerService.Container;
                 var mainWindowViewModel = new BoltFrameMainWindowVM(commandData.Application.ActiveUIDocument);
 
                 _windowService = container.GetInstance<IWindowManager>();

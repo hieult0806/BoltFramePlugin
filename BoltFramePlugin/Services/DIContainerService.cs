@@ -6,18 +6,19 @@ using SimpleInjector.Lifestyles;
 
 namespace BoltFramePlugin.Services
 {
-    public static class ContainerConfigurator
+    public static class DIContainerService
     {
         private static readonly Container container;
         public static Container Container => container;
 
-        static ContainerConfigurator()
+        static DIContainerService()
         {
             container = new Container();
         }
 
         public static void RegisterServices()
         {
+            container.RegisterSingleton<ILoggingService, LoggingService>();
             container.RegisterSingleton<IRevitServiceFactory, RevitServiceFactory>();
             container.RegisterSingleton<IFileService, FileService>();
             container.RegisterSingleton<IPluginConfigurationManager, PluginConfigurationManager>();
@@ -31,7 +32,7 @@ namespace BoltFramePlugin.Services
             //container.Register<SwitchViewShortcutDockablePaneVM>(Lifestyle.Transient);
 
             // Verify the container's configuration
-            //container.Verify();
+            container.Verify();
         }
     }
 }

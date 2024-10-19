@@ -21,8 +21,8 @@ namespace BoltFramePlugin.ViewModels
 
         public ConfigurationWindowVM(UIDocument document)
         {
-            _windowManager = ContainerConfigurator.Container.GetInstance<IWindowManager>();
-            _pluginConfiguration = ContainerConfigurator.Container.GetInstance<IPluginConfigurationManager>();
+            _windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
+            _pluginConfiguration = DIContainerService.Container.GetInstance<IPluginConfigurationManager>();
 
             SaveCommand = new RelayCommand(Save);
             CancelCommand = new RelayCommand(Cancel);

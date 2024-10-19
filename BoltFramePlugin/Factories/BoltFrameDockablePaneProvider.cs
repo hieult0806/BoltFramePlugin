@@ -9,10 +9,12 @@ namespace BoltFramePlugin.Factories
     {
         public void SetupDockablePane(DockablePaneProviderData data)
         {
-            var windowManager = ContainerConfigurator.Container.GetInstance<IWindowManager>();
+            //var windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
             // Set the content of the pane
-            var switchViewShortcutPanel = ContainerConfigurator.Container.GetInstance(typeof(SwitchViewShortcutDockablePaneVM));
-            data.FrameworkElement = (System.Windows.FrameworkElement)windowManager.OpenPanel((IWindowViewModel)switchViewShortcutPanel);
+            var switchViewShortcutPanel = new SwitchViewShortcutPanel();
+            var switchViewShortcutPanelVM = new SwitchViewShortcutDockablePaneVM();
+            switchViewShortcutPanel.DataContext = switchViewShortcutPanel;
+            data.FrameworkElement = (System.Windows.FrameworkElement) switchViewShortcutPanel;
 
             // Set the initial state of the pane (optional)
             data.InitialState = new DockablePaneState

@@ -36,8 +36,8 @@ namespace BoltFramePlugin.ViewModels
         public BoltFrameMainWindowVM(UIDocument document)
         {
             _document = document;
-            _revitService = ContainerConfigurator.Container.GetInstance<IRevitServiceFactory>().Create(_document);
-            _windowManager = ContainerConfigurator.Container.GetInstance<IWindowManager>();
+            _revitService = DIContainerService.Container.GetInstance<IRevitServiceFactory>().Create(_document);
+            _windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
 
             _generateEventHandler = new GenerateEventHandler();
             _externalGenerateEvent = ExternalEvent.Create(_generateEventHandler);

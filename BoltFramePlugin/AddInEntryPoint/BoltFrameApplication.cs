@@ -9,7 +9,6 @@ using BoltFramePlugin.Helpers;
 using BoltFramePlugin.Factories;
 using BoltFramePlugin.Constants;
 using BoltFramePlugin.Views;
-using System.Xml.Linq;
 
 namespace BoltFramePlugin.AddInEntryPoint
 {
@@ -20,11 +19,10 @@ namespace BoltFramePlugin.AddInEntryPoint
         private UIControlledApplication _application;
         public Result OnStartup(UIControlledApplication application)
         {
-            _application = application;
             try
             {
-                ContainerConfigurator.RegisterServices();
-                var container = ContainerConfigurator.Container;
+                _application = application;
+                DIContainerService.RegisterServices();
 
                 application.ControlledApplication.ApplicationInitialized += OnApplicationInitialized;
                 application.ControlledApplication.DocumentOpened += OnDocumentOpened;
@@ -61,7 +59,7 @@ namespace BoltFramePlugin.AddInEntryPoint
                 panelButton.ToolTip = "Click to show/close the Switch View Panel";
                 panelButton.LongDescription = "";
 
-                //application.RegisterDockablePane(DockablePaneGuid, $"Switch View Plans | {Resources.Strings.Strings.AppTitle}", CreateDockablePane());
+                application.RegisterDockablePane(DockablePaneGuid, $"Switch View Plans | {Resources.Strings.Strings.AppTitle}", CreateDockablePane());
 
                 return Result.Succeeded;
             }
@@ -86,7 +84,7 @@ namespace BoltFramePlugin.AddInEntryPoint
 
         private void OnDocumentOpened(object? sender, DocumentOpenedEventArgs e)
         {
-            
+
         }
 
         private void OnApplicationInitialized(object? sender, ApplicationInitializedEventArgs e)
