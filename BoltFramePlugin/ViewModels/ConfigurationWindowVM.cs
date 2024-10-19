@@ -5,41 +5,42 @@ using System.Windows.Input;
 
 namespace BoltFramePlugin.ViewModels
 {
-    public class ConfigurationWindowVM : IWindowViewModel
+    public class ConfigurationWindowVM : BaseViewModel
     {
+        public ICommand CloseCommand { get; set; }
         public ICommand SaveCommand { get; set; }
         public ICommand CancelCommand { get; set; }
-
-        public bool DialogResult { get; set; }
-
-        public event EventHandler RequestClose;
-
         public string WorkingSpacePath { get; set; }
 
-        private IWindowManager _windowManager;
         private IPluginConfigurationManager _pluginConfiguration;
 
-        public ConfigurationWindowVM(UIDocument document)
+        public ConfigurationWindowVM(UIDocument document) : base(document)
         {
             _windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
             _pluginConfiguration = DIContainerService.Container.GetInstance<IPluginConfigurationManager>();
 
+            CloseCommand = new RelayCommand(ExecuteCloseCommand);
             SaveCommand = new RelayCommand(Save);
             CancelCommand = new RelayCommand(Cancel);
 
             WorkingSpacePath = _pluginConfiguration.LoadPluginConfiguration().WorkingFolderPath;
         }
 
+        private void ExecuteCloseCommand(object obj)
+        {
+            OnRequestClose(EventArgs.Empty);
+        }
+
         private void Cancel(object obj)
         {
             DialogResult = false;
-            RequestClose?.Invoke(this, EventArgs.Empty);
+            OnRequestClose(EventArgs.Empty);
         }
 
         private void Save(object obj)
         {
             DialogResult = true;
-            RequestClose?.Invoke(this, EventArgs.Empty);
+            OnRequestClose(EventArgs.Empty);
         }
     }
 }

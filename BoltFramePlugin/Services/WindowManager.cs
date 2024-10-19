@@ -2,98 +2,135 @@
 using System.Windows;
 using System.Windows.Interop;
 using Autodesk.Revit.DB;
+using BoltFramePlugin.Models;
 using BoltFramePlugin.ViewModels;
 using BoltFramePlugin.Views;
 
 namespace BoltFramePlugin.Services
 {
-    public interface IWindowViewModel
-    {
-        event EventHandler RequestClose;
-        bool DialogResult { get; set; }
-    }
+    /// <summary>
+    /// Interface for managing window operations within the application.
+    /// </summary>
     public interface IWindowManager
     {
         void Open(IWindowViewModel viewModel);
         bool OpenDialog(IWindowViewModel viewModel);
         void ShowMessage(string message, string title);
-
-        (IWindowViewModel, Type) GetViewModel(IWindowViewModel viewModel);
-
-        public System.Windows.Controls.UserControl OpenPanel(IWindowViewModel viewModel);
+        UserControl OpenPanel(IWindowViewModel viewModel);
     }
+
+    /// <summary>
+    /// Implementation of IWindowManager for managing window operations.
+    /// </summary>
     public class WindowManager : IWindowManager
     {
-        private readonly IntPtr _revitHandle;
+        private readonly nint _revitHandle;
         private readonly Dictionary<Type, Type> _viewModelViewMapping;
 
-        private Window _currentWindow;
-
+        /// <summary>
+        /// Initializes a new instance of the WindowManager class.
+        /// </summary>
         public WindowManager()
         {
-            //TODO: Fix
-            _revitHandle = Process.GetCurrentProcess().MainWindowHandle;
-            _viewModelViewMapping = new Dictionary<Type, Type>
-            {
-                { typeof(BoltFrameMainWindowVM), typeof(BoltFrameMainWindow) },
-                { typeof(TypeSelectionPopupVM), typeof(TypeSelectionWindow) },
-                { typeof(ConfigurationWindowVM), typeof(ConfigurationWindow) },
-                { typeof(SwitchViewShortcutDockablePaneVM), typeof(SwitchViewShortcutPanel) }
-                // Map other ViewModels to their corresponding Views
-            };
+            _revitHandle = GetRevitMainWindowHandle();
+            _viewModelViewMapping = InitializeViewModelViewMapping();
         }
 
-        // PInvoke to set focus back to Revit window
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        public (IWindowViewModel, Type) GetViewModel(IWindowViewModel viewModel)
-        {
-            if (!_viewModelViewMapping.TryGetValue(viewModel.GetType(), out Type viewType))
-            {
-                throw new ArgumentException($"No view found for ViewModel of type {viewModel.GetType()}");
-            }
-            return (viewModel, viewType);
-        }
-
+        /// <summary>
+        /// Opens a non-modal window associated with the specified ViewModel.
+        /// </summary>
+        /// <param name="viewModel">The ViewModel to associate with the window.</param>
         public void Open(IWindowViewModel viewModel)
         {
-            var viewType = GetViewModel(viewModel).Item2;
-
-            var window = (Window)Activator.CreateInstance(viewType);
-            window.DataContext = viewModel;
-
-            new WindowInteropHelper(window).Owner = _revitHandle;
-            window.Closed += (s, e) =>
-            {
-                SetForegroundWindow(_revitHandle);
-            };
-
-            // Set the window to open in the center of its owner
-            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            var window = CreateWindow(viewModel);
             window.Show();
         }
 
-        public System.Windows.Controls.UserControl OpenPanel(IWindowViewModel viewModel)
-        {
-            var vm = GetViewModel(viewModel);
-            return (System.Windows.Controls.UserControl)Activator.CreateInstance(vm.Item2);
-        }
-
+        /// <summary>
+        /// Opens a modal dialog window associated with the specified ViewModel.
+        /// </summary>
+        /// <param name="viewModel">The ViewModel to associate with the dialog.</param>
+        /// <returns>True if the dialog result is true; otherwise, false.</returns>
         public bool OpenDialog(IWindowViewModel viewModel)
         {
-            if (!_viewModelViewMapping.TryGetValue(viewModel.GetType(), out Type viewType))
+            var window = CreateWindow(viewModel);
+            window.ShowDialog();
+            return window.DialogResult ?? false;
+        }
+
+        /// <summary>
+        /// Displays a message box with the specified message and title.
+        /// </summary>
+        /// <param name="message">The message to display.</param>
+        /// <param name="title">The title of the message box.</param>
+        public void ShowMessage(string message, string title)
+        {
+
+        }
+
+        /// <summary>
+        /// Opens a UserControl panel associated with the specified ViewModel.
+        /// </summary>
+        /// <param name="viewModel">The ViewModel to associate with the UserControl.</param>
+        /// <returns>The instantiated UserControl.</returns>
+        public UserControl OpenPanel(IWindowViewModel viewModel)
+        {
+            var viewType = GetViewTypeForViewModel(viewModel);
+            if (!typeof(UserControl).IsAssignableFrom(viewType))
             {
-                throw new ArgumentException($"No view found for ViewModel of type {viewModel.GetType()}");
+                throw new InvalidOperationException($"The view for {viewModel.GetType().Name} is not a UserControl.");
             }
 
-            var window = (Window)Activator.CreateInstance(viewType);
+            try
+            {
+                var userControl = (UserControl)Activator.CreateInstance(viewType);
+                userControl.DataContext = viewModel;
+                return userControl;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error creating UserControl: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the Type of the View associated with the given ViewModel.
+        /// </summary>
+        /// <param name="viewModel">The ViewModel instance.</param>
+        /// <returns>The Type of the associated View.</returns>
+        private Type GetViewTypeForViewModel(IWindowViewModel viewModel)
+        {
+            var viewModelType = viewModel.GetType();
+            if (!_viewModelViewMapping.TryGetValue(viewModelType, out Type viewType))
+            {
+                throw new ArgumentException($"No view found for ViewModel of type {viewModelType.Name}");
+            }
+            return viewType;
+        }
+
+        /// <summary>
+        /// Creates and initializes a Window associated with the specified ViewModel.
+        /// </summary>
+        /// <param name="viewModel">The ViewModel to associate with the Window.</param>
+        /// <returns>The instantiated and initialized Window.</returns>
+        private Window CreateWindow(IWindowViewModel viewModel)
+        {
+            var viewType = GetViewTypeForViewModel(viewModel);
+
+            if (!(Activator.CreateInstance(viewType) is Window window))
+            {
+                throw new InvalidOperationException($"The view {viewType.Name} is not a Window.");
+            }
+
             window.DataContext = viewModel;
+            window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
-            // Set the window to open in the center of its owner
-            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-
-            new WindowInteropHelper(window).Owner = _revitHandle;
+            // Set the Revit window as the owner
+            WindowInteropHelper helper = new WindowInteropHelper(window)
+            {
+                Owner = _revitHandle
+            };
 
             // Subscribe to the RequestClose event
             viewModel.RequestClose += (s, e) =>
@@ -102,12 +139,55 @@ namespace BoltFramePlugin.Services
                 window.Close();
             };
 
-            return window.ShowDialog() == true;
+            // Ensure Revit window regains focus after the window is closed
+            window.Closed += (s, e) =>
+            {
+                NativeMethods.SetForegroundWindow(_revitHandle);
+            };
+
+            return window;
         }
 
-        public void ShowMessage(string message, string title)
+        /// <summary>
+        /// Initializes the mapping between ViewModels and their corresponding Views.
+        /// </summary>
+        /// <returns>A dictionary mapping ViewModel Types to View Types.</returns>
+        private Dictionary<Type, Type> InitializeViewModelViewMapping()
         {
+            return new Dictionary<Type, Type>
+            {
+                { typeof(BoltFrameMainWindowVM), typeof(BoltFrameMainWindow) },
+                { typeof(TypeSelectionPopupVM), typeof(TypeSelectionWindow) },
+                { typeof(ConfigurationWindowVM), typeof(ConfigurationWindow) },
+                { typeof(SwitchViewShortcutDockablePaneVM), typeof(SwitchViewShortcutPanel) }
+                // Add additional ViewModel-View mappings here
+            };
+        }
 
+        /// <summary>
+        /// Retrieves the main window handle of the Revit process.
+        /// </summary>
+        /// <returns>The handle to the Revit main window.</returns>
+        private nint GetRevitMainWindowHandle()
+        {
+            nint handle = Process.GetCurrentProcess().MainWindowHandle;
+
+            // If the handle is not available, you might need to implement an alternative retrieval method
+            if (handle == nint.Zero)
+            {
+                throw new InvalidOperationException("Unable to retrieve Revit main window handle.");
+            }
+
+            return handle;
+        }
+
+        /// <summary>
+        /// Static class for encapsulating external method calls.
+        /// </summary>
+        private static class NativeMethods
+        {
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            public static extern bool SetForegroundWindow(nint hWnd);
         }
     }
 }

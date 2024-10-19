@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using BoltFramePlugin.FramingStrategies;
 using BoltFramePlugin.Services;
 
@@ -13,8 +8,7 @@ namespace BoltFramePlugin.Factories
     {
         public static IFramingStrategy GetFramingStrategy(IRevitService service, IFrameGenerateModel model)
         {
-            Element element = model.TargetElement;
-            if (element is Floor)
+            if (model is FloorFrameGenerateModel)
             {
                 return new FloorFramingStrategy(service, model);
             }

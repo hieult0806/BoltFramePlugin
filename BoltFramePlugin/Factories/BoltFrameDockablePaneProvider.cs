@@ -12,8 +12,9 @@ namespace BoltFramePlugin.Factories
             //var windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
             // Set the content of the pane
             var switchViewShortcutPanel = new SwitchViewShortcutPanel();
-            var switchViewShortcutPanelVM = new SwitchViewShortcutDockablePaneVM();
-            switchViewShortcutPanel.DataContext = switchViewShortcutPanel;
+            //TODO : ON WORKING
+            //var switchViewShortcutPanelVM = new SwitchViewShortcutDockablePaneVM();
+            //switchViewShortcutPanel.DataContext = switchViewShortcutPanel;
             data.FrameworkElement = (System.Windows.FrameworkElement) switchViewShortcutPanel;
 
             // Set the initial state of the pane (optional)

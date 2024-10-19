@@ -1,29 +1,13 @@
-﻿using BoltFramePlugin.Services;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Autodesk.Revit.UI;
+using BoltFramePlugin.Services;
 
 namespace BoltFramePlugin.ViewModels
 {
-    public class SwitchViewShortcutDockablePaneVM : IWindowViewModel, INotifyPropertyChanged
+    public class SwitchViewShortcutDockablePaneVM : BaseViewModel
     {
-        public bool DialogResult { get; set; }
-
-        public event PropertyChangedEventHandler PropertyChanged;
-        public event EventHandler RequestClose;
-
-        public SwitchViewShortcutDockablePaneVM()
+        public SwitchViewShortcutDockablePaneVM(UIDocument document) : base(document)
         {
 
-        }
-
-        protected void OnPropertyChanged([CallerMemberName] string name = null)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
     }
 }

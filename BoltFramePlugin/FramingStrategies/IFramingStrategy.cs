@@ -17,10 +17,6 @@ namespace BoltFramePlugin.FramingStrategies
 
     public interface IFrameGenerateModel
     {
-        Element TargetElement { get; set; }
-        FamilySymbol BeamSymbol { get; set; }
-        FamilySymbol ColSymbol { get; set; }
-        Level Level { get; set; }
         double Spacing { get; set; }
     }
 }

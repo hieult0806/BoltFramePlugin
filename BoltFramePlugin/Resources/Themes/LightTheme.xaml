@@ -1,0 +1,28 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Define Light Theme Colors -->
+    <Color x:Key="BoltFrame_BackgroundColor">#FFFFFFFF</Color>
+    <Color x:Key="BoltFrame_ForegroundColor">#FF000000</Color>
+    <Color x:Key="BoltFrame_PrimaryColor">#FF1976D2</Color>
+    <Color x:Key="BoltFrame_SecondaryColor">#FF424242</Color>
+
+    <!-- Define Light Theme Brushes -->
+    <SolidColorBrush x:Key="BoltFrame_BackgroundBrush" Color="{StaticResource BoltFrame_BackgroundColor}" />
+    <SolidColorBrush x:Key="BoltFrame_ForegroundBrush" Color="{StaticResource BoltFrame_ForegroundColor}" />
+    <SolidColorBrush x:Key="BoltFrame_PrimaryBrush" Color="{StaticResource BoltFrame_PrimaryColor}" />
+    <SolidColorBrush x:Key="BoltFrame_SecondaryBrush" Color="{StaticResource BoltFrame_SecondaryColor}" />
+
+    <!-- Define Styles -->
+    <Style TargetType="Window">
+        <Setter Property="Background" Value="{DynamicResource BoltFrame_BackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource BoltFrame_ForegroundBrush}" />
+    </Style>
+
+    <Style TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource BoltFrame_PrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource BoltFrame_ForegroundBrush}" />
+        <Setter Property="Padding" Value="10,5" />
+    </Style>
+
+    <!-- Add more styles as needed -->
+</ResourceDictionary>

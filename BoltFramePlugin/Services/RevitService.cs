@@ -6,6 +6,7 @@ namespace BoltFramePlugin.Services
 {
     public interface IRevitService
     {
+        UIDocument UiDoc { get; }
         FamilySymbol GetDefaultBeamFamilySymbol();
         FamilySymbol GetDefaultColumnFamilySymbol();
         Element GetSelectedElement();

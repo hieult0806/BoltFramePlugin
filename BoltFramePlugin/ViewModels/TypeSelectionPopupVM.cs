@@ -1,38 +1,24 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Input;
+﻿using System.Windows.Input;
 using Autodesk.Revit.DB;
 using BoltFramePlugin.Services;
 using Autodesk.Revit.UI;
-using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 using System.Collections.ObjectModel;
 using System.Windows.Media.Imaging;
 using BoltFramePlugin.Helpers;
 
 namespace BoltFramePlugin.ViewModels
 {
-    public class TypeSelectionPopupVM : IWindowViewModel
+    public class TypeSelectionPopupVM : BaseViewModel
     {
-        public readonly IWindowManager _windowManager;
-
-        public event EventHandler RequestClose;
-
         public ICommand ItemDoubleClick { get; set; }
         public ICommand ConfirmCommand { get; set; }
         public ICommand CancelCommand { get; set; }
 
         public ObservableCollection<CustomElement> Elements { get; set; }
-
         public CustomElement SelectedItem { get; set; }
-        public bool DialogResult { get; set; }
 
-        private UIDocument _document;
-        public TypeSelectionPopupVM(UIDocument document, IList<FamilySymbol> elements)
+        public TypeSelectionPopupVM(UIDocument document, IList<FamilySymbol> elements) : base(document)
         {
-            _document = document;
             _windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
 
             ItemDoubleClick = new RelayCommand(SelectElement);
@@ -53,14 +39,12 @@ namespace BoltFramePlugin.ViewModels
         public void Confirm(object parameter)
         {
             DialogResult = true;
-
-            RequestClose.Invoke(this, new EventArgs());
+            OnRequestClose(EventArgs.Empty);
         }
         public void Cancel(object parameter)
         {
             DialogResult = false;
-
-            RequestClose.Invoke(this, new EventArgs());
+            OnRequestClose(EventArgs.Empty);
         }
     }
 

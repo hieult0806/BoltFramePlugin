@@ -10,10 +10,10 @@ using BoltFramePlugin.FramingStrategies;
 
 namespace BoltFramePlugin.ViewModels
 {
-    internal class BoltFrameMainWindowVM : IWindowViewModel, INotifyPropertyChanged
+    internal class BoltFrameMainWindowVM : BaseViewModel
     {
         private ExternalEvent _externalGenerateEvent;
-        private GenerateEventHandler _generateEventHandler;
+        private GenerateFrameEventHandler _generateEventHandler;
 
         private ExternalEvent _externalCreateBeamPocketEvent;
         private CreateBeamPocketEventHandler _createBeamPocketEventHandler;
@@ -22,30 +22,27 @@ namespace BoltFramePlugin.ViewModels
         public ObservableCollection<AttributeItem> Attributes { get; set; }
 
         // Commands
+        public ICommand CloseCommand { get; }
         public ICommand GenerateFrameCommand { get; }
         public ICommand ColumnTypeCommand { get; }
         public ICommand BeamTypeCommand { get; }
         public ICommand OpenConfigurationWindowCommand { get; }
         public ICommand CreateBeamPocketCommand { get; }
-        public bool DialogResult { get; set; }
 
         private IRevitService _revitService;
-        private IWindowManager _windowManager;
-        private UIDocument _document;
 
-        public BoltFrameMainWindowVM(UIDocument document)
+        public BoltFrameMainWindowVM(UIDocument document) : base(document)
         {
-            _document = document;
             _revitService = DIContainerService.Container.GetInstance<IRevitServiceFactory>().Create(_document);
-            _windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
 
-            _generateEventHandler = new GenerateEventHandler();
+            _generateEventHandler = new GenerateFrameEventHandler();
             _externalGenerateEvent = ExternalEvent.Create(_generateEventHandler);
 
             _createBeamPocketEventHandler = new CreateBeamPocketEventHandler();
             _externalCreateBeamPocketEvent = ExternalEvent.Create(_createBeamPocketEventHandler);
 
             // Initialize commands
+            CloseCommand = new RelayCommand(OnClose);
             GenerateFrameCommand = new RelayCommand(GenerateFrame);
             ColumnTypeCommand = new RelayCommand(OnColumnTypeSelect);
             BeamTypeCommand = new RelayCommand(OnBeamTypeSelect);
@@ -63,6 +60,10 @@ namespace BoltFramePlugin.ViewModels
                 frameConfig1.Attributes.Select(attr => new AttributeItem(attr.Key, attr.Value))
             );
         }
+        private void OnClose(object parameter)
+        {
+            base.OnRequestClose(EventArgs.Empty);
+        }
 
         private void GenerateFrame(object parameter)
         {
@@ -79,16 +80,6 @@ namespace BoltFramePlugin.ViewModels
             _externalGenerateEvent.Raise();
         }
 
-        // Implement INotifyPropertyChanged for data binding
-        public event PropertyChangedEventHandler PropertyChanged;
-        public event EventHandler RequestClose;
-
-        protected virtual void OnPropertyChanged(string propertyName)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
-        // Command action for Column Type selection
         private void OnColumnTypeSelect(object parameter)
         {
             var viewModel = new TypeSelectionPopupVM(_document, _revitService.LoadColumnTypesFromRevit());
@@ -98,7 +89,6 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
-        // Command action for Beam Type selection
         private void OnBeamTypeSelect(object parameter)
         {
             var viewModel = new TypeSelectionPopupVM(_document, _revitService.LoadBeamTypesFromRevit());

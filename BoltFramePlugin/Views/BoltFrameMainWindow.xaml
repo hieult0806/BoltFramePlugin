@@ -8,23 +8,28 @@
         xmlns:vm="clr-namespace:BoltFramePlugin.ViewModels"
         mc:Ignorable="d"
         Title="{x:Static resx:Strings.AppTitle }" Height="600" Width="800">
-    <DockPanel>
-        <ToolBarTray DockPanel.Dock="Top">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"></RowDefinition>
+            <RowDefinition Height="*"></RowDefinition>
+            <RowDefinition Height="48"></RowDefinition>
+        </Grid.RowDefinitions>
+        <ToolBarTray Grid.Row="0" DockPanel.Dock="Top">
             <ToolBar>
                 <Button Command="New" Content="New" />
                 <Separator/>
                 <Button Command="Open" Content="Open" />
                 <Button Command="{Binding OpenConfigurationWindowCommand}" Content="Configuration" />
                 <Separator/>
-                <Button Command="{Binding CreateBeamPocketCommand}" Content="Create Beam Pockets" />
+                <Button Command="{Binding CreateBeamPocketCommand}" Content="Beam Pockets" />
             </ToolBar>
         </ToolBarTray>
-        <Grid Width="Auto" HorizontalAlignment="Stretch">
+        <Grid Grid.Row="1" Width="Auto" HorizontalAlignment="Stretch">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*"/>
                 <ColumnDefinition Width="3*"/>
             </Grid.ColumnDefinitions>
-            <ListView ItemsSource="{Binding Attributes}" x:Name="frameConfigurationListView" Grid.Column="0" HorizontalAlignment="Stretch">
+            <ListView ItemsSource="{Binding Attributes}" x:Name="frameConfigurationListView" Grid.Column="0" BorderThickness="0,0,0,0" Margin="4,4,4,4" Background="#FFF3F3F3">
                 <ListView.View>
                     <GridView>
                         <GridViewColumn x:Name="parameterCol" Header="Parameters" DisplayMemberBinding="{Binding Parameter}" Width="100"></GridViewColumn>
@@ -105,11 +110,13 @@
                     </GridView>
                 </ListView.View>
             </ListView>
-            <ToolBarPanel Height="54" VerticalAlignment="Bottom">
-                <Button Width="120" Height="48" Content="Generate" HorizontalAlignment="Center" VerticalAlignment="Center" 
-                    FontSize="16" Command="{Binding GenerateFrameCommand}"/>
-            </ToolBarPanel>
-
+            <DockPanel Grid.Column="1" Background="#FFF3F3F3" Margin="4,4,4,4">
+                
+            </DockPanel>
         </Grid>
-    </DockPanel>
+        <StackPanel Orientation="Horizontal" Grid.Row="2" HorizontalAlignment="Center">
+            <Button Width="100" Height="32" Content="Generate" FontSize="16" Margin="8 0 8 0" Command="{Binding GenerateFrameCommand}"/>
+            <Button Width="100" Height="32" Content="Cancel" FontSize="16" Margin="8 0 8 0" Command="{Binding CloseCommand}"/>
+        </StackPanel>
+    </Grid>
 </Window>

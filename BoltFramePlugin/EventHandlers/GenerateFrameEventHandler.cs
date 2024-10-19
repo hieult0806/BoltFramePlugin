@@ -13,7 +13,7 @@ using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 
 namespace BoltFramePlugin.EventHandlers
 {
-    internal class GenerateEventHandler : IExternalEventHandler
+    internal class GenerateFrameEventHandler : IExternalEventHandler
     {
         private IRevitService _service;
         private IFrameGenerateModel _frameGenerateModel;

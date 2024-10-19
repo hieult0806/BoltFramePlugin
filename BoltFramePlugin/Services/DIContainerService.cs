@@ -1,6 +1,5 @@
 ﻿using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using BoltFramePlugin.ViewModels;
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
 
@@ -20,6 +19,7 @@ namespace BoltFramePlugin.Services
         {
             container.RegisterSingleton<ILoggingService, LoggingService>();
             container.RegisterSingleton<IRevitServiceFactory, RevitServiceFactory>();
+            container.RegisterSingleton<IThemeService, ThemeService>();
             container.RegisterSingleton<IFileService, FileService>();
             container.RegisterSingleton<IPluginConfigurationManager, PluginConfigurationManager>();
             container.RegisterSingleton<IProjectConfigurationManager, ProjectConfigurationManager>();
