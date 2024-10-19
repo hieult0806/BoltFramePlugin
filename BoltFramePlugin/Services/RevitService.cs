@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using BoltFramePlugin.Models;
 
@@ -20,6 +15,7 @@ namespace BoltFramePlugin.Services
         FamilySymbol GetBeamTypeByUniqueId(AttributeItem attributeItem);
         FamilySymbol GetColumnTypeByUniqueId(AttributeItem attributeItem);
     }
+
     public class RevitService : IRevitService
     {
         private readonly UIDocument _uidoc;
@@ -29,13 +25,11 @@ namespace BoltFramePlugin.Services
         public Document Document => _doc;
 
         private string _message;
-        private ElementSet _elementSet;
 
-        public RevitService(ExternalCommandData commandData, ElementSet elements)
+        public RevitService(UIDocument uidoc)
         {
-            _uidoc = commandData.Application.ActiveUIDocument;
+            _uidoc = uidoc ?? throw new ArgumentNullException(nameof(uidoc));
             _doc = _uidoc.Document;
-            _elementSet = elements;
         }
 
         public FamilySymbol GetDefaultBeamFamilySymbol()

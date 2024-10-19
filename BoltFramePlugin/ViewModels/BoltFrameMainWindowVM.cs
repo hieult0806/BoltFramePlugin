@@ -1,10 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using BoltFramePlugin.Models;
 using System.Windows.Input;
 using BoltFramePlugin.Services;
@@ -17,8 +12,11 @@ namespace BoltFramePlugin.ViewModels
 {
     internal class BoltFrameMainWindowVM : IWindowViewModel, INotifyPropertyChanged
     {
-        private ExternalEvent _externalEvent;
+        private ExternalEvent _externalGenerateEvent;
         private GenerateEventHandler _generateEventHandler;
+
+        private ExternalEvent _externalCreateBeamPocketEvent;
+        private CreateBeamPocketEventHandler _createBeamPocketEventHandler;
 
         // ObservableCollection for attributes
         public ObservableCollection<AttributeItem> Attributes { get; set; }
@@ -28,24 +26,31 @@ namespace BoltFramePlugin.ViewModels
         public ICommand ColumnTypeCommand { get; }
         public ICommand BeamTypeCommand { get; }
         public ICommand OpenConfigurationWindowCommand { get; }
+        public ICommand CreateBeamPocketCommand { get; }
         public bool DialogResult { get; set; }
 
         private IRevitService _revitService;
         private IWindowManager _windowManager;
+        private UIDocument _document;
 
-        public BoltFrameMainWindowVM(IRevitService revitService, IWindowManager dialogService)
+        public BoltFrameMainWindowVM(UIDocument document)
         {
-            _generateEventHandler = new GenerateEventHandler();
-            _externalEvent = ExternalEvent.Create(_generateEventHandler);
+            _document = document;
+            _revitService = ContainerConfigurator.Container.GetInstance<IRevitServiceFactory>().Create(_document);
+            _windowManager = ContainerConfigurator.Container.GetInstance<IWindowManager>();
 
-            _revitService = revitService;
-            _windowManager = dialogService;
+            _generateEventHandler = new GenerateEventHandler();
+            _externalGenerateEvent = ExternalEvent.Create(_generateEventHandler);
+
+            _createBeamPocketEventHandler = new CreateBeamPocketEventHandler();
+            _externalCreateBeamPocketEvent = ExternalEvent.Create(_createBeamPocketEventHandler);
 
             // Initialize commands
             GenerateFrameCommand = new RelayCommand(GenerateFrame);
             ColumnTypeCommand = new RelayCommand(OnColumnTypeSelect);
             BeamTypeCommand = new RelayCommand(OnBeamTypeSelect);
             OpenConfigurationWindowCommand = new RelayCommand(OpenConfigurationWindow);
+            CreateBeamPocketCommand = new RelayCommand(CreateBeamPocket);
 
             // Initialize attributes
             var defaultBeamType = _revitService.GetDefaultBeamFamilySymbol();
@@ -71,7 +76,7 @@ namespace BoltFramePlugin.ViewModels
             floorModel.BeamSpacing = Convert.ToDouble(Attributes.First(c => c.Parameter.Equals("Beam Spacing")).Value);
 
             _generateEventHandler.SetParameters(_revitService, floorModel);
-            _externalEvent.Raise();
+            _externalGenerateEvent.Raise();
         }
 
         // Implement INotifyPropertyChanged for data binding
@@ -86,7 +91,7 @@ namespace BoltFramePlugin.ViewModels
         // Command action for Column Type selection
         private void OnColumnTypeSelect(object parameter)
         {
-            var viewModel = new TypeSelectionPopupVM(_windowManager, _revitService.LoadColumnTypesFromRevit());
+            var viewModel = new TypeSelectionPopupVM(_document, _revitService.LoadColumnTypesFromRevit());
             if (_windowManager.OpenDialog(viewModel))
             {
                 TextboxRebinding(parameter, viewModel.SelectedItem.Symbol);
@@ -96,7 +101,7 @@ namespace BoltFramePlugin.ViewModels
         // Command action for Beam Type selection
         private void OnBeamTypeSelect(object parameter)
         {
-            var viewModel = new TypeSelectionPopupVM(_windowManager, _revitService.LoadBeamTypesFromRevit());
+            var viewModel = new TypeSelectionPopupVM(_document, _revitService.LoadBeamTypesFromRevit());
             if (_windowManager.OpenDialog(viewModel))
             {
                 TextboxRebinding(parameter, viewModel.SelectedItem.Symbol);
@@ -105,7 +110,7 @@ namespace BoltFramePlugin.ViewModels
 
         private void OpenConfigurationWindow(object parameter)
         {
-            _windowManager.OpenDialog(ContainerConfigurator.Container.GetInstance<ConfigurationWindowVM>());
+            _windowManager.OpenDialog(new ConfigurationWindowVM(_document));
         }
 
         void TextboxRebinding(object parameter, FamilySymbol selectedType)
@@ -122,6 +127,12 @@ namespace BoltFramePlugin.ViewModels
                     attributeItem.UniqueId = selectedType.UniqueId;
                 }
             }
+        }
+
+        private void CreateBeamPocket(object parameter)
+        {
+            _createBeamPocketEventHandler.SetParameters(_revitService);
+            _externalCreateBeamPocketEvent.Raise();
         }
     }
 }

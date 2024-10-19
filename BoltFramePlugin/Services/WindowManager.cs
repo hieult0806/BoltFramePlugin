@@ -17,6 +17,10 @@ namespace BoltFramePlugin.Services
         void Open(IWindowViewModel viewModel);
         bool OpenDialog(IWindowViewModel viewModel);
         void ShowMessage(string message, string title);
+
+        (IWindowViewModel, Type) GetViewModel(IWindowViewModel viewModel);
+
+        public System.Windows.Controls.UserControl OpenPanel(IWindowViewModel viewModel);
     }
     public class WindowManager : IWindowManager
     {
@@ -33,24 +37,47 @@ namespace BoltFramePlugin.Services
             {
                 { typeof(BoltFrameMainWindowVM), typeof(BoltFrameMainWindow) },
                 { typeof(TypeSelectionPopupVM), typeof(TypeSelectionWindow) },
-                { typeof(ConfigurationWindowVM), typeof(ConfigurationWindow) }
+                { typeof(ConfigurationWindowVM), typeof(ConfigurationWindow) },
+                { typeof(SwitchViewShortcutDockablePaneVM), typeof(SwitchViewShortcutPanel) }
                 // Map other ViewModels to their corresponding Views
             };
         }
 
-        public void Open(IWindowViewModel viewModel)
+        // PInvoke to set focus back to Revit window
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        public (IWindowViewModel, Type) GetViewModel(IWindowViewModel viewModel)
         {
             if (!_viewModelViewMapping.TryGetValue(viewModel.GetType(), out Type viewType))
             {
                 throw new ArgumentException($"No view found for ViewModel of type {viewModel.GetType()}");
             }
+            return (viewModel, viewType);
+        }
+
+        public void Open(IWindowViewModel viewModel)
+        {
+            var viewType = GetViewModel(viewModel).Item2;
 
             var window = (Window)Activator.CreateInstance(viewType);
             window.DataContext = viewModel;
 
             new WindowInteropHelper(window).Owner = _revitHandle;
+            window.Closed += (s, e) =>
+            {
+                SetForegroundWindow(_revitHandle);
+            };
 
+            // Set the window to open in the center of its owner
+            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
             window.Show();
+        }
+
+        public System.Windows.Controls.UserControl OpenPanel(IWindowViewModel viewModel)
+        {
+            var vm = GetViewModel(viewModel);
+            return (System.Windows.Controls.UserControl)Activator.CreateInstance(vm.Item2);
         }
 
         public bool OpenDialog(IWindowViewModel viewModel)
@@ -62,6 +89,9 @@ namespace BoltFramePlugin.Services
 
             var window = (Window)Activator.CreateInstance(viewType);
             window.DataContext = viewModel;
+
+            // Set the window to open in the center of its owner
+            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
             new WindowInteropHelper(window).Owner = _revitHandle;
 

@@ -126,4 +126,7 @@
   <data name="PluginName" xml:space="preserve">
     <value>Bolt Framing</value>
   </data>
+  <data name="TabName" xml:space="preserve">
+    <value>Bolt Frame - SAIT</value>
+  </data>
 </root>

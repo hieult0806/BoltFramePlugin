@@ -86,5 +86,14 @@ namespace BoltFramePlugin.Resources.Strings {
                 return ResourceManager.GetString("PluginName", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Bolt Frame - SAIT.
+        /// </summary>
+        public static string TabName {
+            get {
+                return ResourceManager.GetString("TabName", resourceCulture);
+            }
+        }
     }
 }

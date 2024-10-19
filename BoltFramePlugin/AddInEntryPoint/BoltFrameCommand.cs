@@ -15,15 +15,11 @@ namespace BoltFramePlugin.AddInEntryPoint
         {
             try
             {
-                ContainerConfigurator.RegisterServices(commandData, elements);
                 var container = ContainerConfigurator.Container;
+                var mainWindowViewModel = new BoltFrameMainWindowVM(commandData.Application.ActiveUIDocument);
 
-                // Resolve WindowManager and ViewModel
-                var windowManager = container.GetInstance<IWindowManager>();
-                var mainWindowViewModel = container.GetInstance<BoltFrameMainWindowVM>();
-
-                // Open the dialog
-                windowManager.Open(mainWindowViewModel);
+                _windowService = container.GetInstance<IWindowManager>();
+                _windowService.Open(mainWindowViewModel);
 
                 return Result.Succeeded;
             }

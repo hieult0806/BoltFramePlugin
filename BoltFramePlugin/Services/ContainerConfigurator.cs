@@ -8,21 +8,30 @@ namespace BoltFramePlugin.Services
 {
     public static class ContainerConfigurator
     {
-        private static Container container;
+        private static readonly Container container;
         public static Container Container => container;
 
-        public static void RegisterServices(ExternalCommandData commandData, ElementSet elements)
+        static ContainerConfigurator()
         {
             container = new Container();
-            container.RegisterInstance<IRevitService>(new RevitService(commandData, elements));
+        }
+
+        public static void RegisterServices()
+        {
+            container.RegisterSingleton<IRevitServiceFactory, RevitServiceFactory>();
+            container.RegisterSingleton<IFileService, FileService>();
+            container.RegisterSingleton<IPluginConfigurationManager, PluginConfigurationManager>();
+            container.RegisterSingleton<IProjectConfigurationManager, ProjectConfigurationManager>();
+
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());
             // Add other registrations as needed
-            container.Register<BoltFrameMainWindowVM>(Lifestyle.Transient);
-            container.Register<ConfigurationWindowVM>(Lifestyle.Transient);
+            //container.Register<BoltFrameMainWindowVM>(Lifestyle.Transient);
+            //container.Register<ConfigurationWindowVM>(Lifestyle.Transient);
+            //container.Register<SwitchViewShortcutDockablePaneVM>(Lifestyle.Transient);
 
             // Verify the container's configuration
-            container.Verify();
+            //container.Verify();
         }
     }
 }

@@ -12,8 +12,11 @@
         <ToolBarTray DockPanel.Dock="Top">
             <ToolBar>
                 <Button Command="New" Content="New" />
+                <Separator/>
                 <Button Command="Open" Content="Open" />
                 <Button Command="{Binding OpenConfigurationWindowCommand}" Content="Configuration" />
+                <Separator/>
+                <Button Command="{Binding CreateBeamPocketCommand}" Content="Create Beam Pockets" />
             </ToolBar>
         </ToolBarTray>
         <Grid Width="Auto" HorizontalAlignment="Stretch">

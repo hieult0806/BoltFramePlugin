@@ -29,9 +29,11 @@ namespace BoltFramePlugin.ViewModels
         public CustomElement SelectedItem { get; set; }
         public bool DialogResult { get; set; }
 
-        public TypeSelectionPopupVM(IWindowManager windowManager, IList<FamilySymbol> elements)
+        private UIDocument _document;
+        public TypeSelectionPopupVM(UIDocument document, IList<FamilySymbol> elements)
         {
-            _windowManager = windowManager;
+            _document = document;
+            _windowManager = ContainerConfigurator.Container.GetInstance<IWindowManager>();
 
             ItemDoubleClick = new RelayCommand(SelectElement);
             ConfirmCommand = new RelayCommand(Confirm);

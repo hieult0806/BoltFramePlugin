@@ -11,22 +11,22 @@
             <ColumnDefinition Width="89*"/>
             <ColumnDefinition Width="185*"/>
         </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0">
+        <StackPanel Grid.Column="0" Margin="8">
             <Button Content="WorkingSpace"></Button>
             <Button Content="About"></Button>
         </StackPanel>
-        <DockPanel Grid.Column="1">
+        <DockPanel Grid.Column="1" Margin="8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="9*"></RowDefinition>
                     <RowDefinition Height="1*"></RowDefinition>
                 </Grid.RowDefinitions>
                 <StackPanel>
-                    <TextBlock Grid.Row="0" Text="{Binding WorkingSpacePath}" Height="24"></TextBlock>
+                    <TextBox TextWrapping="Wrap" Text="{Binding WorkingSpacePath}" Width="Auto" HorizontalAlignment="Stretch"/>
                 </StackPanel>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" FlowDirection="RightToLeft">
-                    <Button Width="100" Height="32" Content="Save"></Button>
-                    <Button Width="100" Height="32" Content="Cancel"></Button>
+                    <Button Width="100" Height="32" Content="Save" Command="{Binding SaveCommand}"></Button>
+                    <Button Width="100" Height="32" Content="Cancel" Command="{Binding CancelCommand}"></Button>
                 </StackPanel>
             </Grid>
         </DockPanel>

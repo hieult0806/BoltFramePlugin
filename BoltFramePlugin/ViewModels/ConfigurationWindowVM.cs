@@ -1,11 +1,6 @@
 ﻿using Autodesk.Revit.DB.Visual;
-using BoltFramePlugin.Helpers;
+using Autodesk.Revit.UI;
 using BoltFramePlugin.Services;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Input;
 
 namespace BoltFramePlugin.ViewModels
@@ -21,22 +16,30 @@ namespace BoltFramePlugin.ViewModels
 
         public string WorkingSpacePath { get; set; }
 
-        public ConfigurationWindowVM()
+        private IWindowManager _windowManager;
+        private IPluginConfigurationManager _pluginConfiguration;
+
+        public ConfigurationWindowVM(UIDocument document)
         {
+            _windowManager = ContainerConfigurator.Container.GetInstance<IWindowManager>();
+            _pluginConfiguration = ContainerConfigurator.Container.GetInstance<IPluginConfigurationManager>();
+
             SaveCommand = new RelayCommand(Save);
             CancelCommand = new RelayCommand(Cancel);
 
-            WorkingSpacePath = ConfigurationManager.ConfigurationFilePath;
+            WorkingSpacePath = _pluginConfiguration.LoadPluginConfiguration().WorkingFolderPath;
         }
 
         private void Cancel(object obj)
         {
-
+            DialogResult = false;
+            RequestClose?.Invoke(this, EventArgs.Empty);
         }
 
         private void Save(object obj)
         {
-
+            DialogResult = true;
+            RequestClose?.Invoke(this, EventArgs.Empty);
         }
     }
 }
