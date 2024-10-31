@@ -1,10 +1,5 @@
 ﻿using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace BoltFramePlugin.FramingStrategies
 {
@@ -18,7 +13,7 @@ namespace BoltFramePlugin.FramingStrategies
     }
 
     /// <summary>
-    /// Configuration settings for grid lines (beams or joists).
+    /// Configuration settings for grid lines (Beams or joists).
     /// </summary>
     public class GridConfig
     {
@@ -46,10 +41,6 @@ namespace BoltFramePlugin.FramingStrategies
         /// Structural type of the grid element.
         /// </summary>
         public StructuralType StructuralType { get; set; }
-
-        /// <summary>
-        /// Optional: Additional properties specific to certain grid orientations can be added here.
-        /// </summary>
     }
 }
 

@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Autodesk.Revit.DB;
-using BoltFramePlugin.Services;
+﻿using BoltFramePlugin.Services;
 
 namespace BoltFramePlugin.FramingStrategies
 {
@@ -17,6 +11,5 @@ namespace BoltFramePlugin.FramingStrategies
 
     public interface IFrameGenerateModel
     {
-        double Spacing { get; set; }
     }
 }

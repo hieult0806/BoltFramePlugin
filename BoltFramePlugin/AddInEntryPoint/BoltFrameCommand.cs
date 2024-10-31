@@ -15,6 +15,36 @@ namespace BoltFramePlugin.AddInEntryPoint
         {
             try
             {
+                var uidoc = commandData.Application.ActiveUIDocument;
+                var doc = uidoc.Document;
+                var selectedElementIds = uidoc.Selection.GetElementIds();
+
+                // Check if no elements are selected
+                if (selectedElementIds == null || selectedElementIds.Count == 0)
+                {
+                    message = "Please select at least one element.";
+                    return Result.Failed;
+                }
+
+                // Filter selected elements to include only Walls, Roofs, and Floors
+                var selectedRelevantElements = new List<Element>();
+                foreach (var id in selectedElementIds)
+                {
+                    var element = doc.GetElement(id);
+                    if (element != null && RevitSelectionService.IsRelevantCategory(element.Category))
+                    {
+                        selectedRelevantElements.Add(element);
+                    }
+                }
+
+                // If no relevant elements are selected, notify the user
+                if (selectedRelevantElements.Count == 0)
+                {
+                    message = "Please select at least one Wall, Roof, or Floor element.";
+                    return Result.Failed;
+                }
+
+                // Proceed with opening the window
                 var container = DIContainerService.Container;
                 var mainWindowViewModel = new BoltFrameMainWindowVM(commandData.Application.ActiveUIDocument);
 
@@ -25,6 +55,7 @@ namespace BoltFramePlugin.AddInEntryPoint
             }
             catch (Exception ex)
             {
+                // Return the error message if an exception occurs
                 message = ex.Message;
                 return Result.Failed;
             }

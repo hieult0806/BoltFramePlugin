@@ -1,9 +1,4 @@
 ﻿using Autodesk.Revit.DB;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace BoltFramePlugin.FramingStrategies
 {
@@ -29,24 +24,23 @@ namespace BoltFramePlugin.FramingStrategies
         /// Collection of grid configurations (horizontal and vertical).
         /// </summary>
         public List<GridConfig> GridConfigs { get; set; } = new List<GridConfig>();
+    }
+
+    public class FrameModel
+    {
+        /// <summary>
+        /// Associated ELement
+        /// </summary>
+        public Element TargetElement { get; set; }
 
         /// <summary>
-        /// Additional spacing parameter if needed.
+        /// Associated Level
         /// </summary>
-        public double Spacing { get; set; }
+        public Level Level { get; set; }
 
         /// <summary>
-        /// Offset in the Z-axis for beam placement.
+        /// Collection of grid configurations (horizontal and vertical).
         /// </summary>
-        public double Z_Offset { get; set; }
-
-        // Implement or remove other properties as per interface requirements
-
-        // Implement both TargetElement and TargetElements for interface compliance
-        public Element TargetElement
-        {
-            get => null;
-            set => throw new NotImplementedException("Use TargetElements for multiple floors.");
-        }
+        public List<GridConfig> GridConfigs { get; set; } = new List<GridConfig>();
     }
 }

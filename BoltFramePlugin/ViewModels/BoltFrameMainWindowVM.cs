@@ -7,6 +7,8 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using BoltFramePlugin.EventHandlers;
 using BoltFramePlugin.FramingStrategies;
+using BoltFramePlugin.ViewModels.Framing;
+using BoltFramePlugin.ViewModels.UserControls;
 
 namespace BoltFramePlugin.ViewModels
 {
@@ -24,12 +26,35 @@ namespace BoltFramePlugin.ViewModels
         // Commands
         public ICommand CloseCommand { get; }
         public ICommand GenerateFrameCommand { get; }
-        public ICommand ColumnTypeCommand { get; }
-        public ICommand BeamTypeCommand { get; }
         public ICommand OpenConfigurationWindowCommand { get; }
         public ICommand CreateBeamPocketCommand { get; }
 
         private IRevitService _revitService;
+
+        private InputWallFrameConfigurationVM _horizontalFrameConfiguration;
+        public InputWallFrameConfigurationVM HorizontalFrameConfiguration
+        {
+            get => _horizontalFrameConfiguration;
+            set
+            {
+                _horizontalFrameConfiguration = value;
+                OnPropertyChanged(nameof(HorizontalFrameConfiguration));
+            }
+        }
+
+        private InputWallFrameConfigurationVM _verticalFrameConfiguration;
+        public InputWallFrameConfigurationVM VerticalFrameConfiguration
+        {
+            get => _verticalFrameConfiguration;
+            set
+            {
+                _verticalFrameConfiguration = value;
+                OnPropertyChanged(nameof(VerticalFrameConfiguration));
+            }
+        }
+
+        private TreeViewUcVM _treeViewUcVM;
+        public TreeViewUcVM TreeViewUcVM { get => _treeViewUcVM; set { _treeViewUcVM = value; OnPropertyChanged(nameof(TreeViewUcVM)); } }
 
         public BoltFrameMainWindowVM(UIDocument document) : base(document)
         {
@@ -44,79 +69,35 @@ namespace BoltFramePlugin.ViewModels
             // Initialize commands
             CloseCommand = new RelayCommand(OnClose);
             GenerateFrameCommand = new RelayCommand(GenerateFrame);
-            ColumnTypeCommand = new RelayCommand(OnColumnTypeSelect);
-            BeamTypeCommand = new RelayCommand(OnBeamTypeSelect);
             OpenConfigurationWindowCommand = new RelayCommand(OpenConfigurationWindow);
             CreateBeamPocketCommand = new RelayCommand(CreateBeamPocket);
 
-            // Initialize attributes
-            var defaultBeamType = _revitService.GetDefaultBeamFamilySymbol();
-            var defaultColType = _revitService.GetDefaultColumnFamilySymbol();
-
-            var frameConfig1 = new FrameConfigurationDataModel();
-            frameConfig1.Attributes["Column Type"] = $"{defaultBeamType.Name}";
-            frameConfig1.Attributes["Beam Type"] = $"{defaultColType.Name}";
-            Attributes = new ObservableCollection<AttributeItem>(
-                frameConfig1.Attributes.Select(attr => new AttributeItem(attr.Key, attr.Value))
-            );
+            HorizontalFrameConfiguration = new InputWallFrameConfigurationVM(_revitService, _windowManager, "Horizontal Beam");
+            VerticalFrameConfiguration = new InputWallFrameConfigurationVM(_revitService, _windowManager, "Vertical Beam");
+            TreeViewUcVM = new TreeViewUcVM(_revitService.UiDoc);
+            TreeViewUcVM.PropertyChanged += TreeViewUcVM_PropertyChanged;
         }
+
+        private void TreeViewUcVM_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+
+        }
+
         private void OnClose(object parameter)
         {
-            base.OnRequestClose(EventArgs.Empty);
+            DialogResult = false;
+            OnRequestClose(EventArgs.Empty);
         }
 
         private void GenerateFrame(object parameter)
         {
-            var floorModel = new FloorFrameGenerateModel();
-            floorModel.TargetElement = _revitService.GetSelectedElement();
-            floorModel.Level = _revitService.GetLevelById(floorModel.TargetElement.LevelId);
-            floorModel.ColSymbol = _revitService.GetColumnTypeByUniqueId(Attributes.First(c => c.Parameter == "Column Type"));
-            floorModel.BeamSymbol = _revitService.GetBeamTypeByUniqueId(Attributes.First(c => c.Parameter == "Beam Type"));
-            floorModel.Z_Offset = Convert.ToDouble(Attributes.First(c => c.Parameter.Equals("Z-Offset")).Value);
-            floorModel.JoistSpacing = Convert.ToDouble(Attributes.First(c => c.Parameter.Equals("Joist Spacing")).Value);
-            floorModel.BeamSpacing = Convert.ToDouble(Attributes.First(c => c.Parameter.Equals("Beam Spacing")).Value);
-
-            _generateEventHandler.SetParameters(_revitService, floorModel);
-            _externalGenerateEvent.Raise();
-        }
-
-        private void OnColumnTypeSelect(object parameter)
-        {
-            var viewModel = new TypeSelectionPopupVM(_document, _revitService.LoadColumnTypesFromRevit());
-            if (_windowManager.OpenDialog(viewModel))
-            {
-                TextboxRebinding(parameter, viewModel.SelectedItem.Symbol);
-            }
-        }
-
-        private void OnBeamTypeSelect(object parameter)
-        {
-            var viewModel = new TypeSelectionPopupVM(_document, _revitService.LoadBeamTypesFromRevit());
-            if (_windowManager.OpenDialog(viewModel))
-            {
-                TextboxRebinding(parameter, viewModel.SelectedItem.Symbol);
-            }
+            //_generateEventHandler.SetParameters(_revitService, floorModel);
+            //_externalGenerateEvent.Raise();
         }
 
         private void OpenConfigurationWindow(object parameter)
         {
             _windowManager.OpenDialog(new ConfigurationWindowVM(_document));
-        }
-
-        void TextboxRebinding(object parameter, FamilySymbol selectedType)
-        {
-            if (selectedType == null) return;
-            var textBox = parameter as System.Windows.Controls.TextBox;
-            if (textBox != null)
-            {
-                textBox.Text = selectedType.Name;
-                var attributeItem = textBox.DataContext as AttributeItem;
-                if (attributeItem != null)
-                {
-                    attributeItem.Value = selectedType.Name; // Update the underlying data
-                    attributeItem.UniqueId = selectedType.UniqueId;
-                }
-            }
         }
 
         private void CreateBeamPocket(object parameter)

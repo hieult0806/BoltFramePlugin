@@ -139,7 +139,7 @@ namespace BoltFramePlugin.FramingStrategies
                     tx.Commit();
                 }
 
-                // Create the framing grid after beams are placed
+                // Create the framing grid after Beams are placed
                 CreateFramingGrid(doc, bestFlatFace, floor, level);
             }
             catch (Exception ex)
@@ -301,7 +301,7 @@ namespace BoltFramePlugin.FramingStrategies
         }
 
         /// <summary>
-        /// Creates a framing grid by placing beams and joists based on the flat face.
+        /// Creates a framing grid by placing Beams and joists based on the flat face.
         /// </summary>
         private void CreateFramingGrid(Document doc, Face bestFlatFace, Floor floor, Level level)
         {
@@ -320,7 +320,7 @@ namespace BoltFramePlugin.FramingStrategies
             {
                 if (config.Orientation == GridOrientation.Horizontal)
                 {
-                    // Horizontal grid lines (beams)
+                    // Horizontal grid lines (Beams)
                     for (double u = min.U; u <= max.U; u += config.Spacing)
                     {
                         XYZ startPoint = bestFlatFace.Evaluate(new UV(u, min.V - 10)); // Extend beyond min.V

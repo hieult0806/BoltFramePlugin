@@ -1,0 +1,58 @@
+﻿<UserControl x:Class="BoltFramePlugin.Views.Framing.InputWallFrameConfigurationUC"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:BoltFramePlugin.Views.Framing"
+             xmlns:comps="clr-namespace:BoltFramePlugin.Views.Components"
+             xmlns:ev="clr-namespace:BoltFramePlugin.Helpers"
+             mc:Ignorable="d" 
+             d:DesignHeight="268" d:DesignWidth="373">
+    <Grid Background="#FFECECEC">
+        <DockPanel Background="#FFB1B1B1" Height="25" Margin="0,0,0,0" VerticalAlignment="Top">
+            <Label Content="{Binding PartName}" Margin="15 0 0 0" FontWeight="Bold"></Label>
+        </DockPanel>
+        <StackPanel Margin="10 25 10 10">
+            <comps:ElementPreview DataContext="{Binding ElementPreview}"/>
+            <Separator/>
+            <Grid Margin="10 5 15 0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"></ColumnDefinition>
+                    <ColumnDefinition Width="*"></ColumnDefinition>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Spacing" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                <TextBox Grid.Column="1" InputScope="CurrencyAmountAndSymbol" Text="{Binding Config.Spacing}" />
+            </Grid>
+            <Grid Margin="10 5 15 0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"></ColumnDefinition>
+                    <ColumnDefinition Width="*"></ColumnDefinition>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Z-Offset" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                <Grid Grid.Column="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"></ColumnDefinition>
+                        <ColumnDefinition Width="64"></ColumnDefinition>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" InputScope="CurrencyAmountAndSymbol" Text="{Binding Config.ZOffset}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <TextBlock Text="Auto"></TextBlock>
+                        <CheckBox Margin="4 0 0 0"></CheckBox>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+            <Grid Margin="10 5 15 0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"></ColumnDefinition>
+                    <ColumnDefinition Width="*"></ColumnDefinition>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Stud Start" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                <ComboBox Grid.Column="1" SelectedIndex="0">
+                    <ComboBoxItem Content="Left"></ComboBoxItem>
+                    <ComboBoxItem Content="Center"></ComboBoxItem>
+                    <ComboBoxItem Content="Right"></ComboBoxItem>
+                </ComboBox>
+            </Grid>
+        </StackPanel>
+    </Grid>
+</UserControl>

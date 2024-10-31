@@ -5,6 +5,7 @@ using Autodesk.Revit.UI;
 using System.Collections.ObjectModel;
 using System.Windows.Media.Imaging;
 using BoltFramePlugin.Helpers;
+using BoltFramePlugin.ViewModels.Components;
 
 namespace BoltFramePlugin.ViewModels
 {
@@ -14,21 +15,22 @@ namespace BoltFramePlugin.ViewModels
         public ICommand ConfirmCommand { get; set; }
         public ICommand CancelCommand { get; set; }
 
-        public ObservableCollection<CustomElement> Elements { get; set; }
-        public CustomElement SelectedItem { get; set; }
-
-        public TypeSelectionPopupVM(UIDocument document, IList<FamilySymbol> elements) : base(document)
+        public ObservableCollection<ElementPreviewVM> Elements { get; set; }
+        public ElementPreviewVM SelectedItem { get; set; }
+        public IRevitService _revitService { get; set; }
+        public TypeSelectionPopupVM(IRevitService revitService, IWindowManager windowManager, IList<FamilySymbol> elements) : base(revitService.UiDoc)
         {
-            _windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
+            _revitService = revitService;
+            _windowManager = windowManager;
 
             ItemDoubleClick = new RelayCommand(SelectElement);
             ConfirmCommand = new RelayCommand(Confirm);
             CancelCommand = new RelayCommand(Cancel);
 
-            Elements = new ObservableCollection<CustomElement>();
+            Elements = new ObservableCollection<ElementPreviewVM>();
             foreach (FamilySymbol familySymbol in elements)
             {
-                Elements.Add(new CustomElement(familySymbol));
+                Elements.Add(new ElementPreviewVM(_revitService, _windowManager, familySymbol));
             }
         }
 
@@ -36,29 +38,17 @@ namespace BoltFramePlugin.ViewModels
         {
 
         }
+
         public void Confirm(object parameter)
         {
             DialogResult = true;
             OnRequestClose(EventArgs.Empty);
         }
+
         public void Cancel(object parameter)
         {
             DialogResult = false;
             OnRequestClose(EventArgs.Empty);
-        }
-    }
-
-    public class CustomElement
-    {
-        public string Name { get; set; }
-        public BitmapSource PreviewImage { get; set; }
-        public FamilySymbol Symbol { get; set; }
-
-        public CustomElement(FamilySymbol symbol)
-        {
-            Name = $"{symbol.FamilyName} - {symbol.Name}";
-            PreviewImage = ImageHelpers.BitmapToImageSource(symbol.GetPreviewImage(new Size(64, 64)));
-            Symbol = symbol;
         }
     }
 }

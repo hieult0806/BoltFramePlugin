@@ -42,7 +42,7 @@ namespace BoltFramePlugin.Services
         /// <param name="viewModel">The ViewModel to associate with the window.</param>
         public void Open(IWindowViewModel viewModel)
         {
-            var window = CreateWindow(viewModel);
+            var window = CreateWindow(viewModel, isModal: false);
             window.Show();
         }
 
@@ -53,7 +53,7 @@ namespace BoltFramePlugin.Services
         /// <returns>True if the dialog result is true; otherwise, false.</returns>
         public bool OpenDialog(IWindowViewModel viewModel)
         {
-            var window = CreateWindow(viewModel);
+            var window = CreateWindow(viewModel, isModal: true);
             window.ShowDialog();
             return window.DialogResult ?? false;
         }
@@ -114,7 +114,7 @@ namespace BoltFramePlugin.Services
         /// </summary>
         /// <param name="viewModel">The ViewModel to associate with the Window.</param>
         /// <returns>The instantiated and initialized Window.</returns>
-        private Window CreateWindow(IWindowViewModel viewModel)
+        private Window CreateWindow(IWindowViewModel viewModel, bool isModal = false)
         {
             var viewType = GetViewTypeForViewModel(viewModel);
 
@@ -135,7 +135,10 @@ namespace BoltFramePlugin.Services
             // Subscribe to the RequestClose event
             viewModel.RequestClose += (s, e) =>
             {
-                window.DialogResult = viewModel.DialogResult;
+                if (isModal)
+                {
+                    window.DialogResult = viewModel.DialogResult;
+                }
                 window.Close();
             };
 

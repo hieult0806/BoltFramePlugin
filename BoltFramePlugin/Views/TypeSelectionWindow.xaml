@@ -6,18 +6,16 @@
         xmlns:local="clr-namespace:BoltFramePlugin"
         xmlns:vm="clr-namespace:BoltFramePlugin.ViewModels"
         xmlns:helpers="clr-namespace:BoltFramePlugin.Helpers"
+        xmlns:comps="clr-namespace:BoltFramePlugin.Views.Components"
         mc:Ignorable="d"
         Title="TypeSelectionWindow" Height="450" Width="800">
     <Grid>
-        <ListBox ItemsSource="{Binding Elements}" Name="selectionListBox" d:ItemsSource="{d:SampleData ItemCount=5}" Margin="0,0,0,64"
+        <ListBox ItemsSource="{Binding Elements}" d:ItemsSource="{d:SampleData ItemCount=5}" Margin="0,0,0,64"
                  SelectedItem="{Binding SelectedItem }"
                  SelectionMode="Single">
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel Orientation="Horizontal" Margin="5">
-                        <Image Source="{Binding PreviewImage}" Width="40" Height="40" Margin="5"/>
-                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontSize="16" Margin="10,0,0,0"/>
-                    </StackPanel>
+                    <comps:ElementPreview/>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
