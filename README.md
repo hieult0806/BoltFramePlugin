@@ -2,6 +2,10 @@
 
 A professional-grade Autodesk Revit 2025 plugin that automates 3D structural framing design through intelligent geometry analysis and procedural generation. This plugin demonstrates advanced 3D programming, computational geometry, and CAD automation expertise.
 
+**Status:** Prototype · **Updated:** Oct 2025  
+**Scope:** Plan→Massing · Ray-Pick · Grid/Snap · Section · **CSV Quantities (mm/inch)**
+**Demo Video (90s):** https://youtu.be/<id>
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![.NET](https://img.shields.io/badge/.NET-8.0-purple.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)

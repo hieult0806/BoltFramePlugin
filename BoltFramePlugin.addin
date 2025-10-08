@@ -6,7 +6,7 @@
     <AddInId>A7C9F8E2-4D3B-4A1C-9F7E-8B2D5C6A3E9F</AddInId>
     <FullClassName>BoltFramePlugin.AddInEntryPoint.BoltFrameApplication</FullClassName>
     <VendorId>BOLT</VendorId>
-    <VendorDescription>BoltFrame, https://boltframe.com</VendorDescription>
+    <VendorDescription>BoltFrame</VendorDescription>
   </AddIn>
 
   <AddIn Type="Command">
@@ -18,6 +18,6 @@
     <Description>Open BoltFrame Configuration Window</Description>
     <VisibilityMode>AlwaysVisible</VisibilityMode>
     <VendorId>BOLT</VendorId>
-    <VendorDescription>BoltFrame, https://boltframe.com</VendorDescription>
+    <VendorDescription>BoltFrame</VendorDescription>
   </AddIn>
 </RevitAddIns>
