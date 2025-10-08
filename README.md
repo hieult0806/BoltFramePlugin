@@ -4,7 +4,7 @@ A professional-grade Autodesk Revit 2025 plugin that automates 3D structural fra
 
 **Status:** Prototype · **Updated:** Oct 2025  
 **Scope:** Plan→Massing · Ray-Pick · Grid/Snap · Section · **CSV Quantities (mm/inch)**
-**Demo Video (90s):** https://youtu.be/<id>
+**Demo Video:** [https://youtu.be/](https://www.youtube.com/watch?v=Ca1_XKVCUAo)
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![.NET](https://img.shields.io/badge/.NET-8.0-purple.svg)
@@ -363,14 +363,6 @@ All operations are logged to:
 - Rolling daily logs (30-day retention)
 - Structured logging with timestamps
 - Exception tracking with stack traces
-
----
-
-## 📚 Documentation
-
-- **[CLAUDE.md](CLAUDE.md)**: Comprehensive development guide for AI-assisted coding
-- **Code Comments**: XML documentation on all public APIs
-- **Inline Comments**: Detailed explanations of complex geometric algorithms
 
 ---
 
