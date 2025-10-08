@@ -1,6 +1,10 @@
 ﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
 using BoltFramePlugin.Services;
+using BoltFramePlugin.Models;
 using Serilog.Core;
+using TaskDialog = Autodesk.Revit.UI.TaskDialog;
+
 namespace BoltFramePlugin.FramingStrategies
 {
     /// <summary>
@@ -28,6 +32,12 @@ namespace BoltFramePlugin.FramingStrategies
         private const double MinBeamLength = 0.3; // Minimum allowable beam length (~1 foot)
         private readonly ILoggingService _logger;
 
+        // Track generated beams for summary
+        private Dictionary<string, List<double>> _generatedBeams = new Dictionary<string, List<double>>();
+        private List<ElementId> _allGeneratedBeamIds = new List<ElementId>();
+        public FramingSummaryModel Summary { get; private set; }
+        public Group CreatedGroup { get; private set; }
+
         /// <summary>
         /// Initializes a new instance of MultiFloorFramingStrategy.
         /// </summary>
@@ -47,13 +57,29 @@ namespace BoltFramePlugin.FramingStrategies
         {
             try
             {
+                _logger.LogInformation("MultiFloorFramingStrategy.StartGenerate called");
+
+                // Initialize tracking
+                _generatedBeams.Clear();
+                _allGeneratedBeamIds.Clear();
+
                 Document doc = _revitService.UiDoc.Document;
                 IEnumerable<Element> floors = Model.TargetElements;
+
+                _logger.LogInformation($"Target elements count: {floors?.Count() ?? 0}");
+                _logger.LogInformation($"Grid configs count: {Model.GridConfigs?.Count ?? 0}");
 
                 if (floors == null || !floors.Any())
                 {
                     _logger.LogInformation("No target floor elements provided for framing.");
+                    TaskDialog.Show("Warning", "No target floor elements provided for framing.");
                     return;
+                }
+
+                // Log grid configuration details
+                foreach (var config in Model.GridConfigs)
+                {
+                    _logger.LogInformation($"Grid Config - Orientation: {config.Orientation}, Spacing: {config.Spacing}, FamilySymbol: {config.FamilySymbol?.Name ?? "NULL"}");
                 }
 
                 // Activate all family symbols once if not active
@@ -64,6 +90,7 @@ namespace BoltFramePlugin.FramingStrategies
                     {
                         if (config.FamilySymbol != null && !config.FamilySymbol.IsActive)
                         {
+                            _logger.LogInformation($"Activating family symbol: {config.FamilySymbol.Name}");
                             config.FamilySymbol.Activate();
                             doc.Regenerate();
                         }
@@ -71,9 +98,15 @@ namespace BoltFramePlugin.FramingStrategies
                     tx.Commit();
                 }
 
+                _logger.LogInformation("Family symbols activated");
+
                 // Iterate over each floor and apply framing
+                int floorCount = 0;
                 foreach (Element floorElement in floors)
                 {
+                    floorCount++;
+                    _logger.LogInformation($"Processing floor #{floorCount}, ID: {floorElement.Id}");
+
                     Floor floor = floorElement as Floor;
                     if (floor == null)
                     {
@@ -86,19 +119,91 @@ namespace BoltFramePlugin.FramingStrategies
 
                     if (bestFlatFace != null)
                     {
+                        _logger.LogInformation($"Found flat surface for floor {floor.Id}, applying framing...");
                         ApplyFramingToFloor(doc, floor, bestFlatFace, offsetDistance);
+                        _logger.LogInformation($"Framing applied to floor {floor.Id}");
                     }
                     else
                     {
                         _logger.LogInformation($"No suitable flat surface found for floor ID: {floor.Id}");
+                        TaskDialog.Show("Warning", $"No suitable flat surface found for floor ID: {floor.Id}");
                     }
                 }
 
-                _logger.LogInformation("Framing generation completed for all floors.");
+                _logger.LogInformation($"Framing generation completed for {floorCount} floors.");
+
+                // Create group if requested
+                if (Model.CreateGroup && _allGeneratedBeamIds.Count > 0)
+                {
+                    CreateBeamGroup(doc);
+                }
+
+                // Generate summary
+                GenerateSummary();
             }
             catch (Exception ex)
             {
                 _logger.LogError("An error occurred during multi-floor framing generation.", ex);
+                TaskDialog.Show("Error", $"Error in MultiFloorFramingStrategy: {ex.Message}\n\n{ex.StackTrace}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Generates summary statistics from collected beam data
+        /// </summary>
+        private void GenerateSummary()
+        {
+            Summary = new FramingSummaryModel
+            {
+                IsGrouped = Model.CreateGroup && CreatedGroup != null,
+                GroupName = CreatedGroup?.GroupType.Name ?? Model.GroupName
+            };
+
+            foreach (var kvp in _generatedBeams)
+            {
+                if (kvp.Value.Count > 0)
+                {
+                    var item = new FramingSummaryItem
+                    {
+                        BeamType = kvp.Key.Split('|')[0],
+                        FamilyName = kvp.Key.Split('|')[1],
+                        TypeName = kvp.Key.Split('|')[2],
+                        Count = kvp.Value.Count,
+                        MinLength = kvp.Value.Min(),
+                        MaxLength = kvp.Value.Max(),
+                        AvgLength = kvp.Value.Average(),
+                        TotalLength = kvp.Value.Sum()
+                    };
+                    Summary.Items.Add(item);
+                }
+            }
+
+            _logger.LogInformation($"Summary generated with {Summary.Items.Count} beam types");
+        }
+
+        /// <summary>
+        /// Creates a group containing all generated beams
+        /// </summary>
+        private void CreateBeamGroup(Document doc)
+        {
+            try
+            {
+                using (Transaction tx = new Transaction(doc, "Create Framing Group"))
+                {
+                    tx.Start();
+
+                    CreatedGroup = doc.Create.NewGroup(_allGeneratedBeamIds);
+                    CreatedGroup.GroupType.Name = Model.GroupName;
+
+                    tx.Commit();
+
+                    _logger.LogInformation($"Created group '{Model.GroupName}' with {_allGeneratedBeamIds.Count} beams");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error creating beam group: {ex.Message}", ex);
             }
         }
 
@@ -112,31 +217,42 @@ namespace BoltFramePlugin.FramingStrategies
                 // Retrieve the level for this floor
                 Level level = GetLevelForFloor(floor);
 
-                using (Transaction tx = new Transaction(doc, $"Frame Floor ID: {floor.Id}"))
+                // Only create boundary beams if BoundaryConfig is enabled
+                if (Model.BoundaryConfig != null)
                 {
-                    tx.Start();
+                    _logger.LogInformation($"Creating boundary beams for floor {floor.Id}");
 
-                    EdgeArray edgeArray = bestFlatFace.EdgeLoops.get_Item(0);
-
-                    foreach (Edge edge in edgeArray)
+                    using (Transaction tx = new Transaction(doc, $"Create Boundary Beams for Floor {floor.Id}"))
                     {
-                        Curve edgeCurve = edge.AsCurve();
+                        tx.Start();
 
-                        foreach (var config in Model.GridConfigs)
+                        EdgeArray edgeArray = bestFlatFace.EdgeLoops.get_Item(0);
+                        int boundaryBeamCount = 0;
+
+                        foreach (Edge edge in edgeArray)
                         {
-                            // Place a grid element along the edge based on its configuration
-                            NewFamilyInstance(doc, edgeCurve, config.FamilySymbol, level, config);
+                            Curve edgeCurve = edge.AsCurve();
+
+                            // Place a boundary beam along the edge
+                            NewFamilyInstance(doc, edgeCurve, Model.BoundaryConfig.FamilySymbol, level, Model.BoundaryConfig);
+                            boundaryBeamCount++;
 
                             // Compute the offset curve if needed
-                            Curve offsetCurve = CreateOffsetCurve(edgeCurve, bestFlatFace, offsetDistance, config);
+                            Curve offsetCurve = CreateOffsetCurve(edgeCurve, bestFlatFace, offsetDistance, Model.BoundaryConfig);
                             if (offsetCurve != null)
                             {
-                                NewFamilyInstance(doc, offsetCurve, config.FamilySymbol, level, config);
+                                NewFamilyInstance(doc, offsetCurve, Model.BoundaryConfig.FamilySymbol, level, Model.BoundaryConfig);
+                                boundaryBeamCount++;
                             }
                         }
-                    }
 
-                    tx.Commit();
+                        _logger.LogInformation($"Created {boundaryBeamCount} boundary beams");
+                        tx.Commit();
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("Boundary beam generation is disabled");
                 }
 
                 // Create the framing grid after Beams are placed
@@ -151,7 +267,7 @@ namespace BoltFramePlugin.FramingStrategies
         /// <summary>
         /// Creates a new family instance (beam or joist) in the document based on the grid configuration.
         /// </summary>
-        private void NewFamilyInstance(Document doc, Curve curve, FamilySymbol symbol, Level level, GridConfig config)
+        private void NewFamilyInstance(Document doc, Curve curve, FamilySymbol symbol, Level level, GridConfig config, string beamType = "Boundary")
         {
             if (symbol == null)
             {
@@ -165,11 +281,27 @@ namespace BoltFramePlugin.FramingStrategies
                 doc.Regenerate();
             }
 
-            // Create the family instance
-            FamilyInstance instance = doc.Create.NewFamilyInstance(curve, symbol, level, config.StructuralType);
+            // Apply Z_Offset to align with floor surface (convert from mm to feet)
+            double zOffsetFeet = config.ZOffset / 304.8;
+            XYZ translation = new XYZ(0, 0, zOffsetFeet);
+            Curve offsetCurve = curve.CreateTransformed(Transform.CreateTranslation(translation));
+
+            // Create the family instance with Z-offset applied
+            FamilyInstance instance = doc.Create.NewFamilyInstance(offsetCurve, symbol, level, config.StructuralType);
             if (instance != null)
             {
-                _logger.LogInformation($"Created {config.Orientation} grid element with ID: {instance.Id}");
+                _logger.LogInformation($"Created {beamType} beam with ID: {instance.Id}, Z-offset: {config.ZOffset}mm");
+
+                // Track beam ID for grouping
+                _allGeneratedBeamIds.Add(instance.Id);
+
+                // Track beam for summary
+                string key = $"{beamType}|{symbol.FamilyName}|{symbol.Name}";
+                if (!_generatedBeams.ContainsKey(key))
+                {
+                    _generatedBeams[key] = new List<double>();
+                }
+                _generatedBeams[key].Add(offsetCurve.Length);
             }
             else
             {
@@ -311,38 +443,88 @@ namespace BoltFramePlugin.FramingStrategies
                 return;
             }
 
-            List<ElementId> gridElements = new List<ElementId>();
-            BoundingBoxUV faceBounds = bestFlatFace.GetBoundingBox();
-            UV min = faceBounds.Min;
-            UV max = faceBounds.Max;
-
-            foreach (var config in Model.GridConfigs)
+            using (Transaction tx = new Transaction(doc, $"Create Framing Grid for Floor {floor.Id}"))
             {
+                tx.Start();
+
+                List<ElementId> gridElements = new List<ElementId>();
+                BoundingBoxUV faceBounds = bestFlatFace.GetBoundingBox();
+                UV min = faceBounds.Min;
+                UV max = faceBounds.Max;
+
+                _logger.LogInformation($"Face bounds - U: [{min.U}, {max.U}], V: [{min.V}, {max.V}]");
+
+                foreach (var config in Model.GridConfigs)
+            {
+                // Spacing is already in feet (Revit internal units)
+                double spacingInFeet = config.Spacing;
+
+                _logger.LogInformation($"Processing {config.Orientation} grid with spacing {spacingInFeet} ft");
+                _logger.LogInformation($"U range: {max.U - min.U}, V range: {max.V - min.V}");
+
                 if (config.Orientation == GridOrientation.Horizontal)
                 {
                     // Horizontal grid lines (Beams)
-                    for (double u = min.U; u <= max.U; u += config.Spacing)
+                    _logger.LogInformation($"Creating horizontal beams with spacing={spacingInFeet}ft");
+                    int beamCount = 0;
+                    int iterationCount = 0;
+                    int maxIterations = 1000; // Safety limit
+
+                    for (double u = min.U; u <= max.U && iterationCount < maxIterations; u += spacingInFeet, iterationCount++)
                     {
+                        beamCount++;
+                        _logger.LogInformation($"Beam iteration {beamCount}: u={u}");
+
                         XYZ startPoint = bestFlatFace.Evaluate(new UV(u, min.V - 10)); // Extend beyond min.V
                         XYZ endPoint = bestFlatFace.Evaluate(new UV(u, max.V + 10));   // Extend beyond max.V
+
+                        _logger.LogInformation($"Beam line: ({startPoint.X}, {startPoint.Y}, {startPoint.Z}) to ({endPoint.X}, {endPoint.Y}, {endPoint.Z})");
 
                         Line gridLine = Line.CreateBound(startPoint, endPoint);
                         List<Curve> trimmedCurves = TrimCurveWithFace(gridLine, bestFlatFace);
 
+                        _logger.LogInformation($"Trimmed curves count: {trimmedCurves.Count}");
+
                         foreach (Curve trimmedCurve in trimmedCurves)
                         {
+                            _logger.LogInformation($"Trimmed curve length: {trimmedCurve.Length} ft (min: {MinBeamLength} ft)");
+
                             if (trimmedCurve.Length > MinBeamLength)
                             {
+                                // Apply Z_Offset (convert from mm to feet)
+                                double zOffsetFeet = config.ZOffset / 304.8;
+                                XYZ translation = new XYZ(0, 0, zOffsetFeet);
+                                Curve offsetCurve = trimmedCurve.CreateTransformed(Transform.CreateTranslation(translation));
+
                                 // Place the beam
-                                FamilyInstance beamInstance = doc.Create.NewFamilyInstance(trimmedCurve, config.FamilySymbol, level, config.StructuralType);
+                                _logger.LogInformation($"Creating beam with symbol: {config.FamilySymbol.Name}, level: {level.Name}, Z-offset: {config.ZOffset}mm ({zOffsetFeet}ft), structural type: {config.StructuralType}");
+                                FamilyInstance beamInstance = doc.Create.NewFamilyInstance(offsetCurve, config.FamilySymbol, level, config.StructuralType);
                                 if (beamInstance != null)
                                 {
                                     gridElements.Add(beamInstance.Id);
-                                    _logger.LogInformation($"Placed {config.Orientation} grid element ID: {beamInstance.Id}");
+                                    _allGeneratedBeamIds.Add(beamInstance.Id); // Track for grouping
+                                    _logger.LogInformation($"✓ Successfully placed {config.Orientation} beam ID: {beamInstance.Id}");
+
+                                    // Track beam for summary
+                                    string key = $"Horizontal|{config.FamilySymbol.FamilyName}|{config.FamilySymbol.Name}";
+                                    if (!_generatedBeams.ContainsKey(key))
+                                    {
+                                        _generatedBeams[key] = new List<double>();
+                                    }
+                                    _generatedBeams[key].Add(offsetCurve.Length);
                                 }
+                                else
+                                {
+                                    _logger.LogError("Failed to create beam - NewFamilyInstance returned null", null);
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogInformation($"Skipping beam - too short ({trimmedCurve.Length} < {MinBeamLength})");
                             }
                         }
                     }
+                    _logger.LogInformation($"Created {beamCount} horizontal beams");
                 }
                 else if (config.Orientation == GridOrientation.Vertical)
                 {
@@ -359,25 +541,50 @@ namespace BoltFramePlugin.FramingStrategies
                         {
                             if (trimmedCurve.Length > MinBeamLength)
                             {
-                                // Apply Z_Offset
-                                XYZ translation = new XYZ(0, 0, config.ZOffset);
+                                // Apply Z_Offset (convert from mm to feet)
+                                double zOffsetFeet = config.ZOffset / 304.8;
+                                XYZ translation = new XYZ(0, 0, zOffsetFeet);
                                 Curve offsetCurve = trimmedCurve.CreateTransformed(Transform.CreateTranslation(translation));
+
+                                _logger.LogInformation($"Creating joist with symbol: {config.FamilySymbol.Name}, level: {level.Name}, Z-offset: {config.ZOffset}mm ({zOffsetFeet}ft)");
 
                                 // Place the joist
                                 FamilyInstance joistInstance = doc.Create.NewFamilyInstance(offsetCurve, config.FamilySymbol, level, config.StructuralType);
                                 if (joistInstance != null)
                                 {
                                     gridElements.Add(joistInstance.Id);
-                                    _logger.LogInformation($"Placed {config.Orientation} grid element ID: {joistInstance.Id}");
+                                    _allGeneratedBeamIds.Add(joistInstance.Id); // Track for grouping
+                                    _logger.LogInformation($"✓ Successfully placed {config.Orientation} joist ID: {joistInstance.Id}");
+
+                                    // Track joist for summary
+                                    string key = $"Vertical|{config.FamilySymbol.FamilyName}|{config.FamilySymbol.Name}";
+                                    if (!_generatedBeams.ContainsKey(key))
+                                    {
+                                        _generatedBeams[key] = new List<double>();
+                                    }
+                                    _generatedBeams[key].Add(offsetCurve.Length);
                                 }
+                                else
+                                {
+                                    _logger.LogError("Failed to create joist - NewFamilyInstance returned null", null);
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogInformation($"Skipping joist - too short ({trimmedCurve.Length} < {MinBeamLength})");
                             }
                         }
                     }
                 }
             }
 
-            // Optionally, create assemblies or perform further operations
-            // Example: CreateAssembly(doc, gridElements, BuiltInCategory.OST_StructuralFraming);
+                _logger.LogInformation($"Created {gridElements.Count} grid elements for floor {floor.Id}");
+
+                tx.Commit();
+
+                // Optionally, create assemblies or perform further operations
+                // Example: CreateAssembly(doc, gridElements, BuiltInCategory.OST_StructuralFraming);
+            }
         }
 
         /// <summary>

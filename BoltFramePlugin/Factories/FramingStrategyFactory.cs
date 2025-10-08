@@ -8,7 +8,11 @@ namespace BoltFramePlugin.Factories
     {
         public static IFramingStrategy GetFramingStrategy(IRevitService service, IFrameGenerateModel model)
         {
-            if (model is FloorFrameGenerateModel)
+            if (model is MultiFloorFrameGenerateModel)
+            {
+                return new MultiFloorFramingStrategy(service, model);
+            }
+            else if (model is FloorFrameGenerateModel)
             {
                 return new FloorFramingStrategy(service, model);
             }

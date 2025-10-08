@@ -162,7 +162,8 @@ namespace BoltFramePlugin.Services
                 { typeof(BoltFrameMainWindowVM), typeof(BoltFrameMainWindow) },
                 { typeof(TypeSelectionPopupVM), typeof(TypeSelectionWindow) },
                 { typeof(ConfigurationWindowVM), typeof(ConfigurationWindow) },
-                { typeof(SwitchViewShortcutDockablePaneVM), typeof(SwitchViewShortcutPanel) }
+                { typeof(SwitchViewShortcutDockablePaneVM), typeof(SwitchViewShortcutPanel) },
+                { typeof(FramingSummaryVM), typeof(Views.FramingSummaryWindow) }
                 // Add additional ViewModel-View mappings here
             };
         }

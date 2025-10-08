@@ -30,13 +30,19 @@ namespace BoltFramePlugin.ViewModels
             Elements = new ObservableCollection<ElementPreviewVM>();
             foreach (FamilySymbol familySymbol in elements)
             {
-                Elements.Add(new ElementPreviewVM(_revitService, _windowManager, familySymbol));
+                // Disable selection for items in the popup to prevent nested popups
+                Elements.Add(new ElementPreviewVM(_revitService, _windowManager, familySymbol, enableSelection: false));
             }
         }
 
         public void SelectElement(object parameter)
         {
-
+            // When double-clicked, confirm the selection and close
+            if (SelectedItem != null)
+            {
+                DialogResult = true;
+                OnRequestClose(EventArgs.Empty);
+            }
         }
 
         public void Confirm(object parameter)

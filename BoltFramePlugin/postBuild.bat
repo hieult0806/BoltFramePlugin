@@ -3,7 +3,7 @@ REM Path to Revit executable
 set revit_path="C:\Program Files\Autodesk\Revit 2025\Revit.exe"
 
 REM Path to the default project
-set project_path="C:\Users\hieul\source\repos\BoltFramePlugin\Bed.rvt"
+set project_path="D:\GameDevelopments\BoltFramePlugin\Bed.rvt"
 
 REM Start Revit without blocking
 start /B "" %revit_path% %project_path%

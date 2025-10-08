@@ -35,11 +35,11 @@
 
   <ItemGroup>
     <Reference Include="RevitAPI">
-      <HintPath>..\..\..\..\..\..\Program Files\Autodesk\Revit 2025\RevitAPI.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Revit 2025\RevitAPI.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="RevitAPIUI">
-      <HintPath>..\..\..\..\..\..\Program Files\Autodesk\Revit 2025\RevitAPIUI.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Revit 2025\RevitAPIUI.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -68,13 +68,13 @@
   </ItemGroup>
 
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Command="&quot;C:\Users\hieul\source\repos\BoltFramePlugin\BoltFramePlugin\prebuild.bat&quot;" />
+    <Exec Command="&quot;$(ProjectDir)prebuild.bat&quot;" />
   </Target>
-	<Target Name="SignDll" AfterTargets="Build">
-		<Exec Command="&quot;C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe&quot; sign /f C:\Users\hieul\source\repos\BoltFramePlugin\BoltFramePlugin\mycert.pfx /p &quot;Wjdjap123@&quot; /fd SHA256 /t http://timestamp.digicert.com &quot;$(TargetPath)&quot;" />
-	</Target>
+	<!-- <Target Name="SignDll" AfterTargets="Build">
+		<Exec Command="&quot;C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe&quot; sign /f &quot;$(ProjectDir)mycert.pfx&quot; /p &quot;Wjdjap123@&quot; /fd SHA256 /t http://timestamp.digicert.com &quot;$(TargetPath)&quot;" />
+	</Target> -->
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="powershell.exe -ExecutionPolicy Bypass -File &quot;C:\Users\hieul\source\repos\BoltFramePlugin\BoltFramePlugin\post-build.ps1&quot;" />
+    <Exec Command="powershell.exe -ExecutionPolicy Bypass -File &quot;$(ProjectDir)post-build.ps1&quot;" />
   </Target>
 
 </Project>

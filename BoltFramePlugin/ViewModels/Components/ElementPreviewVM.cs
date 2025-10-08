@@ -29,7 +29,7 @@ namespace BoltFramePlugin.ViewModels.Components
         private IRevitService _revitService;
         private IWindowManager _windowManager;
 
-        public ElementPreviewVM(IRevitService revitService, IWindowManager windowManager, FamilySymbol symbol)
+        public ElementPreviewVM(IRevitService revitService, IWindowManager windowManager, FamilySymbol symbol, bool enableSelection = true)
         {
             _revitService = revitService;
             _windowManager = windowManager;
@@ -37,7 +37,16 @@ namespace BoltFramePlugin.ViewModels.Components
             FamilyName = symbol.FamilyName;
             ElementName = symbol.Name;
             PreviewImage = ImageHelpers.BitmapToImageSource(symbol.GetPreviewImage(new Size(64, 64)));
-            SelectCommand = new RelayCommand(OnSelect);
+
+            // Only enable SelectCommand if enableSelection is true
+            if (enableSelection)
+            {
+                SelectCommand = new RelayCommand(OnSelect);
+            }
+            else
+            {
+                SelectCommand = new RelayCommand(obj => { }); // Empty command - does nothing
+            }
         }
 
         private void OnSelect(object obj)

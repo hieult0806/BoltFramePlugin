@@ -24,6 +24,17 @@ namespace BoltFramePlugin.ViewModels.Framing
 
         public string PartName { get; set; }
 
+        private bool _isEnabled = true;
+        public bool IsEnabled
+        {
+            get => _isEnabled;
+            set
+            {
+                _isEnabled = value;
+                OnPropertyChanged(nameof(IsEnabled));
+            }
+        }
+
         private ElementPreviewVM _elementPreview;
         public ElementPreviewVM ElementPreview
         {
@@ -47,7 +58,8 @@ namespace BoltFramePlugin.ViewModels.Framing
         public void Binding()
         {
             Config = new GridConfig();
-            Config.ZOffset = 100;
+            Config.ZOffset = -300; // Default -300mm places beams below floor surface
+            Config.StructuralType = Autodesk.Revit.DB.Structure.StructuralType.Beam; // Set proper structural type for beams
             Beams = _revitService.LoadBeamTypesFromRevit();
             ElementPreview = new ElementPreviewVM(_revitService, _windowManager, Beams.First());
         }

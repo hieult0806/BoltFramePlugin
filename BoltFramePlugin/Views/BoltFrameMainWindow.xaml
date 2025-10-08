@@ -35,11 +35,17 @@
                 <tree:TreeViewUC DataContext="{Binding TreeViewUcVM}"/>
             </DockPanel>
             <StackPanel Grid.Column="1">
+                <uc:InputWallFrameConfigurationUC DataContext="{Binding BoundaryFrameConfiguration}"/>
                 <uc:InputWallFrameConfigurationUC DataContext="{Binding HorizontalFrameConfiguration}"/>
                 <uc:InputWallFrameConfigurationUC DataContext="{Binding VerticalFrameConfiguration}"/>
             </StackPanel>
         </Grid>
         <DockPanel Grid.Row="2" Background="#FFE5E5E5">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="10,0,0,0" VerticalAlignment="Center">
+                <CheckBox IsChecked="{Binding CreateGroup}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="Create Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox Text="{Binding GroupName}" Width="120" Height="24" IsEnabled="{Binding CreateGroup}"/>
+            </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                 <Button Width="90" Height="28" FontWeight="Bold" Content="Generate" Margin="8 0 8 0" Command="{Binding GenerateFrameCommand}"/>
                 <Button Width="90" Height="28" FontWeight="Bold" Content="Cancel" Margin="8 0 8 0" Command="{Binding CloseCommand}"/>

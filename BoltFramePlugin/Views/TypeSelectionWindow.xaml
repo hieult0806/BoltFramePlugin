@@ -12,7 +12,8 @@
     <Grid>
         <ListBox ItemsSource="{Binding Elements}" d:ItemsSource="{d:SampleData ItemCount=5}" Margin="0,0,0,64"
                  SelectedItem="{Binding SelectedItem }"
-                 SelectionMode="Single">
+                 SelectionMode="Single"
+                 helpers:ListBoxDoubleClickBehavior.DoubleClickCommand="{Binding ItemDoubleClick}">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <comps:ElementPreview/>

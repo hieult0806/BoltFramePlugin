@@ -10,9 +10,10 @@
              d:DesignHeight="268" d:DesignWidth="373">
     <Grid Background="#FFECECEC">
         <DockPanel Background="#FFB1B1B1" Height="25" Margin="0,0,0,0" VerticalAlignment="Top">
-            <Label Content="{Binding PartName}" Margin="15 0 0 0" FontWeight="Bold"></Label>
+            <CheckBox IsChecked="{Binding IsEnabled}" Margin="5 0 10 0" VerticalAlignment="Center"/>
+            <Label Content="{Binding PartName}" Margin="0 0 0 0" FontWeight="Bold"></Label>
         </DockPanel>
-        <StackPanel Margin="10 25 10 10">
+        <StackPanel Margin="10 25 10 10" IsEnabled="{Binding IsEnabled}">
             <comps:ElementPreview DataContext="{Binding ElementPreview}"/>
             <Separator/>
             <Grid Margin="10 5 15 0">
@@ -20,7 +21,7 @@
                     <ColumnDefinition Width="100"></ColumnDefinition>
                     <ColumnDefinition Width="*"></ColumnDefinition>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Spacing" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                <TextBlock Grid.Column="0" Text="Spacing (ft)" FontWeight="SemiBold" Margin="0,0,0,5"/>
                 <TextBox Grid.Column="1" InputScope="CurrencyAmountAndSymbol" Text="{Binding Config.Spacing}" />
             </Grid>
             <Grid Margin="10 5 15 0">
@@ -28,7 +29,7 @@
                     <ColumnDefinition Width="100"></ColumnDefinition>
                     <ColumnDefinition Width="*"></ColumnDefinition>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Z-Offset" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                <TextBlock Grid.Column="0" Text="Z-Offset (mm)" FontWeight="SemiBold" Margin="0,0,0,5"/>
                 <Grid Grid.Column="1">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"></ColumnDefinition>

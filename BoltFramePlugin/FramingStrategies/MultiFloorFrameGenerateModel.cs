@@ -24,6 +24,22 @@ namespace BoltFramePlugin.FramingStrategies
         /// Collection of grid configurations (horizontal and vertical).
         /// </summary>
         public List<GridConfig> GridConfigs { get; set; } = new List<GridConfig>();
+
+        /// <summary>
+        /// Configuration for boundary beams (perimeter of floor).
+        /// Null if boundary beams should not be generated.
+        /// </summary>
+        public GridConfig BoundaryConfig { get; set; }
+
+        /// <summary>
+        /// Whether to create a group containing all generated beams.
+        /// </summary>
+        public bool CreateGroup { get; set; } = true;
+
+        /// <summary>
+        /// Name for the created group (if CreateGroup is true).
+        /// </summary>
+        public string GroupName { get; set; } = "Floor Framing";
     }
 
     public class FrameModel
