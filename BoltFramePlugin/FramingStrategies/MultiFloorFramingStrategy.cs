@@ -226,23 +226,44 @@ namespace BoltFramePlugin.FramingStrategies
                     {
                         tx.Start();
 
-                        EdgeArray edgeArray = bestFlatFace.EdgeLoops.get_Item(0);
                         int boundaryBeamCount = 0;
+                        int edgeLoopCount = bestFlatFace.EdgeLoops.Size;
 
-                        foreach (Edge edge in edgeArray)
+                        _logger.LogInformation($"Floor has {edgeLoopCount} edge loops (outer + inner voids)");
+
+                        // Process ALL edge loops (outer boundary + any interior voids)
+                        for (int i = 0; i < edgeLoopCount; i++)
                         {
-                            Curve edgeCurve = edge.AsCurve();
+                            EdgeArray edgeArray = bestFlatFace.EdgeLoops.get_Item(i);
+                            string loopType = i == 0 ? "outer" : "inner";
+                            _logger.LogInformation($"Processing {loopType} edge loop {i} with {edgeArray.Size} edges");
 
-                            // Place a boundary beam along the edge
-                            NewFamilyInstance(doc, edgeCurve, Model.BoundaryConfig.FamilySymbol, level, Model.BoundaryConfig);
-                            boundaryBeamCount++;
-
-                            // Compute the offset curve if needed
-                            Curve offsetCurve = CreateOffsetCurve(edgeCurve, bestFlatFace, offsetDistance, Model.BoundaryConfig);
-                            if (offsetCurve != null)
+                            foreach (Edge edge in edgeArray)
                             {
-                                NewFamilyInstance(doc, offsetCurve, Model.BoundaryConfig.FamilySymbol, level, Model.BoundaryConfig);
-                                boundaryBeamCount++;
+                                Curve edgeCurve = edge.AsCurve();
+
+                                // Place boundary beam layers based on BoundaryLayers config
+                                int layerCount = Model.BoundaryConfig.BoundaryLayers;
+                                _logger.LogInformation($"Creating {layerCount} boundary layer(s) for edge");
+
+                                // Layer 1: Edge beam (always created if BoundaryLayers >= 1)
+                                if (layerCount >= 1)
+                                {
+                                    NewFamilyInstance(doc, edgeCurve, Model.BoundaryConfig.FamilySymbol, level, Model.BoundaryConfig);
+                                    boundaryBeamCount++;
+                                }
+
+                                // Additional layers: Create offset beams
+                                for (int layer = 1; layer < layerCount; layer++)
+                                {
+                                    double currentOffset = offsetDistance * layer;
+                                    Curve offsetCurve = CreateOffsetCurve(edgeCurve, bestFlatFace, currentOffset, Model.BoundaryConfig);
+                                    if (offsetCurve != null)
+                                    {
+                                        NewFamilyInstance(doc, offsetCurve, Model.BoundaryConfig.FamilySymbol, level, Model.BoundaryConfig);
+                                        boundaryBeamCount++;
+                                    }
+                                }
                             }
                         }
 

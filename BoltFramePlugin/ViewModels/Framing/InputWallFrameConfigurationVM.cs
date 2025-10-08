@@ -23,6 +23,7 @@ namespace BoltFramePlugin.ViewModels.Framing
         public IList<FamilySymbol> Beams;
 
         public string PartName { get; set; }
+        public bool IsBoundary => PartName?.Contains("Boundary") ?? false;
 
         private bool _isEnabled = true;
         public bool IsEnabled

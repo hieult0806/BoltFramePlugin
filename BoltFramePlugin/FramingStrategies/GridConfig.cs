@@ -41,6 +41,12 @@ namespace BoltFramePlugin.FramingStrategies
         /// Structural type of the grid element.
         /// </summary>
         public StructuralType StructuralType { get; set; }
+
+        /// <summary>
+        /// Number of boundary beam layers (for boundary beams only).
+        /// Default is 1 (single layer at the edge).
+        /// </summary>
+        public int BoundaryLayers { get; set; } = 1;
     }
 }
 
