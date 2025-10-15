@@ -160,6 +160,7 @@ namespace BoltFramePlugin.Services
             return new Dictionary<Type, Type>
             {
                 { typeof(BoltFrameMainWindowVM), typeof(BoltFrameMainWindow) },
+                { typeof(BoltWallFrameWindowVM), typeof(Views.BoltWallFrameWindow) },
                 { typeof(TypeSelectionPopupVM), typeof(TypeSelectionWindow) },
                 { typeof(ConfigurationWindowVM), typeof(ConfigurationWindow) },
                 { typeof(SwitchViewShortcutDockablePaneVM), typeof(SwitchViewShortcutPanel) },

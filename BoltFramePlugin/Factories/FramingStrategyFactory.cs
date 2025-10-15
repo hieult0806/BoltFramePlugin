@@ -16,6 +16,10 @@ namespace BoltFramePlugin.Factories
             {
                 return new FloorFramingStrategy(service, model);
             }
+            else if (model is WallFrameGenerateModel)
+            {
+                return new WallFramingStrategy(service, model);
+            }
             else
             {
                 throw new ArgumentException("Unsupported element type for framing.");
