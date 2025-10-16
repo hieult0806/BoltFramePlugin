@@ -173,6 +173,16 @@ namespace BoltFramePlugin.AddInEntryPoint
                 tooltip: "Toggle the Switch View Panel",
                 longDescription: "Show or hide the Switch View Plans panel."
             );
+
+            // Add Limiting Distance Button
+            AddPushButton(
+                panel,
+                name: "LimitingDistanceButton",
+                text: "Limiting Distance",
+                className: nameof(LimitingDistanceCommand),
+                tooltip: "Calculate Limiting Distance",
+                longDescription: "Select property line and highlight perimeter walls for limiting distance calculation."
+            );
         }
 
         /// <summary>

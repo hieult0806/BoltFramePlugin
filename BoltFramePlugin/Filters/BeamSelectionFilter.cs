@@ -7,7 +7,7 @@ namespace BoltFramePlugin.Filters
     {
         public bool AllowElement(Element elem)
         {
-            return elem.Category != null && elem.Category.Id.IntegerValue == (int)BuiltInCategory.OST_StructuralFraming;
+            return elem.Category != null && elem.Category.Id.Value == (long)BuiltInCategory.OST_StructuralFraming;
         }
 
         public bool AllowReference(Reference reference, XYZ position)

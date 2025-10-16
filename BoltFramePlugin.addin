@@ -20,4 +20,28 @@
     <VendorId>BOLT</VendorId>
     <VendorDescription>BoltFrame</VendorDescription>
   </AddIn>
+
+  <AddIn Type="Command">
+    <Name>BoltFrame Wall Config</Name>
+    <Assembly>d:\GameDevelopments\BoltFramePlugin\BoltFramePlugin\bin\Debug\net8.0-windows\BoltFramePlugin.dll</Assembly>
+    <AddInId>C9E2B1F4-6F5D-4C3E-9B7F-0D4F8E6C5A2B</AddInId>
+    <FullClassName>BoltFramePlugin.AddInEntryPoint.BoltWallFrameCommand</FullClassName>
+    <Text>BoltFrame Wall Config</Text>
+    <Description>Open BoltFrame Wall Framing Configuration Window</Description>
+    <VisibilityMode>AlwaysVisible</VisibilityMode>
+    <VendorId>BOLT</VendorId>
+    <VendorDescription>BoltFrame</VendorDescription>
+  </AddIn>
+
+  <AddIn Type="Command">
+    <Name>Limiting Distance</Name>
+    <Assembly>d:\GameDevelopments\BoltFramePlugin\BoltFramePlugin\bin\Debug\net8.0-windows\BoltFramePlugin.dll</Assembly>
+    <AddInId>D0F3C2A5-7E6E-5D4F-0C8A-1E5F9A7D6B3C</AddInId>
+    <FullClassName>BoltFramePlugin.AddInEntryPoint.LimitingDistanceCommand</FullClassName>
+    <Text>Limiting Distance</Text>
+    <Description>Calculate Limiting Distance - Select property line and highlight perimeter walls</Description>
+    <VisibilityMode>AlwaysVisible</VisibilityMode>
+    <VendorId>BOLT</VendorId>
+    <VendorDescription>BoltFrame</VendorDescription>
+  </AddIn>
 </RevitAddIns>

@@ -1,0 +1,14 @@
+# This is a Revit shared parameter file.
+*META	VERSION	MINVERSION
+META	2	1
+*GROUP	ID	NAME
+GROUP	1	Road LD Marker
+*PARAM	GUID	NAME	DATATYPE	DATACATEGORY	GROUP	VISIBLE	DESCRIPTION	USERMODIFIABLE
+PARAM	{a1b8a3e4-4a8c-4f0f-97b2-2a9c0b0da111}	RLDM_RoadName	TEXT		1	1	Road or lane name	1
+PARAM	{bb7e1b70-0fd0-4b0c-8f6f-6f2e2ea22222}	RLDM_MeasureTo	INTEGER		1	1	1=PropertyLine, 2=RoadCenterline, 3=RoadEdge	1
+PARAM	{c2c6d8a1-7e39-4f2b-86c8-5f3d3dc33333}	RLDM_Width	LENGTH		1	1	Road width used for centerline offset	1
+PARAM	{d3d7e9b2-8f4a-4a3c-97d9-6a4e4ed44444}	RLDM_WidthType	TEXT		1	1	ROW or Carriageway	1
+PARAM	{e4e8fab3-905b-4b4d-a8ea-7b5f5fe55555}	RLDM_Side	INTEGER		1	1	1=Left, 2=Right (relative to pick direction)	1
+PARAM	{f5f90bc4-a16c-4c5e-b9fb-8c6060f66666}	RLDM_IsPublicThoroughfare	YESNO		1	1	Used as public thoroughfare per code	1
+PARAM	{06a11cd5-b27d-4d6f-ca0c-9d7171077777}	RLDM_Notes	TEXT		1	1	Notes/exceptions	1
+PARAM	{17b22de6-c38e-4e70-db1d-ae8282188888}	RLDM_UseInLD	YESNO		1	1	Include this marker in Limiting Distance calc	1

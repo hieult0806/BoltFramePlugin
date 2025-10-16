@@ -1,6 +1,6 @@
 @echo off
 REM Path to Revit executable
-set revit_path="C:\Program Files\Autodesk\Revit 2025\Revit.exe"
+set revit_path="C:\Program Files\Autodesk\Revit 2026\Revit.exe"
 
 REM Path to the default project
 set project_path="D:\GameDevelopments\BoltFramePlugin\Bed.rvt"

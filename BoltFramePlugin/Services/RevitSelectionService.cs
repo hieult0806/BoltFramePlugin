@@ -41,9 +41,9 @@ namespace BoltFramePlugin.Services
             }
 
             // Check for Walls, Floors, and Roofs categories
-            return category.Id.IntegerValue == (int)BuiltInCategory.OST_Walls ||
-                   category.Id.IntegerValue == (int)BuiltInCategory.OST_Floors ||
-                   category.Id.IntegerValue == (int)BuiltInCategory.OST_Roofs;
+            return category.Id.Value == (long)BuiltInCategory.OST_Walls ||
+                   category.Id.Value == (long)BuiltInCategory.OST_Floors ||
+                   category.Id.Value == (long)BuiltInCategory.OST_Roofs;
         }
     }
 }
