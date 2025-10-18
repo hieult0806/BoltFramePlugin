@@ -12,6 +12,16 @@ namespace BoltFramePlugin.Views
         public LimitingDistanceWindow()
         {
             InitializeComponent();
+
+            // Subscribe to Closing event to ensure proper cleanup
+            Closing += Window_Closing;
+        }
+
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // Ensure ViewModel cleanup when window closes
+            var viewModel = DataContext as LimitingDistanceWindowVM;
+            viewModel?.Cleanup();
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)

@@ -26,6 +26,7 @@ namespace BoltFramePlugin.Services
     {
         private readonly nint _revitHandle;
         private readonly Dictionary<Type, Type> _viewModelViewMapping;
+        private readonly List<Window> _openWindows = new List<Window>();
 
         /// <summary>
         /// Initializes a new instance of the WindowManager class.
@@ -34,6 +35,27 @@ namespace BoltFramePlugin.Services
         {
             _revitHandle = GetRevitMainWindowHandle();
             _viewModelViewMapping = InitializeViewModelViewMapping();
+        }
+
+        /// <summary>
+        /// Closes all open windows managed by this WindowManager.
+        /// </summary>
+        public void CloseAllWindows()
+        {
+            // Create a copy of the list to avoid modification during iteration
+            var windowsToClose = _openWindows.ToList();
+            foreach (var window in windowsToClose)
+            {
+                try
+                {
+                    window.Close();
+                }
+                catch
+                {
+                    // Ignore errors when closing windows
+                }
+            }
+            _openWindows.Clear();
         }
 
         /// <summary>
@@ -142,9 +164,11 @@ namespace BoltFramePlugin.Services
                 window.Close();
             };
 
-            // Ensure Revit window regains focus after the window is closed
+            // Track the window and clean up when closed
+            _openWindows.Add(window);
             window.Closed += (s, e) =>
             {
+                _openWindows.Remove(window);
                 NativeMethods.SetForegroundWindow(_revitHandle);
             };
 

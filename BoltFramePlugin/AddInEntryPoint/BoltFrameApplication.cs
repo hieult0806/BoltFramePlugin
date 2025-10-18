@@ -91,7 +91,21 @@ namespace BoltFramePlugin.AddInEntryPoint
         private void OnDocumentClosing(object? sender, DocumentClosingEventArgs e)
         {
             _logger.LogInformation($"Document closing: {e.Document.Title}");
-            // Implement document closing logic here
+
+            // Close all open plugin windows when document closes
+            try
+            {
+                var windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
+                if (windowManager is WindowManager wm)
+                {
+                    wm.CloseAllWindows();
+                    _logger.LogInformation("All plugin windows closed due to document closing.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error closing windows during document close: {ex.Message}");
+            }
         }
 
         private void OnDocumentChanged(object? sender, DocumentChangedEventArgs e)

@@ -1356,18 +1356,18 @@ namespace BoltFramePlugin.EventHandlers
         {
             var colors = new (byte Red, byte Green, byte Blue)[]
             {
-                (0, 255, 0),     // 0: Bright Green - 0-1.2m
-                (127, 255, 0),   // 1: Yellow-Green - 1.2-1.5m
-                (255, 255, 0),   // 2: Yellow - 1.5-2m
-                (255, 200, 0),   // 3: Yellow-Orange - 2-2.5m
-                (255, 165, 0),   // 4: Orange - 2.5-3m
-                (255, 128, 0),   // 5: Dark Orange - 3-4m
-                (255, 64, 0),    // 6: Red-Orange - 4-5m
-                (255, 0, 0),     // 7: Red - 5-6m
-                (220, 0, 0),     // 8: Dark Red - 6-7m
-                (180, 0, 0),     // 9: Darker Red - 7-8m
-                (140, 0, 0),     // 10: Very Dark Red - 8-9m
-                (100, 0, 0)      // 11: Darkest Red - 9m+
+                (0, 255, 0),       // 0: Bright Green - 0-1.2m
+                (50, 205, 50),     // 1: Lime Green - 1.2-1.5m
+                (173, 255, 47),    // 2: Green Yellow - 1.5-2m
+                (255, 255, 0),     // 3: Yellow - 2-2.5m
+                (255, 215, 0),     // 4: Gold - 2.5-3m
+                (255, 165, 0),     // 5: Orange - 3-4m
+                (255, 100, 0),     // 6: Dark Orange - 4-5m
+                (255, 0, 0),       // 7: Red - 5-6m
+                (220, 20, 60),     // 8: Crimson - 6-7m
+                (178, 34, 34),     // 9: Firebrick - 7-8m
+                (128, 0, 0),       // 10: Maroon - 8-9m
+                (80, 0, 80)        // 11: Dark Purple - 9m+
             };
 
             return colorIndex >= 0 && colorIndex < colors.Length ? colors[colorIndex] : colors[^1];

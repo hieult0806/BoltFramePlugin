@@ -238,6 +238,14 @@ namespace BoltFramePlugin.ViewModels
 
             try
             {
+                // Defensive check: ensure document is still valid
+                if (_document == null || _document.Document == null || _document.Document.IsValidObject == false)
+                {
+                    _logger?.LogWarning("OnIdling: Document is null or invalid, unsubscribing from Idling event.");
+                    _isClosing = true;
+                    return;
+                }
+
                 // Check current selection
                 var selectedIds = _document?.Selection?.GetElementIds();
                 if (selectedIds == null)
@@ -274,6 +282,8 @@ namespace BoltFramePlugin.ViewModels
             catch (Exception ex)
             {
                 _logger?.LogError("Error in OnIdling", ex);
+                // If there's an error, set closing flag to prevent further issues
+                _isClosing = true;
             }
         }
 
@@ -1388,9 +1398,12 @@ namespace BoltFramePlugin.ViewModels
             windowManager.Open(logWindowVM);
         }
 
-        private void Close(object parameter)
+        /// <summary>
+        /// Public cleanup method to ensure proper resource disposal when window closes
+        /// </summary>
+        public void Cleanup()
         {
-            _logger.LogInformation("Closing Limiting Distance window.");
+            _logger.LogInformation("Cleanup: Limiting Distance window cleanup initiated.");
 
             // Set closing flag to prevent OnIdling from accessing disposed objects
             _isClosing = true;
@@ -1401,13 +1414,21 @@ namespace BoltFramePlugin.ViewModels
                 if (_document?.Application != null)
                 {
                     _document.Application.Idling -= OnIdling;
-                    _logger.LogInformation("Unsubscribed from Idling event.");
+                    _logger.LogInformation("Cleanup: Unsubscribed from Idling event.");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError("Error unsubscribing from Idling event", ex);
+                _logger.LogError("Cleanup: Error unsubscribing from Idling event", ex);
             }
+        }
+
+        private void Close(object parameter)
+        {
+            _logger.LogInformation("Close command: Closing Limiting Distance window.");
+
+            // Cleanup is now handled by Window_Closing event
+            Cleanup();
 
             DialogResult = false;
             OnRequestClose(EventArgs.Empty);
