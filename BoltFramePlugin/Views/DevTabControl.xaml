@@ -30,6 +30,27 @@
                                    Foreground="#FF666666"
                                    Margin="0,0,0,10"/>
 
+                        <Button Content="Create Normal Arrows"
+                                Command="{Binding CreateArrowsCommand}"
+                                Height="32"
+                                Margin="0,0,0,10"
+                                Background="#FF16A085"
+                                Foreground="White"/>
+
+                        <Button Content="Detect Reference Lines"
+                                Command="{Binding DetectReferenceLinesCommand}"
+                                Height="32"
+                                Margin="0,0,0,10"
+                                Background="#FF2ECC71"
+                                Foreground="White"/>
+
+                        <Button Content="Show Logs"
+                                Command="{Binding ShowLogsCommand}"
+                                Height="32"
+                                Margin="0,0,0,10"
+                                Background="#FF3498DB"
+                                Foreground="White"/>
+
                         <Button Content="Check Ceiling-Wall Connections"
                                 Command="{Binding CheckCeilingWallConnectionsCommand}"
                                 Height="32"

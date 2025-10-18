@@ -141,6 +141,29 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
+        // Auto Create Arrows Configuration
+        private bool _autoCreateArrows = false;
+        private bool _isLoadingConfig = false; // Flag to prevent saving during initialization
+
+        public bool AutoCreateArrows
+        {
+            get => _autoCreateArrows;
+            set
+            {
+                if (_autoCreateArrows == value) return; // No change, skip
+
+                _autoCreateArrows = value;
+                OnPropertyChanged(nameof(AutoCreateArrows));
+
+                // Only save to configuration if not currently loading
+                if (!_isLoadingConfig)
+                {
+                    SaveAutoCreateArrowsSetting(value);
+                    _logger.LogInformation($"Auto create arrows changed to: {value}");
+                }
+            }
+        }
+
         // Reference Lines
         private ObservableCollection<ReferenceLineInfo> _referenceLines;
         public ObservableCollection<ReferenceLineInfo> ReferenceLines
@@ -207,10 +230,15 @@ namespace BoltFramePlugin.ViewModels
 
         public bool IsViewSelected => _selectedView != null;
 
+        private readonly IExtensibleStorageService _extensibleStorage;
+        private readonly IPluginConfigurationManager _pluginConfig;
+
         public LimitingDistanceWindowVM(UIDocument uidoc) : base(uidoc)
         {
             _revitService = DIContainerService.Container.GetInstance<IRevitServiceFactory>().Create(uidoc);
             _logger = DIContainerService.Container.GetInstance<ILoggingService>();
+            _extensibleStorage = DIContainerService.Container.GetInstance<IExtensibleStorageService>();
+            _pluginConfig = DIContainerService.Container.GetInstance<IPluginConfigurationManager>();
 
             _perimeterWalls = new ObservableCollection<WallInfo>();
             _referenceLines = new ObservableCollection<ReferenceLineInfo>();
@@ -260,6 +288,12 @@ namespace BoltFramePlugin.ViewModels
 
             // Set logger for WallInfo static logging
             WallInfo.SetLogger(_logger);
+
+            // Load plugin configuration defaults
+            LoadPluginDefaults();
+
+            // Load saved data from extensible storage
+            LoadSavedData();
 
             // Subscribe to Idling event to monitor selection changes
             _document.Application.Idling += OnIdling;
@@ -355,6 +389,15 @@ namespace BoltFramePlugin.ViewModels
 
                         // Automatically find perimeter walls
                         FindPerimeterWalls();
+
+                        // Automatically detect reference lines after finding perimeter walls
+                        // Note: shouldAutoCreateArrows = false for automatic detection when property line is pre-selected
+                        if (PerimeterWalls.Count > 0)
+                        {
+                            _logger.LogInformation("Auto-detecting reference lines for pre-selected property line...");
+                            DetectReferenceLinesInternal(shouldAutoCreateArrows: false);
+                        }
+
                         break; // Use the first property line found
                     }
                 }
@@ -387,6 +430,14 @@ namespace BoltFramePlugin.ViewModels
 
                     // Automatically find perimeter walls
                     FindPerimeterWalls();
+
+                    // Automatically detect reference lines after finding perimeter walls
+                    // Note: shouldAutoCreateArrows = false for automatic detection during property line selection
+                    if (PerimeterWalls.Count > 0)
+                    {
+                        _logger.LogInformation("Auto-detecting reference lines after property line selection...");
+                        DetectReferenceLinesInternal(shouldAutoCreateArrows: false);
+                    }
                 }
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
@@ -636,6 +687,9 @@ namespace BoltFramePlugin.ViewModels
         {
             try
             {
+                // Log with stack trace to see where this is being called from
+                var stackTrace = new System.Diagnostics.StackTrace(true);
+                _logger.LogInformation($"CreateArrows called! Stack trace:\n{stackTrace}");
                 _logger.LogInformation("Initiating arrow creation for perimeter walls...");
 
                 // Set parameters for the event handler
@@ -887,9 +941,19 @@ namespace BoltFramePlugin.ViewModels
 
         private void DetectReferenceLines(object parameter)
         {
+            DetectReferenceLinesInternal(shouldAutoCreateArrows: true);
+        }
+
+        private void DetectReferenceLinesInternal(bool shouldAutoCreateArrows)
+        {
             try
             {
-                _logger.LogInformation("Initiating reference line detection via ExternalEvent...");
+                _logger.LogInformation($"Initiating reference line detection via ExternalEvent... shouldAutoCreateArrows={shouldAutoCreateArrows}, AutoCreateArrows={AutoCreateArrows}");
+
+                // Determine if we should draw distance measurement arrows
+                // Only draw if shouldAutoCreateArrows is true AND AutoCreateArrows is enabled
+                bool shouldDrawDistanceArrows = shouldAutoCreateArrows && AutoCreateArrows;
+                _logger.LogInformation($"shouldDrawDistanceArrows={shouldDrawDistanceArrows}");
 
                 // Set parameters for the event handler with callback
                 _detectReferenceLinesHandler.SetParameters(
@@ -897,10 +961,26 @@ namespace BoltFramePlugin.ViewModels
                     PerimeterWalls,
                     ReferenceLines,
                     RayLengthLimit,
+                    shouldDrawDistanceArrows,
                     () => {
                         // This callback runs after the external event completes
                         System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
-                            new Action(() => CalculateDistanceGroups()),
+                            new Action(() => {
+                                CalculateDistanceGroups();
+
+                                // Auto-create WALL ORIENTATION arrows if enabled AND if this detection should trigger auto-creation
+                                _logger.LogInformation($"Wall orientation arrow creation check: shouldAutoCreateArrows={shouldAutoCreateArrows}, AutoCreateArrows={AutoCreateArrows}, ReferenceLines.Count={ReferenceLines.Count}");
+
+                                if (shouldAutoCreateArrows && AutoCreateArrows && ReferenceLines.Count > 0)
+                                {
+                                    _logger.LogInformation("Auto-creating wall orientation arrows after reference line detection...");
+                                    CreateArrows(null);
+                                }
+                                else
+                                {
+                                    _logger.LogInformation("Skipping wall orientation arrow creation (one or more conditions not met)");
+                                }
+                            }),
                             System.Windows.Threading.DispatcherPriority.Normal);
                     });
 
@@ -1452,6 +1532,17 @@ namespace BoltFramePlugin.ViewModels
         {
             _logger.LogInformation("Cleanup: Limiting Distance window cleanup initiated.");
 
+            // Save data before closing
+            try
+            {
+                SaveData();
+                _logger.LogInformation("Cleanup: Data saved successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Cleanup: Error saving data", ex);
+            }
+
             // Set closing flag to prevent OnIdling from accessing disposed objects
             _isClosing = true;
 
@@ -1881,6 +1972,187 @@ namespace BoltFramePlugin.ViewModels
             catch (Exception ex)
             {
                 _logger.LogError($"Error adding created view to tracking: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
+
+        #region Data Persistence
+
+        /// <summary>
+        /// Loads plugin default settings from configuration
+        /// </summary>
+        private void LoadPluginDefaults()
+        {
+            try
+            {
+                _isLoadingConfig = true; // Prevent saving during load
+
+                var config = _pluginConfig.LoadPluginConfiguration();
+
+                // Set defaults from plugin configuration
+                if (string.IsNullOrEmpty(BuildingClassification))
+                {
+                    BuildingClassification = config.DefaultBuildingClassification;
+                }
+
+                if (RayLengthLimit == 0)
+                {
+                    RayLengthLimit = config.DefaultRayLengthLimit;
+                }
+
+                // Load auto create arrows setting using property (won't trigger save due to flag)
+                AutoCreateArrows = config.AutoCreateArrows;
+
+                _logger.LogInformation($"Loaded plugin defaults: Classification={BuildingClassification}, RayLength={RayLengthLimit}, AutoCreateArrows={AutoCreateArrows}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading plugin defaults: {ex.Message}", ex);
+            }
+            finally
+            {
+                _isLoadingConfig = false; // Re-enable saving
+            }
+        }
+
+        /// <summary>
+        /// Loads saved data from extensible storage
+        /// </summary>
+        private void LoadSavedData()
+        {
+            try
+            {
+                var data = _extensibleStorage.LoadLimitingDistanceData(_document.Document);
+
+                if (data == null || string.IsNullOrEmpty(data.PropertyLineId))
+                {
+                    _logger.LogInformation("No saved data found in document.");
+                    return;
+                }
+
+                _logger.LogInformation($"Loading saved data from extensible storage...");
+
+                // Load building classification and ray length if saved
+                if (!string.IsNullOrEmpty(data.BuildingClassification))
+                {
+                    BuildingClassification = data.BuildingClassification;
+                }
+
+                if (data.RayLengthLimit > 0)
+                {
+                    RayLengthLimit = data.RayLengthLimit;
+                }
+
+                // Load property line
+                if (!string.IsNullOrEmpty(data.PropertyLineId))
+                {
+                    try
+                    {
+                        var element = _document.Document.GetElement(data.PropertyLineId);
+                        if (element != null)
+                        {
+                            SelectedPropertyLine = element;
+                            _logger.LogInformation($"Restored property line: {element.Id}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"Could not restore property line: {ex.Message}");
+                    }
+                }
+
+                // Reload perimeter walls and reference lines if property line is set
+                if (_selectedPropertyLine != null)
+                {
+                    FindPerimeterWalls();
+
+                    if (PerimeterWalls.Count > 0)
+                    {
+                        // Don't auto-create arrows when loading saved data
+                        DetectReferenceLinesInternal(shouldAutoCreateArrows: false);
+                    }
+                }
+
+                _logger.LogInformation($"Loaded saved data: {data.PerimeterWallIds.Count} walls, {data.ReferenceLineIds.Count} ref lines, {data.CreatedViewIds.Count} views");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading saved data: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Saves current data to extensible storage
+        /// </summary>
+        public void SaveData()
+        {
+            try
+            {
+                var propertyLineId = _selectedPropertyLine?.UniqueId ?? string.Empty;
+                var perimeterWallIds = _perimeterWalls.Select(w => w.Wall.UniqueId).ToList();
+                var referenceLineIds = _referenceLines.Select(r => r.Element.UniqueId).ToList();
+                var createdViewIds = _createdViews.Where(v => v.View != null).Select(v => v.View.UniqueId).ToList();
+
+                // Build wall distances dictionary
+                var wallDistances = new Dictionary<string, double>();
+                foreach (var wall in _perimeterWalls)
+                {
+                    if (wall.LimitingDistance.HasValue && wall.LimitingDistance.Value > 0)
+                    {
+                        wallDistances[wall.Wall.UniqueId] = wall.LimitingDistance.Value;
+                    }
+                }
+
+                _extensibleStorage.SaveLimitingDistanceData(
+                    _document.Document,
+                    propertyLineId,
+                    perimeterWallIds,
+                    BuildingClassification,
+                    RayLengthLimit,
+                    referenceLineIds,
+                    createdViewIds,
+                    wallDistances);
+
+                _logger.LogInformation($"Saved data to extensible storage: {perimeterWallIds.Count} walls, {referenceLineIds.Count} ref lines");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error saving data: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Clears all saved data from extensible storage
+        /// </summary>
+        public void ClearSavedData()
+        {
+            try
+            {
+                _extensibleStorage.ClearLimitingDistanceData(_document.Document);
+                _logger.LogInformation("Cleared all saved data from extensible storage.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error clearing saved data: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Saves the AutoCreateArrows setting to plugin configuration
+        /// </summary>
+        private void SaveAutoCreateArrowsSetting(bool value)
+        {
+            try
+            {
+                var config = _pluginConfig.LoadPluginConfiguration();
+                config.AutoCreateArrows = value;
+                _pluginConfig.SavePluginConfiguration(config);
+                _logger.LogInformation($"Saved AutoCreateArrows setting: {value}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error saving AutoCreateArrows setting: {ex.Message}", ex);
             }
         }
 

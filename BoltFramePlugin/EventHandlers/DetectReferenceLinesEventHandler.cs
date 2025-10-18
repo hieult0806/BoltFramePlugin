@@ -15,6 +15,7 @@ namespace BoltFramePlugin.EventHandlers
         private double _rayLengthLimit;
         private readonly ILoggingService _logger;
         private Action? _onComplete;
+        private bool _shouldDrawArrows = false;
 
         public DetectReferenceLinesEventHandler()
         {
@@ -24,14 +25,15 @@ namespace BoltFramePlugin.EventHandlers
             _rayLengthLimit = 500.0;
         }
 
-        public void SetParameters(UIDocument uidoc, ObservableCollection<WallInfo> perimeterWalls, ObservableCollection<ReferenceLineInfo> referenceLines, double rayLengthLimit, Action? onComplete = null)
+        public void SetParameters(UIDocument uidoc, ObservableCollection<WallInfo> perimeterWalls, ObservableCollection<ReferenceLineInfo> referenceLines, double rayLengthLimit, bool shouldDrawArrows = false, Action? onComplete = null)
         {
             _uidoc = uidoc;
             _perimeterWalls = perimeterWalls;
             _referenceLines = referenceLines;
             _onComplete = onComplete;
             _rayLengthLimit = rayLengthLimit;
-            _logger.LogInformation($"Parameters set - Walls: {perimeterWalls?.Count ?? 0}, Ray length: {rayLengthLimit}m");
+            _shouldDrawArrows = shouldDrawArrows;
+            _logger.LogInformation($"Parameters set - Walls: {perimeterWalls?.Count ?? 0}, Ray length: {rayLengthLimit}m, ShouldDrawArrows: {shouldDrawArrows}");
         }
 
         public void Execute(UIApplication app)
@@ -192,115 +194,123 @@ namespace BoltFramePlugin.EventHandlers
                     }
                 }
 
-                // Draw rays as Detail Lines on their respective floor plans
-                using (Transaction trans = new Transaction(doc, "Draw Reference Line Rays"))
+                // Draw rays as Detail Lines on their respective floor plans (only if enabled)
+                if (_shouldDrawArrows)
                 {
-                    trans.Start();
-                    try
+                    _logger.LogInformation("Drawing distance measurement arrows (shouldDrawArrows=true)");
+                    using (Transaction trans = new Transaction(doc, "Draw Reference Line Rays"))
                     {
-                        int rayCount = 0;
-                        var raysByView = new Dictionary<ElementId, List<(XYZ start, XYZ end)>>();
-
-                        // Group rays by their floor plan views
-                        foreach (var (wall, start, end, levelId) in raysToDrawn)
+                        trans.Start();
+                        try
                         {
-                            if (levelId == ElementId.InvalidElementId)
+                            int rayCount = 0;
+                            var raysByView = new Dictionary<ElementId, List<(XYZ start, XYZ end)>>();
+
+                            // Group rays by their floor plan views
+                            foreach (var (wall, start, end, levelId) in raysToDrawn)
                             {
-                                _logger.LogWarning($"Wall {wall.Id.Value} has no base constraint level, skipping ray drawing");
-                                continue;
-                            }
-
-                            // Find floor plan for this level
-                            var level = doc.GetElement(levelId) as Level;
-                            if (level == null) continue;
-
-                            var floorPlan = new FilteredElementCollector(doc)
-                                .OfClass(typeof(ViewPlan))
-                                .Cast<ViewPlan>()
-                                .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
-
-                            if (floorPlan == null)
-                            {
-                                _logger.LogWarning($"No floor plan found for level {level.Name}, skipping wall {wall.Id.Value}");
-                                continue;
-                            }
-
-                            if (!raysByView.ContainsKey(floorPlan.Id))
-                            {
-                                raysByView[floorPlan.Id] = new List<(XYZ, XYZ)>();
-                            }
-
-                            raysByView[floorPlan.Id].Add((start, end));
-                        }
-
-                        // Draw rays on each floor plan
-                        foreach (var kvp in raysByView)
-                        {
-                            var viewId = kvp.Key;
-                            var rays = kvp.Value;
-                            var view = doc.GetElement(viewId) as ViewPlan;
-
-                            if (view == null) continue;
-
-                            foreach (var (start, end) in rays)
-                            {
-                                var start2D = new XYZ(start.X, start.Y, 0);
-                                var end2D = new XYZ(end.X, end.Y, 0);
-
-                                // Check if the curve is long enough for Revit's tolerance (minimum ~1/32 inch)
-                                var distance = start2D.DistanceTo(end2D);
-                                var minLength = 0.003; // ~1/32 inch in feet
-                                if (distance < minLength)
+                                if (levelId == ElementId.InvalidElementId)
                                 {
-                                    _logger.LogWarning($"Skipping ray that is too short ({distance:F6} ft) - below minimum curve length");
+                                    _logger.LogWarning($"Wall {wall.Id.Value} has no base constraint level, skipping ray drawing");
                                     continue;
                                 }
 
-                                try
+                                // Find floor plan for this level
+                                var level = doc.GetElement(levelId) as Level;
+                                if (level == null) continue;
+
+                                var floorPlan = new FilteredElementCollector(doc)
+                                    .OfClass(typeof(ViewPlan))
+                                    .Cast<ViewPlan>()
+                                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
+
+                                if (floorPlan == null)
                                 {
-                                    // Draw the main ray line
-                                    var line = Line.CreateBound(start2D, end2D);
-                                    var detailLine = doc.Create.NewDetailCurve(view, line);
-                                    rayCount++;
-
-                                    // Draw arrow head (small triangle at the end)
-                                    var direction = (end2D - start2D).Normalize();
-                                    var arrowSize = 0.5; // feet (~6 inches)
-
-                                    // Calculate perpendicular vector for arrow wings
-                                    var perpendicular = new XYZ(-direction.Y, direction.X, 0);
-
-                                    // Arrow head base point (slightly back from the end)
-                                    var arrowBase = end2D - (direction * arrowSize);
-
-                                    // Arrow wing points
-                                    var arrowWing1 = arrowBase + (perpendicular * arrowSize * 0.3);
-                                    var arrowWing2 = arrowBase - (perpendicular * arrowSize * 0.3);
-
-                                    // Draw two lines forming the arrow head
-                                    var arrowLine1 = Line.CreateBound(end2D, arrowWing1);
-                                    var arrowLine2 = Line.CreateBound(end2D, arrowWing2);
-
-                                    doc.Create.NewDetailCurve(view, arrowLine1);
-                                    doc.Create.NewDetailCurve(view, arrowLine2);
+                                    _logger.LogWarning($"No floor plan found for level {level.Name}, skipping wall {wall.Id.Value}");
+                                    continue;
                                 }
-                                catch (Exception ex)
+
+                                if (!raysByView.ContainsKey(floorPlan.Id))
                                 {
-                                    _logger.LogWarning($"Failed to create ray from ({start2D.X:F2}, {start2D.Y:F2}) to ({end2D.X:F2}, {end2D.Y:F2}): {ex.Message}");
+                                    raysByView[floorPlan.Id] = new List<(XYZ, XYZ)>();
                                 }
+
+                                raysByView[floorPlan.Id].Add((start, end));
                             }
 
-                            _logger.LogInformation($"Created {rays.Count} rays on floor plan {view.Name}");
-                        }
+                            // Draw rays on each floor plan
+                            foreach (var kvp in raysByView)
+                            {
+                                var viewId = kvp.Key;
+                                var rays = kvp.Value;
+                                var view = doc.GetElement(viewId) as ViewPlan;
 
-                        _logger.LogInformation($"Created {rayCount} total detail lines for rays across {raysByView.Count} floor plans");
-                        trans.Commit();
+                                if (view == null) continue;
+
+                                foreach (var (start, end) in rays)
+                                {
+                                    var start2D = new XYZ(start.X, start.Y, 0);
+                                    var end2D = new XYZ(end.X, end.Y, 0);
+
+                                    // Check if the curve is long enough for Revit's tolerance (minimum ~1/32 inch)
+                                    var distance = start2D.DistanceTo(end2D);
+                                    var minLength = 0.003; // ~1/32 inch in feet
+                                    if (distance < minLength)
+                                    {
+                                        _logger.LogWarning($"Skipping ray that is too short ({distance:F6} ft) - below minimum curve length");
+                                        continue;
+                                    }
+
+                                    try
+                                    {
+                                        // Draw the main ray line
+                                        var line = Line.CreateBound(start2D, end2D);
+                                        var detailLine = doc.Create.NewDetailCurve(view, line);
+                                        rayCount++;
+
+                                        // Draw arrow head (small triangle at the end)
+                                        var direction = (end2D - start2D).Normalize();
+                                        var arrowSize = 0.5; // feet (~6 inches)
+
+                                        // Calculate perpendicular vector for arrow wings
+                                        var perpendicular = new XYZ(-direction.Y, direction.X, 0);
+
+                                        // Arrow head base point (slightly back from the end)
+                                        var arrowBase = end2D - (direction * arrowSize);
+
+                                        // Arrow wing points
+                                        var arrowWing1 = arrowBase + (perpendicular * arrowSize * 0.3);
+                                        var arrowWing2 = arrowBase - (perpendicular * arrowSize * 0.3);
+
+                                        // Draw two lines forming the arrow head
+                                        var arrowLine1 = Line.CreateBound(end2D, arrowWing1);
+                                        var arrowLine2 = Line.CreateBound(end2D, arrowWing2);
+
+                                        doc.Create.NewDetailCurve(view, arrowLine1);
+                                        doc.Create.NewDetailCurve(view, arrowLine2);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogWarning($"Failed to create ray from ({start2D.X:F2}, {start2D.Y:F2}) to ({end2D.X:F2}, {end2D.Y:F2}): {ex.Message}");
+                                    }
+                                }
+
+                                _logger.LogInformation($"Created {rays.Count} rays on floor plan {view.Name}");
+                            }
+
+                            _logger.LogInformation($"Created {rayCount} total detail lines for rays across {raysByView.Count} floor plans");
+                            trans.Commit();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError($"Error creating detail lines: {ex.Message}", ex);
+                            trans.RollBack();
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError($"Error creating detail lines: {ex.Message}", ex);
-                        trans.RollBack();
-                    }
+                }
+                else
+                {
+                    _logger.LogInformation("Skipping distance measurement arrow drawing (shouldDrawArrows=false)");
                 }
 
                 _logger.LogInformation($"Total reference lines detected: {_referenceLines.Count}");

@@ -23,6 +23,7 @@ namespace BoltFramePlugin.Services
             container.RegisterSingleton<IFileService, FileService>();
             container.RegisterSingleton<IPluginConfigurationManager, PluginConfigurationManager>();
             container.RegisterSingleton<IProjectConfigurationManager, ProjectConfigurationManager>();
+            container.RegisterSingleton<IExtensibleStorageService, ExtensibleStorageService>();
 
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());

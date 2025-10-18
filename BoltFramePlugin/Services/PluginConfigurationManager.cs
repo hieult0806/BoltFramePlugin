@@ -19,8 +19,8 @@ namespace BoltFramePlugin.Services
             _fileService = fileService;
             string appDataPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "YourCompany",
-                "YourPlugin");
+                "Revit",
+                "BoltFramePlugin");
             Directory.CreateDirectory(appDataPath);
             _pluginConfigPath = Path.Combine(appDataPath, "config.json");
         }
@@ -53,12 +53,17 @@ namespace BoltFramePlugin.Services
             {
                 WorkingFolderPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "YourCompany",
-                    "YourPlugin",
+                    "Revit",
+                    "BoltFramePlugin",
                     "Projects"),
-                EnableLogging = false,
+                EnableLogging = true,
                 LogLevel = "Info",
-                // Initialize other default settings
+                DefaultBuildingClassification = "Type IIA",
+                DefaultRayLengthLimit = 100.0,
+                AutoCreateArrows = false,
+                UITheme = "Light",
+                LimitingDistanceWindowPosition = new WindowPosition(),
+                RecentProjects = new List<string>()
             };
         }
     }
