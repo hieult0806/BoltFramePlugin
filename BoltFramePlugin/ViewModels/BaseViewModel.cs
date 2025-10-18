@@ -28,6 +28,11 @@ namespace BoltFramePlugin.ViewModels
             _windowManager = DIContainerService.Container.GetInstance<IWindowManager>();
         }
 
+        public UIDocument GetUIDocument()
+        {
+            return _document;
+        }
+
         protected void OnRequestClose(EventArgs eventArgs)
         {
             RequestClose?.Invoke(this, eventArgs);

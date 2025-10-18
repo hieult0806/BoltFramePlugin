@@ -158,20 +158,22 @@ namespace BoltFramePlugin.AddInEntryPoint
             AddPushButton(
                 panel,
                 name: "BoltFrameMainButton",
-                text: "BF Config",
+                text: "Bolt Frame",
                 className: nameof(BoltFrameCommand),
                 tooltip: "Open BoltFrame Plugin",
-                longDescription: "Configure and manage BoltFrame settings."
+                longDescription: "Configure and manage BoltFrame settings.",
+                iconName: "BoltFrame"
             );
 
             // Add Switch View Button
             AddPushButton(
                 panel,
                 name: "SwitchViewPanelButton",
-                text: "View Plans Shortcut",
+                text: "View Plans",
                 className: nameof(ShowSwitchViewPanelCommand),
                 tooltip: "Toggle the Switch View Panel",
-                longDescription: "Show or hide the Switch View Plans panel."
+                longDescription: "Show or hide the Switch View Plans panel.",
+                iconName: "ViewPlans"
             );
 
             // Add Limiting Distance Button
@@ -181,14 +183,15 @@ namespace BoltFramePlugin.AddInEntryPoint
                 text: "Limiting Distance",
                 className: nameof(LimitingDistanceCommand),
                 tooltip: "Calculate Limiting Distance",
-                longDescription: "Select property line and highlight perimeter walls for limiting distance calculation."
+                longDescription: "Select property line and highlight perimeter walls for limiting distance calculation.",
+                iconName: "LimitingDistance"
             );
         }
 
         /// <summary>
         /// Adds a PushButton to a given RibbonPanel.
         /// </summary>
-        private void AddPushButton(RibbonPanel panel, string name, string text, string className, string tooltip, string longDescription)
+        private void AddPushButton(RibbonPanel panel, string name, string text, string className, string tooltip, string longDescription, string? iconName = null)
         {
             try
             {
@@ -204,6 +207,30 @@ namespace BoltFramePlugin.AddInEntryPoint
                 {
                     button.ToolTip = tooltip;
                     button.LongDescription = longDescription;
+
+                    // Set icon if provided
+                    if (!string.IsNullOrEmpty(iconName))
+                    {
+                        string assemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                        string? assemblyDirectory = System.IO.Path.GetDirectoryName(assemblyPath);
+
+                        if (!string.IsNullOrEmpty(assemblyDirectory))
+                        {
+                            string iconPath = System.IO.Path.Combine(assemblyDirectory, "Resources", "Images", $"{iconName}.svg");
+
+                            if (System.IO.File.Exists(iconPath))
+                            {
+                                button.Image = new System.Windows.Media.Imaging.BitmapImage(new Uri(iconPath));
+                                button.LargeImage = new System.Windows.Media.Imaging.BitmapImage(new Uri(iconPath));
+                                _logger.LogInformation($"Icon '{iconName}.svg' set for button '{name}'.");
+                            }
+                            else
+                            {
+                                _logger.LogWarning($"Icon file not found: {iconPath}");
+                            }
+                        }
+                    }
+
                     _logger.LogInformation($"PushButton '{name}' added to Ribbon panel.");
                 }
                 else

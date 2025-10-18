@@ -15,18 +15,25 @@ namespace BoltFramePlugin.ViewModels
     {
         private IRevitService _revitService;
         private ILoggingService _logger;
+        public ILoggingService Logger => _logger; // Expose for code-behind
         private ExternalEvent _createArrowsEvent;
         private CreateArrowsEventHandler _createArrowsHandler;
         private ExternalEvent _detectReferenceLinesEvent;
         private DetectReferenceLinesEventHandler _detectReferenceLinesHandler;
+        private ExternalEvent _createProjectionsEvent;
+        private CreateWallProjectionsEventHandler _createProjectionsHandler;
+        private ExternalEvent _updateWallParameterEvent;
+        private UpdateWallParameterEventHandler _updateWallParameterHandler;
 
         // Commands
         public ICommand SelectPropertyLineCommand { get; }
         public ICommand HighlightWallsCommand { get; }
         public ICommand CreateArrowsCommand { get; }
         public ICommand HighlightWallIn3DCommand { get; }
+        public ICommand HighlightDistanceGroupCommand { get; }
         public ICommand HighlightWallInFloorPlanCommand { get; }
         public ICommand DetectReferenceLinesCommand { get; }
+        public ICommand CreateWallProjectionsCommand { get; }
         public ICommand CloseCommand { get; }
         public ICommand ShowLogsCommand { get; }
 
@@ -71,6 +78,17 @@ namespace BoltFramePlugin.ViewModels
 
         public string WallCount => $"Perimeter Walls: {_perimeterWalls?.Count ?? 0}";
 
+        private WallInfo? _selectedWall;
+        public WallInfo? SelectedWall
+        {
+            get => _selectedWall;
+            set
+            {
+                _selectedWall = value;
+                OnPropertyChanged(nameof(SelectedWall));
+            }
+        }
+
         // Building Classification
         private string _buildingClassification = "Part 3: Commercial";
         public string BuildingClassification
@@ -88,6 +106,17 @@ namespace BoltFramePlugin.ViewModels
         {
             "Part 3: Commercial",
             "Part 9: Residential"
+        };
+
+        // Occupant Groups for dropdown
+        public List<string> OccupantGroups { get; } = new List<string>
+        {
+            "Group A",
+            "Group B",
+            "Group C",
+            "Group D",
+            "Group E",
+            "Group F"
         };
 
         // Ray Casting Configuration
@@ -117,6 +146,17 @@ namespace BoltFramePlugin.ViewModels
 
         public string ReferenceLineCount => $"Reference Lines: {_referenceLines?.Count ?? 0}";
 
+        private ObservableCollection<DistanceGroupSummary> _distanceGroups;
+        public ObservableCollection<DistanceGroupSummary> DistanceGroups
+        {
+            get => _distanceGroups;
+            set
+            {
+                _distanceGroups = value;
+                OnPropertyChanged(nameof(DistanceGroups));
+            }
+        }
+
         public LimitingDistanceWindowVM(UIDocument uidoc) : base(uidoc)
         {
             _revitService = DIContainerService.Container.GetInstance<IRevitServiceFactory>().Create(uidoc);
@@ -124,6 +164,7 @@ namespace BoltFramePlugin.ViewModels
 
             _perimeterWalls = new ObservableCollection<WallInfo>();
             _referenceLines = new ObservableCollection<ReferenceLineInfo>();
+            _distanceGroups = new ObservableCollection<DistanceGroupSummary>();
 
             // Initialize ExternalEvent for arrow creation
             _createArrowsHandler = new CreateArrowsEventHandler();
@@ -133,20 +174,87 @@ namespace BoltFramePlugin.ViewModels
             _detectReferenceLinesHandler = new DetectReferenceLinesEventHandler();
             _detectReferenceLinesEvent = ExternalEvent.Create(_detectReferenceLinesHandler);
 
+            // Initialize ExternalEvent for creating wall projections
+            _createProjectionsHandler = new CreateWallProjectionsEventHandler();
+            _createProjectionsEvent = ExternalEvent.Create(_createProjectionsHandler);
+
+            // Initialize ExternalEvent for updating wall parameters
+            _updateWallParameterHandler = new UpdateWallParameterEventHandler(_logger);
+            _updateWallParameterEvent = ExternalEvent.Create(_updateWallParameterHandler);
+
             // Initialize commands
             SelectPropertyLineCommand = new RelayCommand(SelectPropertyLine);
             HighlightWallsCommand = new RelayCommand(HighlightWalls, CanHighlightWalls);
             CreateArrowsCommand = new RelayCommand(CreateArrows, CanCreateArrows);
             HighlightWallIn3DCommand = new RelayCommand(HighlightWallIn3D);
+            HighlightDistanceGroupCommand = new RelayCommand(HighlightDistanceGroup);
             HighlightWallInFloorPlanCommand = new RelayCommand(HighlightWallInFloorPlan);
             DetectReferenceLinesCommand = new RelayCommand(DetectReferenceLines);
+            CreateWallProjectionsCommand = new RelayCommand(CreateWallProjections);
             CloseCommand = new RelayCommand(Close);
             ShowLogsCommand = new RelayCommand(ShowLogs);
 
             _logger.LogInformation("LimitingDistanceWindowVM initialized.");
 
+            // Set logger for WallInfo static logging
+            WallInfo.SetLogger(_logger);
+
+            // Subscribe to Idling event to monitor selection changes
+            _document.Application.Idling += OnIdling;
+
             // Check if property line is pre-selected
             CheckPreSelectedPropertyLine();
+        }
+
+        private ElementId? _lastSelectedElementId = null;
+
+        private bool _isClosing = false;
+
+        private void OnIdling(object? sender, Autodesk.Revit.UI.Events.IdlingEventArgs e)
+        {
+            // Don't process if window is closing
+            if (_isClosing)
+                return;
+
+            try
+            {
+                // Check current selection
+                var selectedIds = _document?.Selection?.GetElementIds();
+                if (selectedIds == null)
+                    return;
+
+                if (selectedIds.Count == 1)
+                {
+                    var elementId = selectedIds.First();
+
+                    // Only process if selection changed
+                    if (_lastSelectedElementId == null || _lastSelectedElementId.Value != elementId.Value)
+                    {
+                        _lastSelectedElementId = elementId;
+                        var element = _document.Document.GetElement(elementId);
+
+                        // Check if selected element is a wall in our perimeter walls list
+                        if (element is Wall)
+                        {
+                            var wallInfo = _perimeterWalls?.FirstOrDefault(w => w.ElementId.Value == elementId.Value);
+                            if (wallInfo != null && SelectedWall != wallInfo)
+                            {
+                                SelectedWall = wallInfo;
+                                _logger.LogInformation($"Selected wall in table: {wallInfo.Name}");
+                            }
+                        }
+                    }
+                }
+                else if (selectedIds.Count == 0 && _lastSelectedElementId != null)
+                {
+                    _lastSelectedElementId = null;
+                    SelectedWall = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError("Error in OnIdling", ex);
+            }
         }
 
         private void CheckPreSelectedPropertyLine()
@@ -272,8 +380,12 @@ namespace BoltFramePlugin.ViewModels
                                 Name = wall.Name,
                                 Length = wall.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH)?.AsDouble() ?? 0,
                                 GrossArea = grossArea,
-                                OpeningsArea = openingsArea
+                                OpeningsArea = openingsArea,
+                                Orientation = wall.Orientation // Set wall orientation (normal vector)
                             };
+
+                            // Subscribe to parameter update events
+                            wallInfo.ParameterUpdateRequested += WallInfo_ParameterUpdateRequested;
 
                             PerimeterWalls.Add(wallInfo);
                             _logger.LogInformation($"Perimeter wall found inside property line: {wall.Name} (ID: {wall.Id.Value}) - Gross: {grossArea:F2} ft², Openings: {openingsArea:F2} ft², Net: {wallInfo.NetArea:F2} ft²");
@@ -630,14 +742,95 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
+        private void HighlightDistanceGroup(object parameter)
+        {
+            try
+            {
+                if (parameter is DistanceGroupSummary group)
+                {
+                    _logger.LogInformation($"Highlighting walls in distance group: {group.Orientation} - {group.DistanceRange}");
+
+                    // Get all walls matching this orientation and distance range
+                    var wallsToHighlight = PerimeterWalls
+                        .Where(w => w.Orientation != null &&
+                                   w.LimitingDistance.HasValue &&
+                                   GetOrientationDescription(w.Orientation) == group.Orientation &&
+                                   w.LimitingDistance.Value >= group.MinDistance &&
+                                   w.LimitingDistance.Value < group.MaxDistance)
+                        .Select(w => w.ElementId)
+                        .ToList();
+
+                    if (wallsToHighlight.Count == 0)
+                    {
+                        _logger.LogWarning("No walls found matching the selected distance group.");
+                        TaskDialog.Show("No Walls Found", "No walls found in the selected distance group.");
+                        return;
+                    }
+
+                    var doc = _document.Document;
+
+                    // Find or create a 3D view
+                    var view3D = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View3D))
+                        .Cast<View3D>()
+                        .FirstOrDefault(v => !v.IsTemplate);
+
+                    if (view3D == null)
+                    {
+                        TaskDialog.Show("No 3D View", "No 3D view found in the document.");
+                        _logger.LogWarning("No 3D view found.");
+                        return;
+                    }
+
+                    // Set the active view to 3D
+                    _document.ActiveView = view3D;
+
+                    // Select the walls in the group
+                    _document.Selection.SetElementIds(wallsToHighlight);
+
+                    _logger.LogInformation($"Highlighted {wallsToHighlight.Count} walls in distance group in 3D view.");
+                    TaskDialog.Show("Success", $"Highlighted {wallsToHighlight.Count} walls in {group.Orientation} - {group.DistanceRange} in 3D view.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Error highlighting distance group", ex);
+                TaskDialog.Show("Error", $"Error highlighting distance group: {ex.Message}");
+            }
+        }
+
+        private void WallInfo_ParameterUpdateRequested(object? sender, ParameterUpdateEventArgs e)
+        {
+            if (sender is WallInfo wallInfo)
+            {
+                _logger.LogInformation($"Parameter update requested for wall {wallInfo.ElementId?.Value}: {e.ParameterName} = {e.ParameterValue}");
+
+                // Set parameters for the event handler
+                _updateWallParameterHandler.SetParameters(wallInfo.Wall, e.ParameterName, e.ParameterValue);
+
+                // Raise the external event
+                _updateWallParameterEvent.Raise();
+            }
+        }
+
         private void DetectReferenceLines(object parameter)
         {
             try
             {
                 _logger.LogInformation("Initiating reference line detection via ExternalEvent...");
 
-                // Set parameters for the event handler
-                _detectReferenceLinesHandler.SetParameters(_document, PerimeterWalls, ReferenceLines, RayLengthLimit);
+                // Set parameters for the event handler with callback
+                _detectReferenceLinesHandler.SetParameters(
+                    _document,
+                    PerimeterWalls,
+                    ReferenceLines,
+                    RayLengthLimit,
+                    () => {
+                        // This callback runs after the external event completes
+                        System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                            new Action(() => CalculateDistanceGroups()),
+                            System.Windows.Threading.DispatcherPriority.Normal);
+                    });
 
                 // Raise the external event
                 _detectReferenceLinesEvent.Raise();
@@ -646,6 +839,140 @@ namespace BoltFramePlugin.ViewModels
             {
                 _logger.LogError("Error initiating reference line detection", ex);
                 TaskDialog.Show("Error", $"Error initiating reference line detection: {ex.Message}");
+            }
+        }
+
+        private void CalculateDistanceGroups()
+        {
+            try
+            {
+                _logger.LogInformation("Calculating distance groups by orientation and distance...");
+                _logger.LogInformation($"Total perimeter walls: {PerimeterWalls.Count}");
+                _logger.LogInformation($"Walls with limiting distance: {PerimeterWalls.Count(w => w.LimitingDistance.HasValue)}");
+                _logger.LogInformation($"Walls with orientation: {PerimeterWalls.Count(w => w.Orientation != null)}");
+
+                var groups = new List<DistanceGroupSummary>();
+
+                // Group walls by orientation first
+                var wallsWithData = PerimeterWalls
+                    .Where(w => w.LimitingDistance.HasValue && w.Orientation != null)
+                    .ToList();
+
+                _logger.LogInformation($"Walls with both limiting distance and orientation: {wallsWithData.Count}");
+
+                var orientationGroups = wallsWithData
+                    .GroupBy(w => GetOrientationDescription(w.Orientation))
+                    .ToList();
+
+                // Distance ranges based on building code tables (converted to feet from meters)
+                // Table 3.2.3.1.-D and 3.2.3.1.-E show ranges: 0, 1.2, 1.5, 2.0, 2.5, 3, 4, 5, 6, 7, 8, 9+ meters
+                var ranges = new[]
+                {
+                    new { Min = 0.0, Max = 3.937, Label = "0-1.2m (0-3.9ft)" },      // 0-1.2m
+                    new { Min = 3.937, Max = 4.921, Label = "1.2-1.5m (3.9-4.9ft)" }, // 1.2-1.5m
+                    new { Min = 4.921, Max = 6.562, Label = "1.5-2m (4.9-6.6ft)" },   // 1.5-2m
+                    new { Min = 6.562, Max = 8.202, Label = "2-2.5m (6.6-8.2ft)" },   // 2-2.5m
+                    new { Min = 8.202, Max = 9.843, Label = "2.5-3m (8.2-9.8ft)" },   // 2.5-3m
+                    new { Min = 9.843, Max = 13.123, Label = "3-4m (9.8-13.1ft)" },   // 3-4m
+                    new { Min = 13.123, Max = 16.404, Label = "4-5m (13.1-16.4ft)" }, // 4-5m
+                    new { Min = 16.404, Max = 19.685, Label = "5-6m (16.4-19.7ft)" }, // 5-6m
+                    new { Min = 19.685, Max = 22.966, Label = "6-7m (19.7-23.0ft)" }, // 6-7m
+                    new { Min = 22.966, Max = 26.247, Label = "7-8m (23.0-26.2ft)" }, // 7-8m
+                    new { Min = 26.247, Max = 29.528, Label = "8-9m (26.2-29.5ft)" }, // 8-9m
+                    new { Min = 29.528, Max = double.MaxValue, Label = "9m+ (29.5ft+)" } // 9m+
+                };
+
+                foreach (var orientationGroup in orientationGroups)
+                {
+                    var orientation = orientationGroup.Key;
+
+                    foreach (var range in ranges)
+                    {
+                        var wallsInRange = orientationGroup
+                            .Where(w => w.LimitingDistance.Value >= range.Min &&
+                                       w.LimitingDistance.Value < range.Max)
+                            .ToList();
+
+                        if (wallsInRange.Any())
+                        {
+                            var group = new DistanceGroupSummary
+                            {
+                                Orientation = orientation,
+                                DistanceRange = range.Label,
+                                MinDistance = range.Min,
+                                MaxDistance = range.Max,
+                                WallCount = wallsInRange.Count,
+                                TotalGrossArea = wallsInRange.Sum(w => w.GrossArea),
+                                TotalOpeningsArea = wallsInRange.Sum(w => w.OpeningsArea)
+                            };
+
+                            groups.Add(group);
+                            _logger.LogInformation($"Group {orientation} - {range.Label}: {group.WallCount} walls, Gross: {group.TotalGrossArea:F2} ft²");
+                        }
+                    }
+                }
+
+                // Update the observable collection
+                DistanceGroups.Clear();
+                foreach (var group in groups.OrderBy(g => g.Orientation).ThenBy(g => g.MinDistance))
+                {
+                    DistanceGroups.Add(group);
+                }
+
+                _logger.LogInformation($"Distance groups calculated: {DistanceGroups.Count} groups across {orientationGroups.Count} orientations");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Error calculating distance groups", ex);
+            }
+        }
+
+        private string GetOrientationDescription(XYZ? orientation)
+        {
+            if (orientation == null) return "Unknown";
+
+            var normal = new XYZ(orientation.X, orientation.Y, 0).Normalize();
+            var absX = Math.Abs(normal.X);
+            var absY = Math.Abs(normal.Y);
+
+            if (absY > absX)
+            {
+                return normal.Y > 0 ? "North" : "South";
+            }
+            else
+            {
+                return normal.X > 0 ? "East" : "West";
+            }
+        }
+
+        private void CreateWallProjections(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("Initiating wall projections creation via ExternalEvent...");
+
+                if (PerimeterWalls.Count == 0)
+                {
+                    TaskDialog.Show("Error", "No perimeter walls found. Please detect reference lines first.");
+                    return;
+                }
+
+                if (ReferenceLines.Count == 0)
+                {
+                    TaskDialog.Show("Error", "No reference lines detected. Please run 'Detect Reference Lines' first.");
+                    return;
+                }
+
+                // Set parameters for the event handler
+                _createProjectionsHandler.SetParameters(_document, PerimeterWalls.ToList(), ReferenceLines.ToList());
+
+                // Raise the external event
+                _createProjectionsEvent.Raise();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Error initiating wall projections creation", ex);
+                TaskDialog.Show("Error", $"Error creating wall projections: {ex.Message}");
             }
         }
 
@@ -1044,6 +1371,24 @@ namespace BoltFramePlugin.ViewModels
         private void Close(object parameter)
         {
             _logger.LogInformation("Closing Limiting Distance window.");
+
+            // Set closing flag to prevent OnIdling from accessing disposed objects
+            _isClosing = true;
+
+            // Unsubscribe from events
+            try
+            {
+                if (_document?.Application != null)
+                {
+                    _document.Application.Idling -= OnIdling;
+                    _logger.LogInformation("Unsubscribed from Idling event.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Error unsubscribing from Idling event", ex);
+            }
+
             DialogResult = false;
             OnRequestClose(EventArgs.Empty);
         }

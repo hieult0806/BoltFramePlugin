@@ -45,7 +45,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Resources\Images\" />
+    <None Include="Resources\Images\*.svg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <Folder Include="Resources\Fonts\" />
     <Folder Include="Resources\Templates\" />
     <Folder Include="Resources\Styles\" />

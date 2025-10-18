@@ -14,6 +14,7 @@ namespace BoltFramePlugin.EventHandlers
         private ObservableCollection<ReferenceLineInfo> _referenceLines;
         private double _rayLengthLimit;
         private readonly ILoggingService _logger;
+        private Action? _onComplete;
 
         public DetectReferenceLinesEventHandler()
         {
@@ -23,11 +24,12 @@ namespace BoltFramePlugin.EventHandlers
             _rayLengthLimit = 500.0;
         }
 
-        public void SetParameters(UIDocument uidoc, ObservableCollection<WallInfo> perimeterWalls, ObservableCollection<ReferenceLineInfo> referenceLines, double rayLengthLimit)
+        public void SetParameters(UIDocument uidoc, ObservableCollection<WallInfo> perimeterWalls, ObservableCollection<ReferenceLineInfo> referenceLines, double rayLengthLimit, Action? onComplete = null)
         {
             _uidoc = uidoc;
             _perimeterWalls = perimeterWalls;
             _referenceLines = referenceLines;
+            _onComplete = onComplete;
             _rayLengthLimit = rayLengthLimit;
             _logger.LogInformation($"Parameters set - Walls: {perimeterWalls?.Count ?? 0}, Ray length: {rayLengthLimit}m");
         }
@@ -152,6 +154,15 @@ namespace BoltFramePlugin.EventHandlers
                     if (hitResult != null && hitResult.IntersectionPoint != null)
                     {
                         actualEndPoint = hitResult.IntersectionPoint;
+
+                        // Update wall's limiting distance immediately
+                        wallInfo.LimitingDistance = hitResult.Distance;
+                        wallInfo.ReferenceLine = hitResult;
+                        _logger.LogInformation($"Wall {wall.Id.Value}: Limiting distance = {hitResult.Distance:F2} ft to {hitResult.LineTypeFormatted}");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Wall {wall.Id.Value}: No reference line hit");
                     }
 
                     raysToDrawn.Add((wall, midpoint, actualEndPoint, levelId));
@@ -177,8 +188,6 @@ namespace BoltFramePlugin.EventHandlers
                                     roadCLCount++;
                                     break;
                             }
-
-                            _logger.LogInformation($"Wall {wall.Id.Value} → {hitResult.LineTypeFormatted} at distance {hitResult.Name}");
                         }
                     }
                 }
@@ -301,7 +310,11 @@ namespace BoltFramePlugin.EventHandlers
                     $"Detected {_referenceLines.Count} reference lines:\n" +
                     $"- Imaginary Lines (between walls): {imaginaryLineCount}\n" +
                     $"- Property Line Segments: {propertyLineCount}\n" +
-                    $"- Road Centerlines: {roadCLCount}");
+                    $"- Road Centerlines: {roadCLCount}\n\n" +
+                    $"Limiting distances have been updated in the table.");
+
+                // Invoke callback if provided
+                _onComplete?.Invoke();
             }
             catch (Exception ex)
             {

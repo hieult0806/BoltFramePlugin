@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Property line (red vertical line on left) -->
+  <line x1="6" y1="4" x2="6" y2="28" stroke="#e74c3c" stroke-width="3"/>
+  <!-- Building (rectangle on right) -->
+  <rect x="18" y="10" width="10" height="14" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
+  <!-- Windows on building -->
+  <rect x="20" y="12" width="2" height="3" fill="white"/>
+  <rect x="24" y="12" width="2" height="3" fill="white"/>
+  <rect x="20" y="17" width="2" height="3" fill="white"/>
+  <rect x="24" y="17" width="2" height="3" fill="white"/>
+  <!-- Distance arrow (double-headed) -->
+  <defs>
+    <marker id="arrowStart" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto">
+      <polygon points="0,2 4,0 4,4" fill="#27ae60"/>
+    </marker>
+    <marker id="arrowEnd" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto">
+      <polygon points="4,2 0,0 0,4" fill="#27ae60"/>
+    </marker>
+  </defs>
+  <line x1="8" y1="24" x2="17" y2="24" stroke="#27ae60" stroke-width="2"
+        marker-start="url(#arrowStart)" marker-end="url(#arrowEnd)"/>
+</svg>
