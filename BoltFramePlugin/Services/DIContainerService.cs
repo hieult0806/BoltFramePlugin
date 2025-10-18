@@ -25,6 +25,12 @@ namespace BoltFramePlugin.Services
             container.RegisterSingleton<IProjectConfigurationManager, ProjectConfigurationManager>();
             container.RegisterSingleton<IExtensibleStorageService, ExtensibleStorageService>();
 
+            // Data Import Services
+            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.CsvImportService>();
+            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.ExcelImportService>();
+            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.ITableRenderService, BoltFramePlugin.Services.DataImport.RevitTableRenderService>();
+            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.DataImportManager>();
+
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());
             // Add other registrations as needed

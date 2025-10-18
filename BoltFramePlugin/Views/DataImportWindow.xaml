@@ -1,0 +1,176 @@
+<Window x:Class="BoltFramePlugin.Views.DataImportWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:local="clr-namespace:BoltFramePlugin.Views"
+        mc:Ignorable="d"
+        Title="Import Table Data to Revit" Height="650" Width="800"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize">
+
+    <Window.Resources>
+        <!-- Inverse Bool Converter -->
+        <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
+        <local:InverseBoolConverter x:Key="InverseBoolConverter"/>
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#FF2C3E50" Padding="15" Margin="-10,-10,-10,10">
+            <StackPanel>
+                <TextBlock Text="Import CSV/Excel Data" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                <TextBlock Text="Import tabular data and render it to Revit drafting views"
+                           FontSize="12" Foreground="#FFE0E0E0" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Main Content -->
+        <TabControl Grid.Row="1">
+            <!-- File Selection Tab -->
+            <TabItem Header="1. File Selection">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <GroupBox Header="Source File" Padding="10" Margin="0,0,0,15">
+                            <StackPanel>
+                                <TextBlock Text="Select the CSV or Excel file to import:" Margin="0,0,0,5"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Grid.Column="0" Text="{Binding FilePath, Mode=TwoWay}"
+                                             IsReadOnly="True" Padding="5" Margin="0,0,10,0"/>
+                                    <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectFileCommand}"
+                                            Width="100" Height="30"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Import Options" Padding="10" Margin="0,0,0,15">
+                            <StackPanel>
+                                <CheckBox Content="First row contains headers" IsChecked="{Binding HasHeaders}" Margin="0,0,0,10"/>
+                                <CheckBox Content="Skip empty rows" IsChecked="{Binding SkipEmptyRows}" Margin="0,0,0,10"/>
+                                <CheckBox Content="Trim whitespace from cells" IsChecked="{Binding TrimWhitespace}" Margin="0,0,0,10"/>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="100"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="CSV Delimiter:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBox Grid.Column="1" Text="{Binding CsvDelimiter, Mode=TwoWay}"
+                                             MaxLength="1" Padding="5"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Preview" Padding="10">
+                            <StackPanel>
+                                <Button Content="Load Preview" Command="{Binding PreviewDataCommand}"
+                                        Width="120" Height="30" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                                <TextBlock Text="{Binding PreviewSummary}" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <TextBlock Text="Preview shows the structure of the imported data"
+                                           FontSize="10" Foreground="Gray"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Rendering Options Tab -->
+            <TabItem Header="2. Rendering Options">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <GroupBox Header="View Configuration" Padding="10" Margin="0,0,0,15">
+                            <StackPanel>
+                                <TextBlock Text="Drafting View Name:" Margin="0,0,0,5"/>
+                                <TextBox Text="{Binding ViewName, Mode=TwoWay}" Padding="5"/>
+                                <TextBlock Text="A new drafting view will be created with this name"
+                                           FontSize="10" Foreground="Gray" Margin="0,5,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Table Dimensions" Padding="10" Margin="0,0,0,15">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="80"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Column Width:" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                                <Slider Grid.Row="0" Grid.Column="1" Value="{Binding ColumnWidth}" Minimum="0.5" Maximum="3"
+                                        TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="10,0,10,10"/>
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ColumnWidth, StringFormat={}{0:F1} ft}"
+                                           VerticalAlignment="Center" Margin="0,0,0,10"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Row Height:" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                                <Slider Grid.Row="1" Grid.Column="1" Value="{Binding RowHeight}" Minimum="0.1" Maximum="1"
+                                        TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="10,0,10,10"/>
+                                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding RowHeight, StringFormat={}{0:F2} ft}"
+                                           VerticalAlignment="Center" Margin="0,0,0,10"/>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Text Height:" VerticalAlignment="Center"/>
+                                <Slider Grid.Row="2" Grid.Column="1" Value="{Binding TextHeight}" Minimum="0.05" Maximum="0.5"
+                                        TickFrequency="0.01" IsSnapToTickEnabled="True" Margin="10,0,10,0"/>
+                                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding TextHeight, StringFormat={}{0:F2} ft}"
+                                           VerticalAlignment="Center"/>
+                            </Grid>
+                        </GroupBox>
+
+                        <GroupBox Header="Appearance" Padding="10">
+                            <StackPanel>
+                                <CheckBox Content="Draw grid lines" IsChecked="{Binding DrawGridLines}" Margin="0,0,0,10"/>
+                                <CheckBox Content="Fill header background" IsChecked="{Binding FillHeaderBackground}" Margin="0,0,0,10"/>
+                                <CheckBox Content="Auto-size columns based on content" IsChecked="{Binding AutoSizeColumns}" Margin="0,0,0,10"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="150"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Text Alignment:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding TextAlignments}"
+                                              SelectedItem="{Binding SelectedTextAlignment, Mode=TwoWay}" Padding="5"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="2" Background="#FFF0F0F0" Padding="10" Margin="-10,10,-10,10" BorderBrush="#FFCCCCCC" BorderThickness="0,1,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Status:" FontWeight="Bold" Margin="0,0,10,0"/>
+                <TextBlock Grid.Column="1" Text="{Binding StatusMessage}"/>
+            </Grid>
+        </Border>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,0">
+            <Button Content="Cancel" Command="{Binding CloseCommand}" Width="100" Height="35" Margin="0,0,10,0"/>
+            <Button Content="Import and Render" Command="{Binding ImportAndRenderCommand}"
+                    Width="150" Height="35" Background="#FF16A085" Foreground="White"
+                    IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBoolConverter}}"/>
+        </StackPanel>
+    </Grid>
+</Window>

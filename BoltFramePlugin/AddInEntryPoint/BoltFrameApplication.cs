@@ -200,6 +200,28 @@ namespace BoltFramePlugin.AddInEntryPoint
                 longDescription: "Select property line and highlight perimeter walls for limiting distance calculation.",
                 iconName: "LimitingDistance"
             );
+
+            // Add Data Import Button
+            AddPushButton(
+                panel,
+                name: "DataImportButton",
+                text: "Import Table",
+                className: nameof(DataImportCommand),
+                tooltip: "Import CSV/Excel to Drafting View",
+                longDescription: "Import tabular data from CSV or Excel files and render as tables in Revit drafting views using detail items (text, lines, regions).",
+                iconName: "DataImport"
+            );
+
+            // Add Open Log Folder Button
+            AddPushButton(
+                panel,
+                name: "OpenLogFolderButton",
+                text: "Open Logs",
+                className: nameof(OpenLogFolderCommand),
+                tooltip: "Open Log Folder",
+                longDescription: "Opens the BoltFramePlugin log folder in Windows Explorer to view log files.",
+                iconName: "Logs"
+            );
         }
 
         /// <summary>

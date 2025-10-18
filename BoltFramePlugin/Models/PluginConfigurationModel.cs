@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using BoltFramePlugin.Models.LimitingDistance;
 
 namespace BoltFramePlugin.Models
 {
@@ -17,6 +18,9 @@ namespace BoltFramePlugin.Models
         public string DefaultBuildingClassification { get; set; } = "Type IIA";
         public double DefaultRayLengthLimit { get; set; } = 100.0; // feet
         public bool AutoCreateArrows { get; set; } = false; // Automatically create arrows when detecting reference lines
+
+        // Opening Limits Tables Data
+        public OpeningLimitsTableData OpeningLimitsData { get; set; } = null; // null means use defaults
 
         // UI Settings
         public string UITheme { get; set; } = "Light";
