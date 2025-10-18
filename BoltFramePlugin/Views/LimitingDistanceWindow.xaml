@@ -283,6 +283,11 @@
         </Grid>
             </TabItem>
 
+            <!-- View Tracker Tab -->
+            <TabItem Header="View Tracker">
+                <views:ViewTrackerControl/>
+            </TabItem>
+
             <!-- Dev Tab -->
             <TabItem Header="Dev">
                 <views:DevTabControl/>

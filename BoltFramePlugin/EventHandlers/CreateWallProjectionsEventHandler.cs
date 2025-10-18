@@ -33,6 +33,7 @@ namespace BoltFramePlugin.EventHandlers
         private List<ReferenceLineInfo> _referenceLines;
         private DistanceGroupSummary? _distanceGroup;
         private readonly ILoggingService _logger;
+        private Action<ViewSection, int>? _onViewCreated;
 
         #endregion
 
@@ -52,12 +53,13 @@ namespace BoltFramePlugin.EventHandlers
         /// <summary>
         /// Sets the parameters for wall projection creation
         /// </summary>
-        public void SetParameters(UIDocument uidoc, List<WallInfo> perimeterWalls, List<ReferenceLineInfo> referenceLines, DistanceGroupSummary? distanceGroup = null)
+        public void SetParameters(UIDocument uidoc, List<WallInfo> perimeterWalls, List<ReferenceLineInfo> referenceLines, DistanceGroupSummary? distanceGroup = null, Action<ViewSection, int>? onViewCreated = null)
         {
             _uidoc = uidoc;
             _perimeterWalls = perimeterWalls;
             _referenceLines = referenceLines;
             _distanceGroup = distanceGroup;
+            _onViewCreated = onViewCreated;
             _logger.LogInformation($"Parameters set - Walls: {perimeterWalls?.Count ?? 0}, Reference Lines: {referenceLines?.Count ?? 0}, Distance Group: {distanceGroup?.Orientation ?? "All"} {distanceGroup?.DistanceRange ?? ""}");
         }
 
@@ -352,6 +354,9 @@ namespace BoltFramePlugin.EventHandlers
                 {
                     ConfigureView(doc, sectionView, group);
                     _logger.LogInformation($"Created section view: {sectionView.Name}");
+
+                    // Notify that a view was created
+                    _onViewCreated?.Invoke(sectionView, group.Walls.Count);
                 }
 
                 return sectionView;

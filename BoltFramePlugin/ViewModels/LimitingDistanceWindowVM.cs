@@ -25,6 +25,8 @@ namespace BoltFramePlugin.ViewModels
         private CreateWallProjectionsEventHandler _createProjectionsHandler;
         private ExternalEvent _updateWallParameterEvent;
         private UpdateWallParameterEventHandler _updateWallParameterHandler;
+        private ExternalEvent _deleteViewEvent;
+        private DeleteViewEventHandler _deleteViewHandler;
 
         // Commands
         public ICommand SelectPropertyLineCommand { get; }
@@ -41,6 +43,9 @@ namespace BoltFramePlugin.ViewModels
         public ICommand CheckWallCeilingConnectionsCommand { get; }
         public ICommand FindPerimeterWallsWithoutTopCeilingCommand { get; }
         public ICommand DebugWallCeilingTrimmingCommand { get; }
+        public ICommand OpenViewCommand { get; }
+        public ICommand DeleteViewCommand { get; }
+        public ICommand DeleteAllViewsCommand { get; }
 
         // Properties
         private Element? _selectedPropertyLine;
@@ -173,6 +178,35 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
+        // Created Views Tracking
+        private ObservableCollection<ViewInfo> _createdViews;
+        public ObservableCollection<ViewInfo> CreatedViews
+        {
+            get => _createdViews;
+            set
+            {
+                _createdViews = value;
+                OnPropertyChanged(nameof(CreatedViews));
+                OnPropertyChanged(nameof(CreatedViewsCount));
+            }
+        }
+
+        public string CreatedViewsCount => $"Created Views: {_createdViews?.Count ?? 0}";
+
+        private ViewInfo? _selectedView;
+        public ViewInfo? SelectedView
+        {
+            get => _selectedView;
+            set
+            {
+                _selectedView = value;
+                OnPropertyChanged(nameof(SelectedView));
+                OnPropertyChanged(nameof(IsViewSelected));
+            }
+        }
+
+        public bool IsViewSelected => _selectedView != null;
+
         public LimitingDistanceWindowVM(UIDocument uidoc) : base(uidoc)
         {
             _revitService = DIContainerService.Container.GetInstance<IRevitServiceFactory>().Create(uidoc);
@@ -181,6 +215,7 @@ namespace BoltFramePlugin.ViewModels
             _perimeterWalls = new ObservableCollection<WallInfo>();
             _referenceLines = new ObservableCollection<ReferenceLineInfo>();
             _distanceGroups = new ObservableCollection<DistanceGroupSummary>();
+            _createdViews = new ObservableCollection<ViewInfo>();
 
             // Initialize ExternalEvent for arrow creation
             _createArrowsHandler = new CreateArrowsEventHandler();
@@ -198,6 +233,10 @@ namespace BoltFramePlugin.ViewModels
             _updateWallParameterHandler = new UpdateWallParameterEventHandler(_logger);
             _updateWallParameterEvent = ExternalEvent.Create(_updateWallParameterHandler);
 
+            // Initialize ExternalEvent for deleting views
+            _deleteViewHandler = new DeleteViewEventHandler();
+            _deleteViewEvent = ExternalEvent.Create(_deleteViewHandler);
+
             // Initialize commands
             SelectPropertyLineCommand = new RelayCommand(SelectPropertyLine);
             HighlightWallsCommand = new RelayCommand(HighlightWalls, CanHighlightWalls);
@@ -213,6 +252,9 @@ namespace BoltFramePlugin.ViewModels
             CheckWallCeilingConnectionsCommand = new RelayCommand(CheckWallCeilingConnections);
             FindPerimeterWallsWithoutTopCeilingCommand = new RelayCommand(FindPerimeterWallsWithoutTopCeiling);
             DebugWallCeilingTrimmingCommand = new RelayCommand(DebugWallCeilingTrimming);
+            OpenViewCommand = new RelayCommand(OpenView, CanOpenView);
+            DeleteViewCommand = new RelayCommand(DeleteView, CanDeleteView);
+            DeleteAllViewsCommand = new RelayCommand(DeleteAllViews, CanDeleteAllViews);
 
             _logger.LogInformation("LimitingDistanceWindowVM initialized.");
 
@@ -993,8 +1035,13 @@ namespace BoltFramePlugin.ViewModels
                     return;
                 }
 
-                // Set parameters for the event handler
-                _createProjectionsHandler.SetParameters(_document, PerimeterWalls.ToList(), ReferenceLines.ToList());
+                // Set parameters for the event handler with view tracking callback
+                _createProjectionsHandler.SetParameters(
+                    _document,
+                    PerimeterWalls.ToList(),
+                    ReferenceLines.ToList(),
+                    null,
+                    AddCreatedView);
 
                 // Raise the external event
                 _createProjectionsEvent.Raise();
@@ -1719,5 +1766,124 @@ namespace BoltFramePlugin.ViewModels
                 _logger.LogError("Error debugging wall-ceiling trimming", ex);
             }
         }
+
+        #region View Tracking Commands
+
+        private bool CanOpenView(object parameter) => SelectedView != null && SelectedView.View != null;
+
+        private void OpenView(object parameter)
+        {
+            try
+            {
+                if (SelectedView?.View == null)
+                {
+                    _logger.LogWarning("OpenView: No view selected or view is null");
+                    return;
+                }
+
+                _document.ActiveView = SelectedView.View;
+                _logger.LogInformation($"Opened view: {SelectedView.ViewName}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error opening view: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to open view: {ex.Message}");
+            }
+        }
+
+        private bool CanDeleteView(object parameter) => SelectedView != null;
+
+        private void DeleteView(object parameter)
+        {
+            try
+            {
+                if (SelectedView == null)
+                {
+                    _logger.LogWarning("DeleteView: No view selected");
+                    return;
+                }
+
+                var viewToDelete = SelectedView;
+
+                // Set parameters for the delete event handler
+                _deleteViewHandler.SetParameters(
+                    new List<ElementId> { viewToDelete.View.Id },
+                    () =>
+                    {
+                        // This callback runs after deletion is complete
+                        CreatedViews.Remove(viewToDelete);
+                        _logger.LogInformation($"Deleted view: {viewToDelete.ViewName}");
+                    });
+
+                // Raise the external event
+                _deleteViewEvent.Raise();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error initiating view deletion: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to delete view: {ex.Message}");
+            }
+        }
+
+        private bool CanDeleteAllViews(object parameter) => CreatedViews?.Count > 0;
+
+        private void DeleteAllViews(object parameter)
+        {
+            try
+            {
+                if (CreatedViews == null || CreatedViews.Count == 0)
+                {
+                    _logger.LogWarning("DeleteAllViews: No views to delete");
+                    return;
+                }
+
+                var result = TaskDialog.Show("Confirm Delete",
+                    $"Are you sure you want to delete all {CreatedViews.Count} created views?",
+                    TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No);
+
+                if (result != TaskDialogResult.Yes)
+                    return;
+
+                var viewIds = CreatedViews.Select(v => v.View.Id).ToList();
+                var count = CreatedViews.Count;
+
+                // Set parameters for the delete event handler
+                _deleteViewHandler.SetParameters(
+                    viewIds,
+                    () =>
+                    {
+                        // This callback runs after deletion is complete
+                        CreatedViews.Clear();
+                        _logger.LogInformation($"Deleted all {count} views");
+                    });
+
+                // Raise the external event
+                _deleteViewEvent.Raise();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error initiating deletion of all views: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to delete all views: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Add a created view to the tracking list
+        /// </summary>
+        public void AddCreatedView(ViewSection view, int wallsCount)
+        {
+            try
+            {
+                var viewInfo = new ViewInfo(view, wallsCount);
+                CreatedViews.Add(viewInfo);
+                _logger.LogInformation($"Added view to tracking: {view.Name} with {wallsCount} walls");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error adding created view to tracking: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
     }
 }
