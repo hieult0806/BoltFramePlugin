@@ -898,47 +898,6 @@ namespace BoltFramePlugin.EventHandlers
                 var p1_3D = centerInXY - (wallDirection * halfWidth);
                 var p2_3D = centerInXY + (wallDirection * halfWidth);
 
-                // Apply edge offset to avoid exact coincidence with wall boundaries
-                // This prevents "intersecting boundaries" errors in FilledRegion.Create
-                const double EDGE_OFFSET = 1.0 / (12.0 * 16.0); // 1/16 inch in feet
-                const double EDGE_TOLERANCE = 0.01; // 1/8 inch
-
-                var (wallBase, wallTop) = GetWallElevations(doc, host);
-                var wallStart = wallLocationCurve.GetEndPoint(0);
-                var wallEnd = wallLocationCurve.GetEndPoint(1);
-
-                // Check and adjust vertical edges (bottom/top)
-                if (Math.Abs(bottomElevation - wallBase) < EDGE_TOLERANCE)
-                {
-                    bottomElevation += EDGE_OFFSET;
-                    _logger.LogInformation($"Opening {opening.Id.Value}: Adjusted bottom elevation (+{EDGE_OFFSET:F6} ft) to avoid wall base coincidence");
-                }
-                if (Math.Abs(topElevation - wallTop) < EDGE_TOLERANCE)
-                {
-                    topElevation -= EDGE_OFFSET;
-                    _logger.LogInformation($"Opening {opening.Id.Value}: Adjusted top elevation (-{EDGE_OFFSET:F6} ft) to avoid wall top coincidence");
-                }
-
-                // Check and adjust horizontal edges (left/right along wall direction)
-                // Project wall endpoints and opening points to check for coincidence
-                var wallStartDist = wallDirection.DotProduct(wallStart - centerInXY);
-                var wallEndDist = wallDirection.DotProduct(wallEnd - centerInXY);
-                var openingP1Dist = wallDirection.DotProduct(p1_3D - centerInXY);
-                var openingP2Dist = wallDirection.DotProduct(p2_3D - centerInXY);
-
-                if (Math.Abs(openingP1Dist - wallStartDist) < EDGE_TOLERANCE || Math.Abs(openingP1Dist - wallEndDist) < EDGE_TOLERANCE)
-                {
-                    // P1 is too close to wall edge, move it inward
-                    p1_3D = centerInXY - (wallDirection * (halfWidth - EDGE_OFFSET));
-                    _logger.LogInformation($"Opening {opening.Id.Value}: Adjusted P1 (+{EDGE_OFFSET:F6} ft inward) to avoid wall edge coincidence");
-                }
-                if (Math.Abs(openingP2Dist - wallStartDist) < EDGE_TOLERANCE || Math.Abs(openingP2Dist - wallEndDist) < EDGE_TOLERANCE)
-                {
-                    // P2 is too close to wall edge, move it inward
-                    p2_3D = centerInXY + (wallDirection * (halfWidth - EDGE_OFFSET));
-                    _logger.LogInformation($"Opening {opening.Id.Value}: Adjusted P2 (-{EDGE_OFFSET:F6} ft inward) to avoid wall edge coincidence");
-                }
-
                 _logger.LogInformation($"Opening {opening.Id.Value}: P1_3D = ({p1_3D.X:F3}, {p1_3D.Y:F3}, {p1_3D.Z:F3})");
                 _logger.LogInformation($"Opening {opening.Id.Value}: P2_3D = ({p2_3D.X:F3}, {p2_3D.Y:F3}, {p2_3D.Z:F3})");
 
@@ -1007,7 +966,7 @@ namespace BoltFramePlugin.EventHandlers
         }
 
         /// <summary>
-        /// Creates a filled region with openings (holes) subtracted
+        /// Creates a filled region with openings geometrically subtracted using polygon boolean operations
         /// </summary>
         private void CreateFilledRegionWithOpenings(Document doc, ViewSection elevationView, ElementId wallId,
             WallInfo wallInfo, CurveLoop outerLoop, List<CurveLoop> openingLoops)
@@ -1019,31 +978,138 @@ namespace BoltFramePlugin.EventHandlers
             {
                 try
                 {
-                    // Combine outer loop and opening loops
-                    // The first loop is the outer boundary, subsequent loops are holes
-                    var allLoops = new List<CurveLoop> { outerLoop };
-                    allLoops.AddRange(openingLoops);
-
-                    _logger.LogInformation($"Attempting to create region: outer loop has {outerLoop.NumberOfCurves()} curves, {openingLoops.Count} opening loops");
-                    for (int i = 0; i < openingLoops.Count; i++)
+                    if (openingLoops.Count == 0)
                     {
-                        _logger.LogInformation($"  Opening loop {i}: {openingLoops[i].NumberOfCurves()} curves, IsOpen={openingLoops[i].IsOpen()}");
+                        // No openings, create simple region
+                        var wallRegion = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, new List<CurveLoop> { outerLoop });
+                        _logger.LogInformation($"Created wall region for wall {wallId.Value} (no openings)");
+                    }
+                    else
+                    {
+                        // Perform boolean subtraction to compute wall fragments
+                        var wallPoints = GetCurveLoopPoints(outerLoop);
+                        var wallRect = Helpers.PolygonBooleanOperations.Rectangle2D.FromPoints(wallPoints);
+
+                        _logger.LogInformation($"Wall rectangle (2D): U=[{wallRect.MinU:F3}, {wallRect.MaxU:F3}], V=[{wallRect.MinV:F3}, {wallRect.MaxV:F3}]");
+
+                        var openingRects = new List<Helpers.PolygonBooleanOperations.Rectangle2D>();
+                        foreach (var openingLoop in openingLoops)
+                        {
+                            var openingPoints = GetCurveLoopPoints(openingLoop);
+                            var openingRect = Helpers.PolygonBooleanOperations.Rectangle2D.FromPoints(openingPoints);
+                            openingRects.Add(openingRect);
+
+                            _logger.LogInformation($"Opening rectangle (2D): U=[{openingRect.MinU:F3}, {openingRect.MaxU:F3}], V=[{openingRect.MinV:F3}, {openingRect.MaxV:F3}]");
+                            _logger.LogInformation($"  Intersects wall: {wallRect.Intersects(openingRect)}, Contains: {wallRect.Contains(openingRect)}");
+                        }
+
+                        // Subtract all openings from the wall rectangle
+                        var resultRectangles = Helpers.PolygonBooleanOperations.SubtractOpenings(wallRect, openingRects);
+                        _logger.LogInformation($"Boolean subtraction produced {resultRectangles.Count} fragments from wall with {openingRects.Count} openings");
+
+                        // Convert result rectangles back to CurveLoops and create filled regions
+                        var resultLoops = Helpers.PolygonBooleanOperations.ToCurveLoops(resultRectangles, wallPoints);
+
+                        foreach (var loop in resultLoops)
+                        {
+                            try
+                            {
+                                var region = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, new List<CurveLoop> { loop });
+                                _logger.LogInformation($"Created wall fragment region ({loop.NumberOfCurves()} curves)");
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning($"Failed to create wall fragment region: {ex.Message}");
+                            }
+                        }
                     }
 
-                    var region = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, allLoops);
-
-                    _logger.LogInformation($"Created region for wall {wallId.Value} with {outerLoop.NumberOfCurves()} curves and {openingLoops.Count} openings");
+                    _logger.LogInformation($"Created region for wall {wallId.Value} with {openingLoops.Count} openings subtracted");
                     _logger.LogInformation($"Wall {wallInfo.ElementId.Value} - LD {wallInfo.LimitingDistance.Value:F1} ft in group {distanceGroup.Label}");
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning($"Failed to create region for wall {wallId.Value}: {ex.Message}");
-                    _logger.LogWarning($"  Outer loop: {outerLoop.NumberOfCurves()} curves, IsOpen={outerLoop.IsOpen()}");
-                    for (int i = 0; i < openingLoops.Count; i++)
-                    {
-                        _logger.LogWarning($"  Opening loop {i}: {openingLoops[i].NumberOfCurves()} curves, IsOpen={openingLoops[i].IsOpen()}");
-                    }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Extracts the corner points from a CurveLoop
+        /// </summary>
+        private static XYZ[] GetCurveLoopPoints(CurveLoop loop)
+        {
+            var points = new List<XYZ>();
+            foreach (Curve curve in loop)
+            {
+                points.Add(curve.GetEndPoint(0));
+            }
+            return points.ToArray();
+        }
+
+        /// <summary>
+        /// Gets or creates a filled region type with solid white/background fill for opening cutouts
+        /// NOTE: This is no longer used - we use geometric boolean subtraction instead
+        /// </summary>
+        [Obsolete("No longer used - geometric boolean subtraction is used instead")]
+        private FilledRegionType? GetOrCreateBackgroundFilledRegionType(Document doc)
+        {
+            const string typeName = "Opening_Cutout_Background";
+
+            // Try to find existing type
+            var existingType = new FilteredElementCollector(doc)
+                .OfClass(typeof(FilledRegionType))
+                .Cast<FilledRegionType>()
+                .FirstOrDefault(t => t.Name == typeName);
+
+            if (existingType != null)
+            {
+                return existingType;
+            }
+
+            try
+            {
+                // Get a default filled region type to duplicate
+                var defaultType = new FilteredElementCollector(doc)
+                    .OfClass(typeof(FilledRegionType))
+                    .Cast<FilledRegionType>()
+                    .FirstOrDefault();
+
+                if (defaultType == null)
+                {
+                    _logger.LogWarning("No default filled region type found to duplicate");
+                    return null;
+                }
+
+                // Duplicate and rename
+                var newType = defaultType.Duplicate(typeName) as FilledRegionType;
+                if (newType == null)
+                {
+                    _logger.LogWarning("Failed to duplicate filled region type");
+                    return null;
+                }
+
+                // Try to set it to solid white or background color
+                // Get the fill pattern for solid fill
+                var solidPattern = new FilteredElementCollector(doc)
+                    .OfClass(typeof(FillPatternElement))
+                    .Cast<FillPatternElement>()
+                    .FirstOrDefault(fp => fp.GetFillPattern().IsSolidFill);
+
+                if (solidPattern != null)
+                {
+                    newType.ForegroundPatternId = solidPattern.Id;
+                    newType.ForegroundPatternColor = new Autodesk.Revit.DB.Color(255, 255, 255); // White
+
+                    _logger.LogInformation($"Created background filled region type '{typeName}' with white solid fill");
+                }
+
+                return newType;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error creating background filled region type: {ex.Message}");
+                return null;
             }
         }
 
