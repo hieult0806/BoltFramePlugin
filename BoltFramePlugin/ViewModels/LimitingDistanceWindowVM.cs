@@ -40,6 +40,7 @@ namespace BoltFramePlugin.ViewModels
         public ICommand CheckCeilingWallConnectionsCommand { get; }
         public ICommand CheckWallCeilingConnectionsCommand { get; }
         public ICommand FindPerimeterWallsWithoutTopCeilingCommand { get; }
+        public ICommand DebugWallCeilingTrimmingCommand { get; }
 
         // Properties
         private Element? _selectedPropertyLine;
@@ -211,6 +212,7 @@ namespace BoltFramePlugin.ViewModels
             CheckCeilingWallConnectionsCommand = new RelayCommand(CheckCeilingWallConnections);
             CheckWallCeilingConnectionsCommand = new RelayCommand(CheckWallCeilingConnections);
             FindPerimeterWallsWithoutTopCeilingCommand = new RelayCommand(FindPerimeterWallsWithoutTopCeiling);
+            DebugWallCeilingTrimmingCommand = new RelayCommand(DebugWallCeilingTrimming);
 
             _logger.LogInformation("LimitingDistanceWindowVM initialized.");
 
@@ -1616,6 +1618,84 @@ namespace BoltFramePlugin.ViewModels
             {
                 DebugOutput += $"Error: {ex.Message}\n";
                 _logger.LogError("Error finding perimeter walls without top ceiling", ex);
+            }
+        }
+
+        private void DebugWallCeilingTrimming(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("DebugWallCeilingTrimming command executed.");
+                DebugOutput = "Analyzing wall-ceiling trimming for current walls...\n\n";
+
+                if (_perimeterWalls == null || _perimeterWalls.Count == 0)
+                {
+                    DebugOutput += "No walls loaded. Please run 'Highlight Walls' first.\n";
+                    return;
+                }
+
+                int totalWalls = 0;
+                int wallsWithCeilings = 0;
+                int wallsWithTopMostCeilings = 0;
+                int wallsTrimmed = 0;
+                int wallsNotTrimmed = 0;
+
+                foreach (var wallInfo in _perimeterWalls)
+                {
+                    totalWalls++;
+                    var wall = _document.Document.GetElement(wallInfo.ElementId) as Wall;
+                    if (wall == null) continue;
+
+                    var connectedCeilings = Helpers.CeilingWallAnalyzer.GetConnectedCeilings(wall, _document.Document);
+
+                    if (connectedCeilings.Count > 0)
+                    {
+                        wallsWithCeilings++;
+                        DebugOutput += $"Wall {wallInfo.ElementId.Value} ({wallInfo.Name}):\n";
+                        DebugOutput += $"  {connectedCeilings.Count} connected ceiling(s)\n";
+
+                        foreach (var rel in connectedCeilings)
+                        {
+                            var isTopMostParam = rel.Ceiling.LookupParameter("IsTopMost");
+                            var isTopMost = isTopMostParam != null && isTopMostParam.StorageType == StorageType.Integer && isTopMostParam.AsInteger() == 1;
+
+                            DebugOutput += $"    Ceiling {rel.Ceiling.Id.Value}: IsJoined={rel.IsJoined}, ";
+                            DebugOutput += $"IsTopMost={isTopMost}\n";
+                            DebugOutput += $"      Ceiling elev: {rel.CeilingElevation:F2} ft, ";
+                            DebugOutput += $"Wall top: {rel.WallTopElevation:F2} ft\n";
+
+                            if (isTopMost)
+                            {
+                                wallsWithTopMostCeilings++;
+                                if (rel.CeilingElevation < rel.WallTopElevation)
+                                {
+                                    DebugOutput += $"      ** SHOULD TRIM ** (ceiling below wall top)\n";
+                                    wallsTrimmed++;
+                                }
+                                else
+                                {
+                                    DebugOutput += $"      ** WILL NOT TRIM ** (ceiling at/above wall top)\n";
+                                    wallsNotTrimmed++;
+                                }
+                            }
+                        }
+                        DebugOutput += "\n";
+                    }
+                }
+
+                DebugOutput += $"SUMMARY:\n";
+                DebugOutput += $"  Total walls: {totalWalls}\n";
+                DebugOutput += $"  Walls with connected ceilings: {wallsWithCeilings}\n";
+                DebugOutput += $"  Walls with top-most ceilings: {wallsWithTopMostCeilings}\n";
+                DebugOutput += $"  Should trim: {wallsTrimmed}\n";
+                DebugOutput += $"  Won't trim (ceiling too high): {wallsNotTrimmed}\n";
+
+                _logger.LogInformation($"Wall-ceiling trimming debug complete.");
+            }
+            catch (Exception ex)
+            {
+                DebugOutput += $"Error: {ex.Message}\n";
+                _logger.LogError("Error debugging wall-ceiling trimming", ex);
             }
         }
     }

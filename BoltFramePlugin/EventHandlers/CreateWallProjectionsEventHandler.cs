@@ -621,7 +621,7 @@ namespace BoltFramePlugin.EventHandlers
                     // Get wall openings (doors, windows, etc.) and create curve loops for them
                     var openingLoops = GetWallOpeningLoops(doc, wall, baseElevation, viewOrigin, viewRightDirection, viewUpDirection);
 
-                    CreateFilledRegionWithOpenings(doc, elevationView, wall.Id, wallInfo, outerLoop, openingLoops);
+                    CreateFilledRegionWithOpenings(doc, elevationView, wall.Id, wallInfo, outerLoop, openingLoops, viewOrigin, viewRightDirection, viewUpDirection);
                 }
             }
             catch (Exception ex)
@@ -966,10 +966,10 @@ namespace BoltFramePlugin.EventHandlers
         }
 
         /// <summary>
-        /// Creates a filled region with openings geometrically subtracted using polygon boolean operations
+        /// Creates a filled region with openings and top-most ceilings geometrically subtracted using polygon boolean operations
         /// </summary>
         private void CreateFilledRegionWithOpenings(Document doc, ViewSection elevationView, ElementId wallId,
-            WallInfo wallInfo, CurveLoop outerLoop, List<CurveLoop> openingLoops)
+            WallInfo wallInfo, CurveLoop outerLoop, List<CurveLoop> openingLoops, XYZ viewOrigin, XYZ viewRightDirection, XYZ viewUpDirection)
         {
             var distanceGroup = GetDistanceGroupForWall(wallInfo.LimitingDistance.Value);
             var filledRegionType = GetOrCreateColoredFilledRegionType(doc, distanceGroup);
@@ -978,34 +978,141 @@ namespace BoltFramePlugin.EventHandlers
             {
                 try
                 {
-                    if (openingLoops.Count == 0)
+                    // Get wall element
+                    var wall = doc.GetElement(wallId) as Wall;
+                    if (wall == null)
                     {
-                        // No openings, create simple region
-                        var wallRegion = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, new List<CurveLoop> { outerLoop });
-                        _logger.LogInformation($"Created wall region for wall {wallId.Value} (no openings)");
+                        _logger.LogWarning($"Wall {wallId.Value} not found");
+                        return;
+                    }
+
+                    // Perform boolean subtraction to compute wall fragments
+                    var wallPoints = GetCurveLoopPoints(outerLoop);
+                    var wallRect = Helpers.PolygonBooleanOperations.Rectangle2D.FromPoints(wallPoints);
+
+                    _logger.LogInformation($"Wall rectangle (2D): U=[{wallRect.MinU:F3}, {wallRect.MaxU:F3}], V=[{wallRect.MinV:F3}, {wallRect.MaxV:F3}]");
+
+                    // Check for joined top-most ceilings and trim wall height to ceiling elevation
+                    var connectedCeilings = Helpers.CeilingWallAnalyzer.GetConnectedCeilings(wall, doc);
+                    _logger.LogInformation($"Wall {wallId.Value}: Found {connectedCeilings.Count} connected ceiling(s)");
+
+                    double? maxWallHeightIn2D = null;
+
+                    foreach (var relationship in connectedCeilings)
+                    {
+                        _logger.LogInformation($"  Checking ceiling {relationship.Ceiling.Id.Value}: IsJoined={relationship.IsJoined}");
+
+                        // Check if ceiling is top-most
+                        var isTopMostParam = relationship.Ceiling.LookupParameter("IsTopMost");
+                        if (isTopMostParam != null)
+                        {
+                            _logger.LogInformation($"    IsTopMost param exists, StorageType={isTopMostParam.StorageType}, Value={isTopMostParam.AsInteger()}");
+                        }
+                        else
+                        {
+                            _logger.LogInformation($"    IsTopMost param NOT found");
+                        }
+
+                        if (isTopMostParam != null && isTopMostParam.StorageType == StorageType.Integer && isTopMostParam.AsInteger() == 1)
+                        {
+                            // Get ceiling elevation in 3D world coordinates
+                            var ceilingElevation3D = relationship.CeilingElevation;
+                            var wallBaseElevation = relationship.WallBaseElevation;
+                            var wallTopElevation = relationship.WallTopElevation;
+
+                            // Project a point at ceiling elevation to the 2D view plane
+                            // Use the wall's location curve to get a point on the wall at the ceiling elevation
+                            var wallLocationCurve = (wall.Location as LocationCurve)?.Curve;
+                            if (wallLocationCurve != null)
+                            {
+                                var wallMidPoint = wallLocationCurve.Evaluate(0.5, true);
+                                var ceilingPoint3D = new XYZ(wallMidPoint.X, wallMidPoint.Y, ceilingElevation3D);
+                                _logger.LogInformation($"    Ceiling point 3D: ({ceilingPoint3D.X:F3}, {ceilingPoint3D.Y:F3}, {ceilingPoint3D.Z:F3})");
+
+                                var ceilingPoint2D = ProjectPointToViewPlane(ceilingPoint3D, viewOrigin, viewRightDirection, viewUpDirection);
+                                _logger.LogInformation($"    Ceiling point 2D: ({ceilingPoint2D.X:F3}, {ceilingPoint2D.Y:F3}, {ceilingPoint2D.Z:F3})");
+
+                                // The Z component of the projected point is the vertical position in the 2D view
+                                var ceilingHeightIn2D = ceilingPoint2D.Z;
+
+                                // Keep track of the lowest ceiling (most restrictive)
+                                if (!maxWallHeightIn2D.HasValue || ceilingHeightIn2D < maxWallHeightIn2D.Value)
+                                {
+                                    maxWallHeightIn2D = ceilingHeightIn2D;
+                                    _logger.LogInformation($"    ** SELECTED as limiting ceiling **");
+                                    _logger.LogInformation($"    Ceiling 3D elevation: {ceilingElevation3D:F2} ft, projected 2D height: {ceilingHeightIn2D:F3}");
+                                    _logger.LogInformation($"    Wall base 3D: {wallBaseElevation:F2} ft, Wall top 3D: {wallTopElevation:F2} ft");
+                                    _logger.LogInformation($"    Current wall rect 2D: MinV={wallRect.MinV:F3}, MaxV={wallRect.MaxV:F3}");
+                                }
+                                else
+                                {
+                                    _logger.LogInformation($"    Not selected (higher than current limit {maxWallHeightIn2D.Value:F3})");
+                                }
+                            }
+                        }
+                    }
+
+                    // If there's a top-most ceiling, trim the wall rectangle to the ceiling height in 2D view coordinates
+                    if (maxWallHeightIn2D.HasValue)
+                    {
+                        _logger.LogInformation($"Wall {wallId.Value}: Will trim from MaxV={wallRect.MaxV:F3} to {maxWallHeightIn2D.Value:F3} (will trim={maxWallHeightIn2D.Value < wallRect.MaxV})");
+
+                        if (maxWallHeightIn2D.Value < wallRect.MaxV)
+                        {
+                            wallRect = new Helpers.PolygonBooleanOperations.Rectangle2D(
+                                wallRect.MinU,
+                                wallRect.MaxU,
+                                wallRect.MinV,
+                                maxWallHeightIn2D.Value
+                            );
+                            _logger.LogInformation($"  *** TRIMMED *** New MaxV={wallRect.MaxV:F3}");
+                        }
+                        else
+                        {
+                            _logger.LogInformation($"  NOT trimmed - ceiling is at or above wall top");
+                        }
                     }
                     else
                     {
-                        // Perform boolean subtraction to compute wall fragments
-                        var wallPoints = GetCurveLoopPoints(outerLoop);
-                        var wallRect = Helpers.PolygonBooleanOperations.Rectangle2D.FromPoints(wallPoints);
+                        _logger.LogInformation($"Wall {wallId.Value}: No top-most ceiling found, no trimming");
+                    }
 
-                        _logger.LogInformation($"Wall rectangle (2D): U=[{wallRect.MinU:F3}, {wallRect.MaxU:F3}], V=[{wallRect.MinV:F3}, {wallRect.MaxV:F3}]");
+                    var cutoutRects = new List<Helpers.PolygonBooleanOperations.Rectangle2D>();
 
-                        var openingRects = new List<Helpers.PolygonBooleanOperations.Rectangle2D>();
-                        foreach (var openingLoop in openingLoops)
+                    // Add door/window openings
+                    foreach (var openingLoop in openingLoops)
+                    {
+                        var openingPoints = GetCurveLoopPoints(openingLoop);
+                        var openingRect = Helpers.PolygonBooleanOperations.Rectangle2D.FromPoints(openingPoints);
+                        cutoutRects.Add(openingRect);
+
+                        _logger.LogInformation($"Opening rectangle (2D): U=[{openingRect.MinU:F3}, {openingRect.MaxU:F3}], V=[{openingRect.MinV:F3}, {openingRect.MaxV:F3}]");
+                    }
+
+                    if (cutoutRects.Count == 0)
+                    {
+                        // No cutouts, but wall may have been trimmed by ceiling
+                        // Need to create loop from the trimmed wallRect, not the original outerLoop
+                        var trimmedLoops = Helpers.PolygonBooleanOperations.ToCurveLoops(
+                            new List<Helpers.PolygonBooleanOperations.Rectangle2D> { wallRect },
+                            wallPoints
+                        );
+
+                        if (trimmedLoops.Count > 0)
                         {
-                            var openingPoints = GetCurveLoopPoints(openingLoop);
-                            var openingRect = Helpers.PolygonBooleanOperations.Rectangle2D.FromPoints(openingPoints);
-                            openingRects.Add(openingRect);
-
-                            _logger.LogInformation($"Opening rectangle (2D): U=[{openingRect.MinU:F3}, {openingRect.MaxU:F3}], V=[{openingRect.MinV:F3}, {openingRect.MaxV:F3}]");
-                            _logger.LogInformation($"  Intersects wall: {wallRect.Intersects(openingRect)}, Contains: {wallRect.Contains(openingRect)}");
+                            var wallRegion = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, new List<CurveLoop> { trimmedLoops[0] });
+                            _logger.LogInformation($"Created wall region for wall {wallId.Value} (no cutouts, trimmed: MaxV={wallRect.MaxV:F3})");
                         }
-
-                        // Subtract all openings from the wall rectangle
-                        var resultRectangles = Helpers.PolygonBooleanOperations.SubtractOpenings(wallRect, openingRects);
-                        _logger.LogInformation($"Boolean subtraction produced {resultRectangles.Count} fragments from wall with {openingRects.Count} openings");
+                        else
+                        {
+                            _logger.LogWarning($"Failed to create trimmed wall region for wall {wallId.Value} - no valid curves generated");
+                        }
+                    }
+                    else
+                    {
+                        // Subtract all cutouts (openings + top-most ceilings) from the wall rectangle
+                        var resultRectangles = Helpers.PolygonBooleanOperations.SubtractOpenings(wallRect, cutoutRects);
+                        _logger.LogInformation($"Boolean subtraction produced {resultRectangles.Count} fragments from wall with {cutoutRects.Count} cutouts ({openingLoops.Count} openings + {cutoutRects.Count - openingLoops.Count} top-most ceilings)");
 
                         // Convert result rectangles back to CurveLoops and create filled regions
                         var resultLoops = Helpers.PolygonBooleanOperations.ToCurveLoops(resultRectangles, wallPoints);
@@ -1024,7 +1131,7 @@ namespace BoltFramePlugin.EventHandlers
                         }
                     }
 
-                    _logger.LogInformation($"Created region for wall {wallId.Value} with {openingLoops.Count} openings subtracted");
+                    _logger.LogInformation($"Created region for wall {wallId.Value} with {cutoutRects.Count} cutouts subtracted");
                     _logger.LogInformation($"Wall {wallInfo.ElementId.Value} - LD {wallInfo.LimitingDistance.Value:F1} ft in group {distanceGroup.Label}");
                 }
                 catch (Exception ex)

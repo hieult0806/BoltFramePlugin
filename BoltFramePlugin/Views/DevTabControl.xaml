@@ -47,7 +47,14 @@
                         <Button Content="Find Perimeter Walls Without Top Ceiling"
                                 Command="{Binding FindPerimeterWallsWithoutTopCeilingCommand}"
                                 Height="32"
+                                Margin="0,0,0,10"
                                 Background="#FFE74C3C"
+                                Foreground="White"/>
+
+                        <Button Content="Debug Wall-Ceiling Trimming"
+                                Command="{Binding DebugWallCeilingTrimmingCommand}"
+                                Height="32"
+                                Background="#FFFF9800"
                                 Foreground="White"/>
                     </StackPanel>
                 </GroupBox>
