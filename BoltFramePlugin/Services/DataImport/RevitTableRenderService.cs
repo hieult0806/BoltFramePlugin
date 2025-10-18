@@ -97,20 +97,23 @@ namespace BoltFramePlugin.Services.DataImport
 
                 // Calculate text position based on alignment
                 double textX = currentX;
+                double padding = options.TextHeight * 0.2; // Small padding
+
                 switch (options.TextAlign)
                 {
                     case TextAlignment.Center:
                         textX = currentX + cellWidth / 2;
                         break;
                     case TextAlignment.Right:
-                        textX = currentX + cellWidth - options.TextHeight * 0.5;
+                        textX = currentX + cellWidth - padding;
                         break;
                     default: // Left
-                        textX = currentX + options.TextHeight * 0.5;
+                        textX = currentX + padding;
                         break;
                 }
 
-                double textY = startY + rowHeight / 2;
+                // Position text vertically centered in the cell (accounting for text baseline)
+                double textY = startY - (rowHeight / 2) - (options.TextHeight / 4);
 
                 // Create text note
                 CreateTextNote(doc, view, cellText, textX, textY, textType, options.TextAlign);
@@ -118,13 +121,13 @@ namespace BoltFramePlugin.Services.DataImport
                 // Draw grid lines
                 if (options.DrawGridLines)
                 {
-                    // Vertical line
-                    DrawDetailLine(doc, view, currentX, startY, currentX, startY + rowHeight, options.LineStyleName);
+                    // Vertical line (from top to bottom)
+                    DrawDetailLine(doc, view, currentX, startY, currentX, startY - rowHeight, options.LineStyleName);
 
                     // Draw right border for last column
                     if (i == cells.Count - 1)
                     {
-                        DrawDetailLine(doc, view, currentX + cellWidth, startY, currentX + cellWidth, startY + rowHeight, options.LineStyleName);
+                        DrawDetailLine(doc, view, currentX + cellWidth, startY, currentX + cellWidth, startY - rowHeight, options.LineStyleName);
                     }
                 }
 
@@ -135,10 +138,10 @@ namespace BoltFramePlugin.Services.DataImport
             if (options.DrawGridLines)
             {
                 DrawDetailLine(doc, view, startX, startY, currentX, startY, options.LineStyleName);
-                DrawDetailLine(doc, view, startX, startY + rowHeight, currentX, startY + rowHeight, options.LineStyleName);
+                DrawDetailLine(doc, view, startX, startY - rowHeight, currentX, startY - rowHeight, options.LineStyleName);
             }
 
-            return startY + rowHeight;
+            return startY - rowHeight; // Subtract to move down (Y decreases downward in Revit)
         }
 
         private List<double> CalculateColumnWidths(ImportedTableData data, TableRenderOptions options)
@@ -227,13 +230,17 @@ namespace BoltFramePlugin.Services.DataImport
         {
             try
             {
-                // Create boundary curves
+                // Create boundary curves (clockwise, accounting for Y decreasing downward)
+                // Top-left to top-right
+                // Top-right to bottom-right (y - height since Y decreases downward)
+                // Bottom-right to bottom-left
+                // Bottom-left to top-left
                 var curves = new List<Curve>
                 {
                     Line.CreateBound(new XYZ(x, y, 0), new XYZ(x + width, y, 0)),
-                    Line.CreateBound(new XYZ(x + width, y, 0), new XYZ(x + width, y + height, 0)),
-                    Line.CreateBound(new XYZ(x + width, y + height, 0), new XYZ(x, y + height, 0)),
-                    Line.CreateBound(new XYZ(x, y + height, 0), new XYZ(x, y, 0))
+                    Line.CreateBound(new XYZ(x + width, y, 0), new XYZ(x + width, y - height, 0)),
+                    Line.CreateBound(new XYZ(x + width, y - height, 0), new XYZ(x, y - height, 0)),
+                    Line.CreateBound(new XYZ(x, y - height, 0), new XYZ(x, y, 0))
                 };
 
                 var curveLoop = CurveLoop.Create(curves);
@@ -242,7 +249,16 @@ namespace BoltFramePlugin.Services.DataImport
                 var filledRegionType = new FilteredElementCollector(doc)
                     .OfClass(typeof(FilledRegionType))
                     .Cast<FilledRegionType>()
-                    .FirstOrDefault(frt => frt.Name.Contains(fillTypeName));
+                    .FirstOrDefault(frt => !string.IsNullOrEmpty(fillTypeName) && frt.Name.Contains(fillTypeName));
+
+                if (filledRegionType == null)
+                {
+                    // Use solid fill as default
+                    filledRegionType = new FilteredElementCollector(doc)
+                        .OfClass(typeof(FilledRegionType))
+                        .Cast<FilledRegionType>()
+                        .FirstOrDefault(frt => frt.Name.Contains("Solid"));
+                }
 
                 if (filledRegionType == null)
                 {
@@ -293,6 +309,27 @@ namespace BoltFramePlugin.Services.DataImport
             if (textNoteType == null)
             {
                 throw new InvalidOperationException("No text note type found in the document. Please ensure the document contains at least one text note type.");
+            }
+
+            // Duplicate the text note type to create a custom one with the specified height
+            try
+            {
+                var duplicatedType = textNoteType.Duplicate($"Table_Text_{textHeight:F3}") as TextNoteType;
+                if (duplicatedType != null)
+                {
+                    // Set the text size
+                    var textSizeParam = duplicatedType.get_Parameter(BuiltInParameter.TEXT_SIZE);
+                    if (textSizeParam != null && !textSizeParam.IsReadOnly)
+                    {
+                        textSizeParam.Set(textHeight);
+                    }
+                    return duplicatedType;
+                }
+            }
+            catch
+            {
+                // If duplication fails, use the original type
+                _logger.LogWarning($"Could not create custom text type with height {textHeight}, using default");
             }
 
             return textNoteType;

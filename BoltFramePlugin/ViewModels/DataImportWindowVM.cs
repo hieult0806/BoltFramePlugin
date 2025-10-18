@@ -23,9 +23,11 @@ namespace BoltFramePlugin.ViewModels
         private bool _skipEmptyRows = true;
         private bool _trimWhitespace = true;
         private string _viewName = string.Empty;
-        private double _columnWidth = 1.0;
-        private double _rowHeight = 0.25;
-        private double _textHeight = 0.1;
+        private double _columnWidth = 1.5;
+        private double _rowHeight = 0.15;
+        private double _textHeight = 0.0104; // Calculated based on scale
+        private double _viewScale = 96; // Default: 1/8" = 1'-0"
+        private double _paperTextHeight = 0.125; // 1/8" on paper
         private bool _drawGridLines = true;
         private bool _fillHeaderBackground = true;
         private bool _autoSizeColumns = false;
@@ -151,6 +153,30 @@ namespace BoltFramePlugin.ViewModels
             {
                 _textHeight = value;
                 OnPropertyChanged(nameof(TextHeight));
+            }
+        }
+
+        public double ViewScale
+        {
+            get => _viewScale;
+            set
+            {
+                _viewScale = value;
+                OnPropertyChanged(nameof(ViewScale));
+                // Recalculate text height when scale changes
+                CalculateTextHeight();
+            }
+        }
+
+        public double PaperTextHeight
+        {
+            get => _paperTextHeight;
+            set
+            {
+                _paperTextHeight = value;
+                OnPropertyChanged(nameof(PaperTextHeight));
+                // Recalculate text height when paper size changes
+                CalculateTextHeight();
             }
         }
 
@@ -324,6 +350,8 @@ namespace BoltFramePlugin.ViewModels
                     ColumnWidth = ColumnWidth,
                     RowHeight = RowHeight,
                     TextHeight = TextHeight,
+                    ViewScale = ViewScale,
+                    PaperTextHeight = PaperTextHeight,
                     DrawGridLines = DrawGridLines,
                     FillHeaderBackground = FillHeaderBackground,
                     AutoSizeColumns = AutoSizeColumns,
@@ -365,6 +393,19 @@ namespace BoltFramePlugin.ViewModels
         {
             DialogResult = true;
             OnRequestClose(EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Calculate text height in Revit units (feet) based on view scale and paper text height
+        /// Formula: TextHeight (feet) = PaperTextHeight (inches) * ViewScale / 12
+        /// Example: For 1/8" text at 1/8"=1'-0" scale (96): 0.125 * 96 / 12 = 1" = 0.0833 feet
+        /// </summary>
+        private void CalculateTextHeight()
+        {
+            // Convert: paper inches * scale / 12 = model feet
+            _textHeight = (_paperTextHeight * _viewScale) / 12.0;
+            OnPropertyChanged(nameof(TextHeight));
+            _logger.LogInformation($"Text height calculated: {_textHeight:F4} feet (Paper: {_paperTextHeight}\", Scale: 1:{_viewScale})");
         }
 
         #endregion

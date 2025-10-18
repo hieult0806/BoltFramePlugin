@@ -56,17 +56,27 @@ namespace BoltFramePlugin.Models.DataImport
         /// <summary>
         /// Column width in feet
         /// </summary>
-        public double ColumnWidth { get; set; } = 1.0;
+        public double ColumnWidth { get; set; } = 1.5;
 
         /// <summary>
         /// Row height in feet
         /// </summary>
-        public double RowHeight { get; set; } = 0.25;
+        public double RowHeight { get; set; } = 0.15;
 
         /// <summary>
-        /// Text height in feet
+        /// Text height in feet (calculated from ViewScale and PaperTextHeight)
         /// </summary>
-        public double TextHeight { get; set; } = 0.1;
+        public double TextHeight { get; set; } = 0.0104;
+
+        /// <summary>
+        /// View scale (e.g., 48 for 1/4" = 1'-0", 96 for 1/8" = 1'-0")
+        /// </summary>
+        public double ViewScale { get; set; } = 96;
+
+        /// <summary>
+        /// Paper text height in inches (default 1/8")
+        /// </summary>
+        public double PaperTextHeight { get; set; } = 0.125;
 
         /// <summary>
         /// Whether to draw grid lines

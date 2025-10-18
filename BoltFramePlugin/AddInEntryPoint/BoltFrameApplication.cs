@@ -176,7 +176,7 @@ namespace BoltFramePlugin.AddInEntryPoint
                 className: nameof(BoltFrameCommand),
                 tooltip: "Open BoltFrame Plugin",
                 longDescription: "Configure and manage BoltFrame settings.",
-                iconName: "BoltFrame"
+                iconName: "grid"
             );
 
             // Add Switch View Button
@@ -187,7 +187,7 @@ namespace BoltFramePlugin.AddInEntryPoint
                 className: nameof(ShowSwitchViewPanelCommand),
                 tooltip: "Toggle the Switch View Panel",
                 longDescription: "Show or hide the Switch View Plans panel.",
-                iconName: "ViewPlans"
+                iconName: "design"
             );
 
             // Add Limiting Distance Button
@@ -198,7 +198,7 @@ namespace BoltFramePlugin.AddInEntryPoint
                 className: nameof(LimitingDistanceCommand),
                 tooltip: "Calculate Limiting Distance",
                 longDescription: "Select property line and highlight perimeter walls for limiting distance calculation.",
-                iconName: "LimitingDistance"
+                iconName: "firewall"
             );
 
             // Add Data Import Button
@@ -209,8 +209,11 @@ namespace BoltFramePlugin.AddInEntryPoint
                 className: nameof(DataImportCommand),
                 tooltip: "Import CSV/Excel to Drafting View",
                 longDescription: "Import tabular data from CSV or Excel files and render as tables in Revit drafting views using detail items (text, lines, regions).",
-                iconName: "DataImport"
+                iconName: "excel"
             );
+
+            // Add separator
+            panel.AddSeparator();
 
             // Add Open Log Folder Button
             AddPushButton(
@@ -220,7 +223,7 @@ namespace BoltFramePlugin.AddInEntryPoint
                 className: nameof(OpenLogFolderCommand),
                 tooltip: "Open Log Folder",
                 longDescription: "Opens the BoltFramePlugin log folder in Windows Explorer to view log files.",
-                iconName: "Logs"
+                iconName: "code-files"
             );
         }
 
@@ -252,17 +255,38 @@ namespace BoltFramePlugin.AddInEntryPoint
 
                         if (!string.IsNullOrEmpty(assemblyDirectory))
                         {
-                            string iconPath = System.IO.Path.Combine(assemblyDirectory, "Resources", "Images", $"{iconName}.svg");
+                            // Try PNG first, then SVG
+                            string pngPath = System.IO.Path.Combine(assemblyDirectory, "Resources", "Images", $"{iconName}.png");
+                            string svgPath = System.IO.Path.Combine(assemblyDirectory, "Resources", "Images", $"{iconName}.svg");
 
-                            if (System.IO.File.Exists(iconPath))
+                            string? iconPath = null;
+                            if (System.IO.File.Exists(pngPath))
                             {
-                                button.Image = new System.Windows.Media.Imaging.BitmapImage(new Uri(iconPath));
-                                button.LargeImage = new System.Windows.Media.Imaging.BitmapImage(new Uri(iconPath));
-                                _logger.LogInformation($"Icon '{iconName}.svg' set for button '{name}'.");
+                                iconPath = pngPath;
+                            }
+                            else if (System.IO.File.Exists(svgPath))
+                            {
+                                _logger.LogWarning($"SVG icons are not supported by Revit ribbon buttons. Please convert '{iconName}.svg' to PNG format.");
+                                // SVG not supported by BitmapImage - skip
+                            }
+
+                            if (!string.IsNullOrEmpty(iconPath))
+                            {
+                                try
+                                {
+                                    var uri = new Uri(iconPath, UriKind.Absolute);
+                                    button.Image = new System.Windows.Media.Imaging.BitmapImage(uri);
+                                    button.LargeImage = new System.Windows.Media.Imaging.BitmapImage(uri);
+                                    _logger.LogInformation($"Icon '{System.IO.Path.GetFileName(iconPath)}' set for button '{name}'.");
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError($"Failed to load icon '{iconPath}': {ex.Message}");
+                                }
                             }
                             else
                             {
-                                _logger.LogWarning($"Icon file not found: {iconPath}");
+                                _logger.LogWarning($"Icon file not found for '{iconName}' (tried .png and .svg)");
                             }
                         }
                     }
