@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        xmlns:views="clr-namespace:BoltFramePlugin.Views"
         mc:Ignorable="d"
         Title="Limiting Distance Calculator"
         WindowStartupLocation="Manual"
@@ -51,8 +52,11 @@
             </StackPanel>
         </Border>
 
-        <!-- Main Content - Split Left/Right -->
-        <Grid Grid.Row="1" Margin="15">
+        <!-- Tab Control for Main Content -->
+        <TabControl Grid.Row="1" Margin="10">
+            <TabItem Header="Wall Analysis">
+                <!-- Main Content - Split Left/Right -->
+        <Grid Margin="5">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="150"/>
                 <ColumnDefinition Width="5"/>
@@ -277,6 +281,13 @@
                 </DataGrid>
             </GroupBox>
         </Grid>
+            </TabItem>
+
+            <!-- Dev Tab -->
+            <TabItem Header="Dev">
+                <views:DevTabControl/>
+            </TabItem>
+        </TabControl>
 
         <!-- Footer Section -->
         <Border Grid.Row="2" Background="#FFE5E5E5" Padding="15">

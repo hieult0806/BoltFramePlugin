@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows.Input;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -36,6 +37,9 @@ namespace BoltFramePlugin.ViewModels
         public ICommand CreateWallProjectionsCommand { get; }
         public ICommand CloseCommand { get; }
         public ICommand ShowLogsCommand { get; }
+        public ICommand CheckCeilingWallConnectionsCommand { get; }
+        public ICommand CheckWallCeilingConnectionsCommand { get; }
+        public ICommand FindPerimeterWallsWithoutTopCeilingCommand { get; }
 
         // Properties
         private Element? _selectedPropertyLine;
@@ -146,6 +150,17 @@ namespace BoltFramePlugin.ViewModels
 
         public string ReferenceLineCount => $"Reference Lines: {_referenceLines?.Count ?? 0}";
 
+        private string _debugOutput = "Debug information will appear here...";
+        public string DebugOutput
+        {
+            get => _debugOutput;
+            set
+            {
+                _debugOutput = value;
+                OnPropertyChanged(nameof(DebugOutput));
+            }
+        }
+
         private ObservableCollection<DistanceGroupSummary> _distanceGroups;
         public ObservableCollection<DistanceGroupSummary> DistanceGroups
         {
@@ -193,6 +208,9 @@ namespace BoltFramePlugin.ViewModels
             CreateWallProjectionsCommand = new RelayCommand(CreateWallProjections);
             CloseCommand = new RelayCommand(Close);
             ShowLogsCommand = new RelayCommand(ShowLogs);
+            CheckCeilingWallConnectionsCommand = new RelayCommand(CheckCeilingWallConnections);
+            CheckWallCeilingConnectionsCommand = new RelayCommand(CheckWallCeilingConnections);
+            FindPerimeterWallsWithoutTopCeilingCommand = new RelayCommand(FindPerimeterWallsWithoutTopCeiling);
 
             _logger.LogInformation("LimitingDistanceWindowVM initialized.");
 
@@ -1391,6 +1409,214 @@ namespace BoltFramePlugin.ViewModels
 
             DialogResult = false;
             OnRequestClose(EventArgs.Empty);
+        }
+
+        private void CheckCeilingWallConnections(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("CheckCeilingWallConnections command executed.");
+                DebugOutput = "Starting ceiling-wall connection analysis...\n";
+
+                // Prompt user to select a ceiling
+                var reference = _document.Selection.PickObject(
+                    ObjectType.Element,
+                    new CeilingSelectionFilter(),
+                    "Select a ceiling to analyze wall connections");
+
+                if (reference == null)
+                {
+                    DebugOutput += "No ceiling selected.\n";
+                    return;
+                }
+
+                var ceiling = _document.Document.GetElement(reference.ElementId) as Ceiling;
+                if (ceiling == null)
+                {
+                    DebugOutput += "Selected element is not a ceiling.\n";
+                    return;
+                }
+
+                DebugOutput += $"Analyzing ceiling: {ceiling.Name} (ID: {ceiling.Id.Value})\n\n";
+
+                // Use the CeilingWallAnalyzer helper
+                var relationships = Helpers.CeilingWallAnalyzer.GetConnectedWalls(ceiling, _document.Document);
+
+                if (relationships.Count == 0)
+                {
+                    DebugOutput += "No walls connected to this ceiling.\n";
+                }
+                else
+                {
+                    DebugOutput += $"Found {relationships.Count} wall(s) connected to ceiling:\n\n";
+
+                    foreach (var relationship in relationships)
+                    {
+                        DebugOutput += $"Wall ID: {relationship.Wall.Id.Value}\n";
+                        DebugOutput += $"  Name: {relationship.Wall.Name}\n";
+                        DebugOutput += $"  Joined: {(relationship.IsJoined ? "YES" : "No")}\n";
+                        DebugOutput += $"  Vertical: {relationship.VerticalRelationship}\n";
+                        DebugOutput += $"  Horizontal: {relationship.HorizontalRelationship}\n";
+                        DebugOutput += $"  Wall Base: {relationship.WallBaseElevation:F2} ft\n";
+                        DebugOutput += $"  Wall Top: {relationship.WallTopElevation:F2} ft\n";
+                        DebugOutput += $"  Ceiling: {relationship.CeilingElevation:F2} ft\n";
+                        DebugOutput += "\n";
+                    }
+
+                    // Highlight the connected walls in the view
+                    var wallIds = relationships.Select(r => r.Wall.Id).ToList();
+                    _document.Selection.SetElementIds(wallIds);
+                    DebugOutput += $"Highlighted {wallIds.Count} connected wall(s) in the view.\n";
+                }
+
+                _logger.LogInformation($"Ceiling-wall analysis complete. Found {relationships.Count} connections.");
+            }
+            catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+            {
+                DebugOutput += "Operation cancelled by user.\n";
+                _logger.LogInformation("Ceiling selection cancelled.");
+            }
+            catch (Exception ex)
+            {
+                DebugOutput += $"Error: {ex.Message}\n";
+                _logger.LogError("Error checking ceiling-wall connections", ex);
+            }
+        }
+
+        private void CheckWallCeilingConnections(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("CheckWallCeilingConnections command executed.");
+                DebugOutput = "Starting wall-ceiling connection analysis...\n";
+
+                // Prompt user to select a wall
+                var reference = _document.Selection.PickObject(
+                    ObjectType.Element,
+                    new WallSelectionFilter(),
+                    "Select a wall to analyze ceiling connections");
+
+                if (reference == null)
+                {
+                    DebugOutput += "No wall selected.\n";
+                    return;
+                }
+
+                var wall = _document.Document.GetElement(reference.ElementId) as Wall;
+                if (wall == null)
+                {
+                    DebugOutput += "Selected element is not a wall.\n";
+                    return;
+                }
+
+                DebugOutput += $"Analyzing wall: {wall.Name} (ID: {wall.Id.Value})\n\n";
+
+                // Use the CeilingWallAnalyzer helper
+                var relationships = Helpers.CeilingWallAnalyzer.GetConnectedCeilings(wall, _document.Document);
+
+                if (relationships.Count == 0)
+                {
+                    DebugOutput += "No ceilings connected to this wall.\n";
+                }
+                else
+                {
+                    DebugOutput += $"Found {relationships.Count} ceiling(s) connected to wall:\n\n";
+
+                    foreach (var relationship in relationships)
+                    {
+                        DebugOutput += $"Ceiling ID: {relationship.Ceiling.Id.Value}\n";
+                        DebugOutput += $"  Name: {relationship.Ceiling.Name}\n";
+                        DebugOutput += $"  Joined: {(relationship.IsJoined ? "YES" : "No")}\n";
+                        DebugOutput += $"  Vertical: {relationship.VerticalRelationship}\n";
+                        DebugOutput += $"  Horizontal: {relationship.HorizontalRelationship}\n";
+                        DebugOutput += $"  Wall Base: {relationship.WallBaseElevation:F2} ft\n";
+                        DebugOutput += $"  Wall Top: {relationship.WallTopElevation:F2} ft\n";
+                        DebugOutput += $"  Ceiling: {relationship.CeilingElevation:F2} ft\n";
+                        DebugOutput += "\n";
+                    }
+
+                    // Highlight the connected ceilings in the view
+                    var ceilingIds = relationships.Select(r => r.Ceiling.Id).ToList();
+                    _document.Selection.SetElementIds(ceilingIds);
+                    DebugOutput += $"Highlighted {ceilingIds.Count} connected ceiling(s) in the view.\n";
+                }
+
+                _logger.LogInformation($"Wall-ceiling analysis complete. Found {relationships.Count} connections.");
+            }
+            catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+            {
+                DebugOutput += "Operation cancelled by user.\n";
+                _logger.LogInformation("Wall selection cancelled.");
+            }
+            catch (Exception ex)
+            {
+                DebugOutput += $"Error: {ex.Message}\n";
+                _logger.LogError("Error checking wall-ceiling connections", ex);
+            }
+        }
+
+        private void FindPerimeterWallsWithoutTopCeiling(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("FindPerimeterWallsWithoutTopCeiling command executed.");
+                DebugOutput = "Finding perimeter walls without top-most ceiling connections...\n\n";
+
+                // Use the CeilingWallAnalyzer helper
+                var walls = Helpers.CeilingWallAnalyzer.GetPerimeterWallsWithoutTopMostCeiling(_document.Document);
+
+                if (walls.Count == 0)
+                {
+                    DebugOutput += "No perimeter walls found without top-most ceiling connections.\n";
+                    DebugOutput += "\nThis means:\n";
+                    DebugOutput += "- All perimeter walls are properly connected to top-most ceilings, OR\n";
+                    DebugOutput += "- No walls are marked as perimeter/exterior walls, OR\n";
+                    DebugOutput += "- No ceilings have the 'IsTopMost' parameter checked\n";
+                }
+                else
+                {
+                    DebugOutput += $"Found {walls.Count} perimeter wall(s) WITHOUT top-most ceiling connections:\n\n";
+
+                    foreach (var wall in walls)
+                    {
+                        DebugOutput += $"Wall ID: {wall.Id.Value}\n";
+                        DebugOutput += $"  Name: {wall.Name}\n";
+                        DebugOutput += $"  Type: {wall.WallType?.Name ?? "Unknown"}\n";
+
+                        // Get wall function
+                        var wallFunctionParam = wall.get_Parameter(BuiltInParameter.FUNCTION_PARAM);
+                        if (wallFunctionParam != null)
+                        {
+                            var wallFunction = (WallFunction)wallFunctionParam.AsInteger();
+                            DebugOutput += $"  Function: {wallFunction}\n";
+                        }
+
+                        // Get wall height
+                        var wallHeightParam = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM);
+                        if (wallHeightParam != null)
+                        {
+                            DebugOutput += $"  Height: {wallHeightParam.AsDouble():F2} ft\n";
+                        }
+
+                        DebugOutput += "\n";
+                    }
+
+                    // Highlight the walls in the view
+                    var wallIds = walls.Select(w => w.Id).ToList();
+                    _document.Selection.SetElementIds(wallIds);
+                    DebugOutput += $"Highlighted {wallIds.Count} perimeter wall(s) in the view.\n\n";
+
+                    DebugOutput += "ACTION REQUIRED:\n";
+                    DebugOutput += "These perimeter walls should be connected to a ceiling with 'IsTopMost' parameter checked.\n";
+                }
+
+                _logger.LogInformation($"Perimeter walls analysis complete. Found {walls.Count} walls without top-most ceiling.");
+            }
+            catch (Exception ex)
+            {
+                DebugOutput += $"Error: {ex.Message}\n";
+                _logger.LogError("Error finding perimeter walls without top ceiling", ex);
+            }
         }
     }
 }
