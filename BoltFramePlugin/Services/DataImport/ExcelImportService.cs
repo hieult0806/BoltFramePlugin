@@ -560,6 +560,9 @@ namespace BoltFramePlugin.Services.DataImport
                             {
                                 string? bgColor = null;
                                 string? alignment = null;
+                                bool isBold = false;
+                                bool isItalic = false;
+                                bool isUnderline = false;
 
                                 // Try to get Style
                                 var styleObj = cell.GetType().GetProperty("Style")?.GetValue(cell);
@@ -604,20 +607,48 @@ namespace BoltFramePlugin.Services.DataImport
                                             else if (horizontalStr == "General") alignment = null; // Use default
                                         }
                                     }
+
+                                    // Extract font formatting (Bold, Italic, Underline)
+                                    var fontObj = styleObj.GetType().GetProperty("Font")?.GetValue(styleObj);
+                                    if (fontObj != null)
+                                    {
+                                        var boldProp = fontObj.GetType().GetProperty("Bold")?.GetValue(fontObj);
+                                        if (boldProp != null && boldProp is bool)
+                                        {
+                                            isBold = (bool)boldProp;
+                                        }
+
+                                        var italicProp = fontObj.GetType().GetProperty("Italic")?.GetValue(fontObj);
+                                        if (italicProp != null && italicProp is bool)
+                                        {
+                                            isItalic = (bool)italicProp;
+                                        }
+
+                                        var underlineProp = fontObj.GetType().GetProperty("Underline")?.GetValue(fontObj);
+                                        if (underlineProp != null)
+                                        {
+                                            // Underline property might be an enum, check if it's not "None"
+                                            var underlineStr = underlineProp.ToString();
+                                            isUnderline = !string.IsNullOrEmpty(underlineStr) && underlineStr != "None";
+                                        }
+                                    }
                                 }
 
                                 // Add cell format if there's any formatting
-                                if (bgColor != null || alignment != null)
+                                if (bgColor != null || alignment != null || isBold || isItalic || isUnderline)
                                 {
                                     result.CellFormats.Add(new CellFormat
                                     {
                                         Row = row - dataStartRow,
                                         Column = col - firstColNum,
                                         BackgroundColor = bgColor,
-                                        TextAlignment = alignment
+                                        TextAlignment = alignment,
+                                        IsBold = isBold,
+                                        IsItalic = isItalic,
+                                        IsUnderline = isUnderline
                                     });
                                     if (bgColor != null) colorCount++;
-                                    _logger.LogInformation($"Found formatting at R{row}C{col} -> data row {row - dataStartRow}, col {col - firstColNum}: color={bgColor}, align={alignment}");
+                                    _logger.LogInformation($"Found formatting at R{row}C{col} -> data row {row - dataStartRow}, col {col - firstColNum}: color={bgColor}, align={alignment}, bold={isBold}, italic={isItalic}, underline={isUnderline}");
                                 }
                             }
                         }

@@ -67,6 +67,21 @@ namespace BoltFramePlugin.Models.DataImport
         /// Text alignment: "Left", "Center", "Right"
         /// </summary>
         public string? TextAlignment { get; set; }
+
+        /// <summary>
+        /// Whether text is bold
+        /// </summary>
+        public bool IsBold { get; set; }
+
+        /// <summary>
+        /// Whether text is italic
+        /// </summary>
+        public bool IsItalic { get; set; }
+
+        /// <summary>
+        /// Whether text is underlined
+        /// </summary>
+        public bool IsUnderline { get; set; }
     }
 
     /// <summary>

@@ -278,8 +278,19 @@ namespace BoltFramePlugin.Services.DataImport
                 textX += options.TextOffsetX;
                 textY += options.TextOffsetY;
 
-                // Create text note with specified height
-                CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight);
+                // Get text formatting from cell format
+                bool isBold = false;
+                bool isItalic = false;
+                bool isUnderline = false;
+                if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForText))
+                {
+                    isBold = formatForText.IsBold;
+                    isItalic = formatForText.IsItalic;
+                    isUnderline = formatForText.IsUnderline;
+                }
+
+                // Create text note with specified height and formatting
+                CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight, isBold, isItalic, isUnderline);
 
                 // Draw grid lines
                 if (options.DrawGridLines)
@@ -383,7 +394,7 @@ namespace BoltFramePlugin.Services.DataImport
             return rowHeights;
         }
 
-        private void CreateTextNote(Document doc, Autodesk.Revit.DB.View view, string text, double x, double y, TextNoteType textType, TextAlignment align, double textHeight)
+        private void CreateTextNote(Document doc, Autodesk.Revit.DB.View view, string text, double x, double y, TextNoteType textType, TextAlignment align, double textHeight, bool isBold = false, bool isItalic = false, bool isUnderline = false)
         {
             if (string.IsNullOrEmpty(text))
                 return;
@@ -397,11 +408,14 @@ namespace BoltFramePlugin.Services.DataImport
             if (textType == null)
                 throw new ArgumentNullException(nameof(textType), "TextNoteType cannot be null");
 
+            // Get or create a text type with the specified formatting
+            var formattedTextType = GetOrCreateFormattedTextNoteType(doc, textType, textHeight, isBold, isItalic, isUnderline);
+
             var point = new XYZ(x, y, 0);
 
             var textNoteOptions = new TextNoteOptions
             {
-                TypeId = textType.Id,
+                TypeId = formattedTextType.Id,
                 HorizontalAlignment = align == TextAlignment.Center ? Autodesk.Revit.DB.HorizontalTextAlignment.Center :
                                      align == TextAlignment.Right ? Autodesk.Revit.DB.HorizontalTextAlignment.Right :
                                      Autodesk.Revit.DB.HorizontalTextAlignment.Left
@@ -676,6 +690,121 @@ namespace BoltFramePlugin.Services.DataImport
             _logger.LogInformation($"Using default text type '{textNoteType.Name}' with size {defaultSize:F6} ft (requested {textHeight:F6} ft)");
 
             return textNoteType;
+        }
+
+        private TextNoteType GetOrCreateFormattedTextNoteType(Document doc, TextNoteType baseType, double textHeight, bool isBold, bool isItalic, bool isUnderline)
+        {
+            if (doc == null)
+                throw new ArgumentNullException(nameof(doc), "Document cannot be null");
+
+            if (baseType == null)
+                throw new ArgumentNullException(nameof(baseType), "Base TextNoteType cannot be null");
+
+            // Build a suffix for the type name based on formatting
+            string formatSuffix = "";
+            if (isBold) formatSuffix += "B";
+            if (isItalic) formatSuffix += "I";
+            if (isUnderline) formatSuffix += "U";
+
+            // If no special formatting, use the regular method
+            if (string.IsNullOrEmpty(formatSuffix))
+            {
+                return GetOrCreateTextNoteType(doc, baseType.Name, textHeight);
+            }
+
+            // Try to find existing formatted type
+            string typeName = $"Import Text {textHeight:F6}ft {formatSuffix}";
+            var existingType = new FilteredElementCollector(doc)
+                .OfClass(typeof(TextNoteType))
+                .Cast<TextNoteType>()
+                .FirstOrDefault(tnt => tnt.Name == typeName);
+
+            if (existingType != null)
+            {
+                return existingType;
+            }
+
+            // Create new formatted type
+            try
+            {
+                TextNoteType newType = baseType.Duplicate(typeName) as TextNoteType;
+                if (newType != null)
+                {
+                    // Set text size
+                    var sizeParam = newType.get_Parameter(BuiltInParameter.TEXT_SIZE);
+                    if (sizeParam != null && !sizeParam.IsReadOnly)
+                    {
+                        sizeParam.Set(textHeight);
+                    }
+
+                    // Set text background to transparent
+                    var backgroundParam = newType.get_Parameter(BuiltInParameter.TEXT_BACKGROUND);
+                    if (backgroundParam != null && !backgroundParam.IsReadOnly)
+                    {
+                        backgroundParam.Set(0); // 0 = Transparent
+                    }
+
+                    // Set bold
+                    if (isBold)
+                    {
+                        var boldParam = newType.get_Parameter(BuiltInParameter.TEXT_FONT);
+                        if (boldParam != null && !boldParam.IsReadOnly)
+                        {
+                            string currentFont = boldParam.AsString() ?? "Arial";
+                            // Try to append "Bold" to font name if not already there
+                            if (!currentFont.Contains("Bold"))
+                            {
+                                string boldFont = currentFont + " Bold";
+                                try
+                                {
+                                    boldParam.Set(boldFont);
+                                }
+                                catch
+                                {
+                                    _logger.LogWarning($"Could not set bold font '{boldFont}', using TEXT_STYLE_BOLD parameter instead");
+                                }
+                            }
+                        }
+
+                        // Also try setting TEXT_STYLE_BOLD parameter if it exists
+                        var boldStyleParam = newType.get_Parameter(BuiltInParameter.TEXT_STYLE_BOLD);
+                        if (boldStyleParam != null && !boldStyleParam.IsReadOnly)
+                        {
+                            boldStyleParam.Set(1); // 1 = Bold
+                        }
+                    }
+
+                    // Set italic
+                    if (isItalic)
+                    {
+                        var italicParam = newType.get_Parameter(BuiltInParameter.TEXT_STYLE_ITALIC);
+                        if (italicParam != null && !italicParam.IsReadOnly)
+                        {
+                            italicParam.Set(1); // 1 = Italic
+                        }
+                    }
+
+                    // Set underline
+                    if (isUnderline)
+                    {
+                        var underlineParam = newType.get_Parameter(BuiltInParameter.TEXT_STYLE_UNDERLINE);
+                        if (underlineParam != null && !underlineParam.IsReadOnly)
+                        {
+                            underlineParam.Set(1); // 1 = Underline
+                        }
+                    }
+
+                    _logger.LogInformation($"Created formatted text type '{newType.Name}' with bold={isBold}, italic={isItalic}, underline={isUnderline}");
+                    return newType;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not create formatted text type: {ex.Message}");
+            }
+
+            // Fallback to base type
+            return baseType;
         }
 
         private GraphicsStyle GetLineStyle(Document doc, string lineStyleName)
