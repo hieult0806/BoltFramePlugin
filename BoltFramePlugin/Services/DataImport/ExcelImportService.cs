@@ -548,33 +548,40 @@ namespace BoltFramePlugin.Services.DataImport
             // Extract cell background colors using ClosedXML
             try
             {
+                int colorCount = 0;
                 for (int row = dataStartRow; row <= lastRowNum; row++)
                 {
                     for (int col = firstColNum; col <= lastColNum; col++)
                     {
-                        var cell = GetClosedXMLCell(worksheet, row, col);
-                        if (cell != null)
+                        try
                         {
-                            var style = cell.GetType().GetProperty("Style")?.GetValue(cell);
-                            if (style != null)
+                            var cell = GetClosedXMLCell(worksheet, row, col);
+                            if (cell != null)
                             {
-                                var fill = style.GetType().GetProperty("Fill")?.GetValue(style);
-                                if (fill != null)
+                                // Try to get Style.Fill.BackgroundColor
+                                var styleObj = cell.GetType().GetProperty("Style")?.GetValue(cell);
+                                if (styleObj != null)
                                 {
-                                    var bgColor = fill.GetType().GetProperty("BackgroundColor")?.GetValue(fill);
-                                    if (bgColor != null)
+                                    var fillObj = styleObj.GetType().GetProperty("Fill")?.GetValue(styleObj);
+                                    if (fillObj != null)
                                     {
-                                        var colorType = bgColor.GetType().GetProperty("ColorType")?.GetValue(bgColor);
-                                        if (colorType != null && colorType.ToString() != "NoColor")
+                                        var bgColorObj = fillObj.GetType().GetProperty("BackgroundColor")?.GetValue(fillObj);
+                                        if (bgColorObj != null)
                                         {
-                                            var color = bgColor.GetType().GetProperty("Color")?.GetValue(bgColor);
-                                            if (color != null)
+                                            // Get the Color property (System.Drawing.Color)
+                                            var colorObj = bgColorObj.GetType().GetProperty("Color")?.GetValue(bgColorObj);
+
+                                            if (colorObj != null)
                                             {
-                                                var argb = color.GetType().GetProperty("ToArgb")?.GetValue(color);
-                                                if (argb != null)
+                                                // Try to get ARGB value using ToArgb method
+                                                var toArgbMethod = colorObj.GetType().GetMethod("ToArgb");
+                                                if (toArgbMethod != null)
                                                 {
-                                                    var hexColor = ((int)argb).ToString("X8");
-                                                    if (hexColor != "00000000")
+                                                    var argbValue = (int)toArgbMethod.Invoke(colorObj, null);
+                                                    var hexColor = argbValue.ToString("X8");
+
+                                                    // Skip white/transparent colors
+                                                    if (hexColor != "00000000" && hexColor != "FFFFFFFF")
                                                     {
                                                         result.CellFormats.Add(new CellFormat
                                                         {
@@ -582,6 +589,8 @@ namespace BoltFramePlugin.Services.DataImport
                                                             Column = col - firstColNum,
                                                             BackgroundColor = hexColor
                                                         });
+                                                        colorCount++;
+                                                        _logger.LogInformation($"Found color at R{row}C{col} -> data row {row - dataStartRow}, col {col - firstColNum}: {hexColor}");
                                                     }
                                                 }
                                             }
@@ -590,8 +599,13 @@ namespace BoltFramePlugin.Services.DataImport
                                 }
                             }
                         }
+                        catch (Exception cellEx)
+                        {
+                            _logger.LogWarning($"Error extracting color from R{row}C{col}: {cellEx.Message}");
+                        }
                     }
                 }
+                _logger.LogInformation($"Extracted {colorCount} cell colors from ClosedXML");
             }
             catch (Exception ex)
             {
