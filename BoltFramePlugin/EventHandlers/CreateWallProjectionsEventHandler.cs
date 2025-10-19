@@ -92,18 +92,18 @@ namespace BoltFramePlugin.EventHandlers
                     return;
                 }
 
-                _logger.LogInformation("Starting grouping by orientation");
-                var orientationGroups = GroupWallsByOrientation(wallsToProject);
-                _logger.LogInformation($"Created {orientationGroups.Count} orientation groups");
+                _logger.LogInformation("Starting grouping by reference lines");
+                var referenceLineGroups = GroupWallsByReferenceLine(wallsToProject);
+                _logger.LogInformation($"Created {referenceLineGroups.Count} reference line groups");
 
-                if (orientationGroups.Count == 0)
+                if (referenceLineGroups.Count == 0)
                 {
-                    TaskDialog.Show("Info", "No orientation groups created. Ensure reference lines have been detected.");
+                    TaskDialog.Show("Info", "No reference line groups created. Ensure reference lines have been detected.");
                     return;
                 }
 
                 _logger.LogInformation("Starting view and region creation");
-                CreateViewsAndRegions(doc, orientationGroups);
+                CreateViewsAndRegions(doc, referenceLineGroups);
 
                 _logger.LogInformation("Execute completed successfully");
             }
@@ -216,7 +216,98 @@ namespace BoltFramePlugin.EventHandlers
         }
 
         /// <summary>
-        /// Groups walls by their orientation
+        /// Groups walls by their associated reference line
+        /// Creates one group per reference line for section views parallel to that line
+        /// </summary>
+        private List<WallGroup> GroupWallsByReferenceLine(List<WallInfo> walls)
+        {
+            var groups = new List<WallGroup>();
+
+            _logger.LogInformation($"GroupWallsByReferenceLine: Processing {_referenceLines.Count} reference lines with {walls.Count} walls");
+
+            // Group walls by reference line
+            foreach (var referenceLine in _referenceLines)
+            {
+                _logger.LogInformation($"Processing reference line: '{referenceLine.Name}'");
+
+                // Get the reference line direction
+                var lineDirection = GetReferenceLineDirection(referenceLine);
+                if (lineDirection == null)
+                {
+                    _logger.LogWarning($"Skipping reference line '{referenceLine.Name}' - could not get direction");
+                    continue;
+                }
+
+                _logger.LogInformation($"Reference line '{referenceLine.Name}' direction: X={lineDirection.X:F3}, Y={lineDirection.Y:F3}");
+
+                // Get the perpendicular to the reference line (this is the normal direction)
+                // For a line with direction (X, Y), the perpendicular is (-Y, X)
+                var lineNormal = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
+                _logger.LogInformation($"Reference line '{referenceLine.Name}' perpendicular (normal): X={lineNormal.X:F3}, Y={lineNormal.Y:F3}");
+
+                // Find all walls that are parallel to this reference line
+                // (i.e., walls whose normal is perpendicular to the line, or parallel to the line normal)
+                var wallsForThisLine = walls.Where(w =>
+                    w.Orientation != null &&
+                    (AreOrientationsSimilar(w.Orientation, lineNormal, ORIENTATION_TOLERANCE_DEGREES) ||
+                     AreOrientationsSimilar(w.Orientation, new XYZ(-lineNormal.X, -lineNormal.Y, 0), ORIENTATION_TOLERANCE_DEGREES)))
+                    .ToList();
+
+                _logger.LogInformation($"Reference line '{referenceLine.Name}': Found {wallsForThisLine.Count} parallel walls (tolerance: {ORIENTATION_TOLERANCE_DEGREES}°)");
+
+                if (wallsForThisLine.Count > 0)
+                {
+                    var newGroup = new WallGroup
+                    {
+                        LimitingDistance = wallsForThisLine.Average(w => w.LimitingDistance ?? 0),
+                        Orientation = lineDirection,
+                        ReferenceLine = referenceLine
+                    };
+
+                    foreach (var wallInfo in wallsForThisLine)
+                    {
+                        newGroup.Walls.Add(wallInfo);
+                    }
+
+                    newGroup.GroupName = $"Reference Line - {referenceLine.Name}";
+                    groups.Add(newGroup);
+
+                    _logger.LogInformation($"Created group for reference line '{referenceLine.Name}' with {wallsForThisLine.Count} walls");
+                }
+                else
+                {
+                    _logger.LogWarning($"Skipping reference line '{referenceLine.Name}' - no parallel walls found within {ORIENTATION_TOLERANCE_DEGREES}° tolerance");
+                }
+            }
+
+            _logger.LogInformation($"GroupWallsByReferenceLine: Created {groups.Count} groups total");
+
+            return groups;
+        }
+
+        /// <summary>
+        /// Gets the direction vector of a reference line
+        /// </summary>
+        private XYZ? GetReferenceLineDirection(ReferenceLineInfo referenceLine)
+        {
+            try
+            {
+                if (referenceLine?.Curve == null)
+                    return null;
+
+                // Get the curve direction and project to XY plane
+                var direction = (referenceLine.Curve.GetEndPoint(1) - referenceLine.Curve.GetEndPoint(0)).Normalize();
+                return new XYZ(direction.X, direction.Y, 0).Normalize();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error getting reference line direction: {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Groups walls by their orientation (legacy method - replaced by GroupWallsByReferenceLine)
         /// </summary>
         private List<WallGroup> GroupWallsByOrientation(List<WallInfo> walls)
         {
@@ -388,17 +479,22 @@ namespace BoltFramePlugin.EventHandlers
 
         /// <summary>
         /// Calculates the view coordinate system (direction vectors and origin)
+        /// groupOrientation is now the reference line direction (parallel to the wall)
         /// </summary>
         private static (XYZ viewDirection, XYZ rightDirection, XYZ upDirection, XYZ sectionOrigin)
             CalculateViewCoordinateSystem(XYZ groupOrientation, XYZ centerPoint)
         {
-            var wallNormal = new XYZ(groupOrientation.X, groupOrientation.Y, 0).Normalize();
+            // groupOrientation is the reference line direction (parallel to walls)
+            var lineDirection = new XYZ(groupOrientation.X, groupOrientation.Y, 0).Normalize();
 
-            // View looks opposite to wall normal to see walls facing this orientation
+            // Get the perpendicular to the line (this is the wall normal direction)
+            var wallNormal = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
+
+            // View looks opposite to wall normal to see the walls
             var viewDirection = -wallNormal;
 
-            // Right direction is perpendicular to wall normal
-            var rightDirection = new XYZ(-wallNormal.Y, wallNormal.X, 0).Normalize();
+            // Right direction is parallel to the reference line (parallel to walls)
+            var rightDirection = lineDirection;
 
             // Up direction is always vertical
             var upDirection = XYZ.BasisZ;
@@ -579,10 +675,15 @@ namespace BoltFramePlugin.EventHandlers
 
         /// <summary>
         /// Filters walls to show only those with the same orientation as the group
+        /// group.Orientation is now the reference line direction (parallel to walls)
         /// </summary>
         private List<WallInfo> FilterWallsByGroupOrientation(WallGroup group)
         {
-            var groupNormal = new XYZ(group.Orientation.X, group.Orientation.Y, 0).Normalize();
+            // group.Orientation is the reference line direction (parallel to walls)
+            var lineDirection = new XYZ(group.Orientation.X, group.Orientation.Y, 0).Normalize();
+
+            // Calculate the perpendicular (this is the wall normal direction)
+            var lineNormal = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
 
             return _perimeterWalls.Where(w =>
             {
@@ -590,7 +691,9 @@ namespace BoltFramePlugin.EventHandlers
                     return false;
 
                 var wallNormal = new XYZ(w.Orientation.X, w.Orientation.Y, 0).Normalize();
-                var dotProduct = wallNormal.DotProduct(groupNormal);
+
+                // Check if wall normal matches the line normal (or its opposite)
+                var dotProduct = Math.Abs(wallNormal.DotProduct(lineNormal));
 
                 return dotProduct > WALL_SIMILARITY_THRESHOLD;
             }).ToList();

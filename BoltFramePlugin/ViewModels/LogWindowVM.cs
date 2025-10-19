@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows.Input;
 
 namespace BoltFramePlugin.ViewModels
@@ -12,6 +13,8 @@ namespace BoltFramePlugin.ViewModels
         private string _logText = string.Empty;
         private bool _autoScroll = true;
         private string _filterLevel = "All";
+        private string _regexFilter = string.Empty;
+        private bool _caseSensitive = false;
         private readonly ObservableCollection<LogEntry> _logEntries = new ObservableCollection<LogEntry>();
         private bool _dialogResult;
 
@@ -67,6 +70,28 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
+        public string RegexFilter
+        {
+            get => _regexFilter;
+            set
+            {
+                _regexFilter = value;
+                OnPropertyChanged(nameof(RegexFilter));
+                RefreshLogText();
+            }
+        }
+
+        public bool CaseSensitive
+        {
+            get => _caseSensitive;
+            set
+            {
+                _caseSensitive = value;
+                OnPropertyChanged(nameof(CaseSensitive));
+                RefreshLogText();
+            }
+        }
+
         public string StatusText => $"Total logs: {_logEntries.Count}";
 
         public ICommand ClearLogsCommand { get; }
@@ -91,9 +116,25 @@ namespace BoltFramePlugin.ViewModels
         {
             var filteredLogs = _logEntries.AsEnumerable();
 
+            // Filter by log level
             if (FilterLevel != "All")
             {
                 filteredLogs = filteredLogs.Where(l => l.Level == FilterLevel);
+            }
+
+            // Filter by regex pattern
+            if (!string.IsNullOrEmpty(RegexFilter))
+            {
+                try
+                {
+                    var regexOptions = CaseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
+                    var regex = new Regex(RegexFilter, regexOptions);
+                    filteredLogs = filteredLogs.Where(l => regex.IsMatch(l.Message));
+                }
+                catch (ArgumentException)
+                {
+                    // Invalid regex pattern, skip regex filtering
+                }
             }
 
             var sb = new StringBuilder();

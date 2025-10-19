@@ -568,8 +568,14 @@ namespace BoltFramePlugin.ViewModels
 
                 if (curves.Count > 0)
                 {
-                    // Create a CurveLoop from the curves
-                    return CurveLoop.Create(curves);
+                    // Sort curves to make them contiguous
+                    var sortedCurves = SortCurvesContiguous(curves);
+
+                    if (sortedCurves != null && sortedCurves.Count > 0)
+                    {
+                        // Create a CurveLoop from the sorted curves
+                        return CurveLoop.Create(sortedCurves);
+                    }
                 }
 
                 return null;
@@ -579,6 +585,79 @@ namespace BoltFramePlugin.ViewModels
                 _logger.LogError("Error extracting property line boundary", ex);
                 return null;
             }
+        }
+
+        private List<Curve> SortCurvesContiguous(List<Curve> curves)
+        {
+            if (curves == null || curves.Count == 0)
+                return curves;
+
+            var sortedCurves = new List<Curve>();
+            var remainingCurves = new List<Curve>(curves);
+
+            // Start with the first curve
+            sortedCurves.Add(remainingCurves[0]);
+            remainingCurves.RemoveAt(0);
+
+            double tolerance = 0.001; // 1mm tolerance for endpoint matching
+
+            // Keep adding curves until all are sorted or we can't find a match
+            while (remainingCurves.Count > 0)
+            {
+                var lastCurve = sortedCurves[sortedCurves.Count - 1];
+                var lastEndPoint = lastCurve.GetEndPoint(1);
+
+                bool foundMatch = false;
+
+                for (int i = 0; i < remainingCurves.Count; i++)
+                {
+                    var candidate = remainingCurves[i];
+                    var candidateStart = candidate.GetEndPoint(0);
+                    var candidateEnd = candidate.GetEndPoint(1);
+
+                    // Check if candidate starts where last curve ends
+                    if (lastEndPoint.DistanceTo(candidateStart) < tolerance)
+                    {
+                        sortedCurves.Add(candidate);
+                        remainingCurves.RemoveAt(i);
+                        foundMatch = true;
+                        break;
+                    }
+                    // Check if candidate is reversed (ends where last curve ends)
+                    else if (lastEndPoint.DistanceTo(candidateEnd) < tolerance)
+                    {
+                        // Create a reversed curve
+                        var reversedCurve = candidate.CreateReversed();
+                        sortedCurves.Add(reversedCurve);
+                        remainingCurves.RemoveAt(i);
+                        foundMatch = true;
+                        break;
+                    }
+                }
+
+                // If no match found, the curves are not forming a closed loop
+                if (!foundMatch)
+                {
+                    _logger.LogWarning($"Could not find contiguous curve. {remainingCurves.Count} curves remaining. Last endpoint: {lastEndPoint}");
+
+                    // Try to find any curve close to the start point to close the loop
+                    var firstCurve = sortedCurves[0];
+                    var firstStartPoint = firstCurve.GetEndPoint(0);
+
+                    if (lastEndPoint.DistanceTo(firstStartPoint) < tolerance)
+                    {
+                        // Loop is closed, we're done
+                        _logger.LogInformation($"Curve loop closed successfully with {sortedCurves.Count} curves");
+                        break;
+                    }
+
+                    // Cannot continue, return what we have
+                    _logger.LogError($"Curves are not contiguous. Sorted {sortedCurves.Count} out of {curves.Count} curves");
+                    return null;
+                }
+            }
+
+            return sortedCurves;
         }
 
         private bool IsWallInsidePropertyLine(Wall wall, CurveLoop propertyLineBoundary)
@@ -998,23 +1077,48 @@ namespace BoltFramePlugin.ViewModels
         {
             try
             {
-                _logger.LogInformation("Calculating distance groups by orientation and distance...");
+                _logger.LogInformation("Calculating distance groups by reference line and distance...");
                 _logger.LogInformation($"Total perimeter walls: {PerimeterWalls.Count}");
                 _logger.LogInformation($"Walls with limiting distance: {PerimeterWalls.Count(w => w.LimitingDistance.HasValue)}");
                 _logger.LogInformation($"Walls with orientation: {PerimeterWalls.Count(w => w.Orientation != null)}");
+                _logger.LogInformation($"Reference lines available: {ReferenceLines.Count}");
 
                 var groups = new List<DistanceGroupSummary>();
 
-                // Group walls by orientation first
+                // Group walls by reference line first
                 var wallsWithData = PerimeterWalls
                     .Where(w => w.LimitingDistance.HasValue && w.Orientation != null)
                     .ToList();
 
                 _logger.LogInformation($"Walls with both limiting distance and orientation: {wallsWithData.Count}");
 
-                var orientationGroups = wallsWithData
-                    .GroupBy(w => GetOrientationDescription(w.Orientation))
-                    .ToList();
+                // Group walls by reference line (based on parallel orientation)
+                var referenceLineGroups = new List<(string Name, List<WallInfo> Walls)>();
+
+                foreach (var referenceLine in ReferenceLines)
+                {
+                    var lineDirection = GetReferenceLineDirection(referenceLine);
+                    if (lineDirection == null)
+                        continue;
+
+                    // Get the perpendicular to the reference line (this is the normal direction)
+                    // For a line with direction (X, Y), the perpendicular is (-Y, X)
+                    var lineNormal = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
+
+                    var wallsForThisLine = wallsWithData
+                        .Where(w => w.Orientation != null &&
+                            (AreOrientationsSimilar(w.Orientation, lineNormal, 5.0) ||
+                             AreOrientationsSimilar(w.Orientation, new XYZ(-lineNormal.X, -lineNormal.Y, 0), 5.0)))
+                        .ToList();
+
+                    if (wallsForThisLine.Count > 0)
+                    {
+                        referenceLineGroups.Add((referenceLine.Name, wallsForThisLine));
+                        _logger.LogInformation($"Reference line '{referenceLine.Name}': {wallsForThisLine.Count} walls");
+                    }
+                }
+
+                _logger.LogInformation($"Created {referenceLineGroups.Count} reference line groups");
 
                 // Distance ranges based on building code tables (converted to feet from meters)
                 // Table 3.2.3.1.-D and 3.2.3.1.-E show ranges: 0, 1.2, 1.5, 2.0, 2.5, 3, 4, 5, 6, 7, 8, 9+ meters
@@ -1034,13 +1138,13 @@ namespace BoltFramePlugin.ViewModels
                     new { Min = 29.528, Max = double.MaxValue, Label = "9m+ (29.5ft+)" } // 9m+
                 };
 
-                foreach (var orientationGroup in orientationGroups)
+                foreach (var referenceLineGroup in referenceLineGroups)
                 {
-                    var orientation = orientationGroup.Key;
+                    var refLineName = referenceLineGroup.Name;
 
                     foreach (var range in ranges)
                     {
-                        var wallsInRange = orientationGroup
+                        var wallsInRange = referenceLineGroup.Walls
                             .Where(w => w.LimitingDistance.Value >= range.Min &&
                                        w.LimitingDistance.Value < range.Max)
                             .ToList();
@@ -1049,7 +1153,7 @@ namespace BoltFramePlugin.ViewModels
                         {
                             var group = new DistanceGroupSummary
                             {
-                                Orientation = orientation,
+                                Orientation = refLineName,
                                 DistanceRange = range.Label,
                                 MinDistance = range.Min,
                                 MaxDistance = range.Max,
@@ -1059,7 +1163,7 @@ namespace BoltFramePlugin.ViewModels
                             };
 
                             groups.Add(group);
-                            _logger.LogInformation($"Group {orientation} - {range.Label}: {group.WallCount} walls, Gross: {group.TotalGrossArea:F2} ft²");
+                            _logger.LogInformation($"Group {refLineName} - {range.Label}: {group.WallCount} walls, Gross: {group.TotalGrossArea:F2} ft²");
                         }
                     }
                 }
@@ -1071,7 +1175,7 @@ namespace BoltFramePlugin.ViewModels
                     DistanceGroups.Add(group);
                 }
 
-                _logger.LogInformation($"Distance groups calculated: {DistanceGroups.Count} groups across {orientationGroups.Count} orientations");
+                _logger.LogInformation($"Distance groups calculated: {DistanceGroups.Count} groups across {referenceLineGroups.Count} reference lines");
             }
             catch (Exception ex)
             {
@@ -1095,6 +1199,42 @@ namespace BoltFramePlugin.ViewModels
             {
                 return normal.X > 0 ? "East" : "West";
             }
+        }
+
+        /// <summary>
+        /// Gets the direction vector of a reference line
+        /// </summary>
+        private XYZ? GetReferenceLineDirection(ReferenceLineInfo referenceLine)
+        {
+            try
+            {
+                if (referenceLine?.Curve == null)
+                    return null;
+
+                // Get the curve direction and project to XY plane
+                var direction = (referenceLine.Curve.GetEndPoint(1) - referenceLine.Curve.GetEndPoint(0)).Normalize();
+                return new XYZ(direction.X, direction.Y, 0).Normalize();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error getting reference line direction: {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Determines if two orientations are similar within tolerance
+        /// </summary>
+        private bool AreOrientationsSimilar(XYZ orientation1, XYZ orientation2, double toleranceDegrees)
+        {
+            var angle1 = Math.Atan2(orientation1.Y, orientation1.X) * 180 / Math.PI;
+            var angle2 = Math.Atan2(orientation2.Y, orientation2.X) * 180 / Math.PI;
+
+            var angleDiff = Math.Abs(angle1 - angle2);
+            if (angleDiff > 180)
+                angleDiff = 360 - angleDiff;
+
+            return angleDiff < toleranceDegrees;
         }
 
         private void CreateWallProjections(object parameter)

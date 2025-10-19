@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace BoltFramePlugin.Models.LimitingDistance
 {
     /// <summary>
-    /// Represents a group of walls with the same limiting distance and orientation
+    /// Represents a group of walls associated with a reference line
     /// </summary>
     public class WallGroup
     {
@@ -21,11 +21,21 @@ namespace BoltFramePlugin.Models.LimitingDistance
             GroupName = string.Empty;
         }
 
+        /// <summary>
+        /// Gets the orientation description - uses reference line name if available,
+        /// otherwise falls back to cardinal direction
+        /// </summary>
         public string OrientationDescription
         {
             get
             {
-                // Determine cardinal direction based on orientation
+                // If this group is associated with a reference line, use its name
+                if (ReferenceLine != null && !string.IsNullOrEmpty(ReferenceLine.Name))
+                {
+                    return ReferenceLine.Name;
+                }
+
+                // Fallback to cardinal direction based on orientation
                 var angle = Math.Atan2(Orientation.Y, Orientation.X) * 180 / Math.PI;
                 if (angle < 0) angle += 360;
 
