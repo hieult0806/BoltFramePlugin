@@ -955,11 +955,12 @@ namespace BoltFramePlugin.ViewModels
                 {
                     _logger.LogInformation($"Highlighting walls in distance group: {group.Orientation} - {group.DistanceRange}");
 
-                    // Get all walls matching this orientation and distance range
+                    // Get all walls matching this reference line and distance range
+                    // group.Orientation now contains the reference line name
                     var wallsToHighlight = PerimeterWalls
-                        .Where(w => w.Orientation != null &&
+                        .Where(w => w.ReferenceLine != null &&
                                    w.LimitingDistance.HasValue &&
-                                   GetOrientationDescription(w.Orientation) == group.Orientation &&
+                                   w.ReferenceLine.Name == group.Orientation &&
                                    w.LimitingDistance.Value >= group.MinDistance &&
                                    w.LimitingDistance.Value < group.MaxDistance)
                         .Select(w => w.ElementId)
@@ -1045,7 +1046,7 @@ namespace BoltFramePlugin.ViewModels
                         // This callback runs after the external event completes
                         System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
                             new Action(() => {
-                                CalculateDistanceGroups();
+                                // Distance Groups are calculated AFTER wall projections are created, not after detection
 
                                 // Auto-create WALL ORIENTATION arrows if enabled AND if this detection should trigger auto-creation
                                 _logger.LogInformation($"Wall orientation arrow creation check: shouldAutoCreateArrows={shouldAutoCreateArrows}, AutoCreateArrows={AutoCreateArrows}, ReferenceLines.Count={ReferenceLines.Count}");
@@ -1073,78 +1074,61 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
-        private void CalculateDistanceGroups()
+        /// <summary>
+        /// Calculates distance groups based on walls with created regions
+        /// Groups by: Linked Reference Line → Distance Group
+        /// </summary>
+        /// <param name="wallsWithRegions">List of walls that successfully had regions created</param>
+        public void CalculateDistanceGroupsFromRegions(List<WallInfo> wallsWithRegions)
         {
             try
             {
-                _logger.LogInformation("Calculating distance groups by reference line and distance...");
-                _logger.LogInformation($"Total perimeter walls: {PerimeterWalls.Count}");
-                _logger.LogInformation($"Walls with limiting distance: {PerimeterWalls.Count(w => w.LimitingDistance.HasValue)}");
-                _logger.LogInformation($"Walls with orientation: {PerimeterWalls.Count(w => w.Orientation != null)}");
-                _logger.LogInformation($"Reference lines available: {ReferenceLines.Count}");
+                _logger.LogInformation("Calculating distance groups from walls with created regions...");
+                _logger.LogInformation($"Walls with regions: {wallsWithRegions?.Count ?? 0}");
 
                 var groups = new List<DistanceGroupSummary>();
 
-                // Group walls by reference line first
-                var wallsWithData = PerimeterWalls
-                    .Where(w => w.LimitingDistance.HasValue && w.Orientation != null)
-                    .ToList();
-
-                _logger.LogInformation($"Walls with both limiting distance and orientation: {wallsWithData.Count}");
-
-                // Group walls by reference line (based on parallel orientation)
-                var referenceLineGroups = new List<(string Name, List<WallInfo> Walls)>();
-
-                foreach (var referenceLine in ReferenceLines)
+                if (wallsWithRegions == null || wallsWithRegions.Count == 0)
                 {
-                    var lineDirection = GetReferenceLineDirection(referenceLine);
-                    if (lineDirection == null)
-                        continue;
-
-                    // Get the perpendicular to the reference line (this is the normal direction)
-                    // For a line with direction (X, Y), the perpendicular is (-Y, X)
-                    var lineNormal = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
-
-                    var wallsForThisLine = wallsWithData
-                        .Where(w => w.Orientation != null &&
-                            (AreOrientationsSimilar(w.Orientation, lineNormal, 5.0) ||
-                             AreOrientationsSimilar(w.Orientation, new XYZ(-lineNormal.X, -lineNormal.Y, 0), 5.0)))
-                        .ToList();
-
-                    if (wallsForThisLine.Count > 0)
-                    {
-                        referenceLineGroups.Add((referenceLine.Name, wallsForThisLine));
-                        _logger.LogInformation($"Reference line '{referenceLine.Name}': {wallsForThisLine.Count} walls");
-                    }
+                    DistanceGroups.Clear();
+                    _logger.LogWarning("No walls with regions to calculate distance groups");
+                    return;
                 }
 
-                _logger.LogInformation($"Created {referenceLineGroups.Count} reference line groups");
+                // Group walls by their assigned reference line
+                var wallsByReferenceLine = wallsWithRegions
+                    .Where(w => w.LimitingDistance.HasValue && w.ReferenceLine != null)
+                    .GroupBy(w => w.ReferenceLine)
+                    .OrderBy(g => g.Key.LineTypeFormatted)
+                    .ThenBy(g => g.Key.Name)
+                    .ToList();
+
+                _logger.LogInformation($"Grouped into {wallsByReferenceLine.Count} reference line groups");
 
                 // Distance ranges based on building code tables (converted to feet from meters)
-                // Table 3.2.3.1.-D and 3.2.3.1.-E show ranges: 0, 1.2, 1.5, 2.0, 2.5, 3, 4, 5, 6, 7, 8, 9+ meters
                 var ranges = new[]
                 {
-                    new { Min = 0.0, Max = 3.937, Label = "0-1.2m (0-3.9ft)" },      // 0-1.2m
-                    new { Min = 3.937, Max = 4.921, Label = "1.2-1.5m (3.9-4.9ft)" }, // 1.2-1.5m
-                    new { Min = 4.921, Max = 6.562, Label = "1.5-2m (4.9-6.6ft)" },   // 1.5-2m
-                    new { Min = 6.562, Max = 8.202, Label = "2-2.5m (6.6-8.2ft)" },   // 2-2.5m
-                    new { Min = 8.202, Max = 9.843, Label = "2.5-3m (8.2-9.8ft)" },   // 2.5-3m
-                    new { Min = 9.843, Max = 13.123, Label = "3-4m (9.8-13.1ft)" },   // 3-4m
-                    new { Min = 13.123, Max = 16.404, Label = "4-5m (13.1-16.4ft)" }, // 4-5m
-                    new { Min = 16.404, Max = 19.685, Label = "5-6m (16.4-19.7ft)" }, // 5-6m
-                    new { Min = 19.685, Max = 22.966, Label = "6-7m (19.7-23.0ft)" }, // 6-7m
-                    new { Min = 22.966, Max = 26.247, Label = "7-8m (23.0-26.2ft)" }, // 7-8m
-                    new { Min = 26.247, Max = 29.528, Label = "8-9m (26.2-29.5ft)" }, // 8-9m
-                    new { Min = 29.528, Max = double.MaxValue, Label = "9m+ (29.5ft+)" } // 9m+
+                    new { Min = 0.0, Max = 3.937, Label = "0-1.2m (0-3.9ft)" },
+                    new { Min = 3.937, Max = 4.921, Label = "1.2-1.5m (3.9-4.9ft)" },
+                    new { Min = 4.921, Max = 6.562, Label = "1.5-2m (4.9-6.6ft)" },
+                    new { Min = 6.562, Max = 8.202, Label = "2-2.5m (6.6-8.2ft)" },
+                    new { Min = 8.202, Max = 9.843, Label = "2.5-3m (8.2-9.8ft)" },
+                    new { Min = 9.843, Max = 13.123, Label = "3-4m (9.8-13.1ft)" },
+                    new { Min = 13.123, Max = 16.404, Label = "4-5m (13.1-16.4ft)" },
+                    new { Min = 16.404, Max = 19.685, Label = "5-6m (16.4-19.7ft)" },
+                    new { Min = 19.685, Max = 22.966, Label = "6-7m (19.7-23.0ft)" },
+                    new { Min = 22.966, Max = 26.247, Label = "7-8m (23.0-26.2ft)" },
+                    new { Min = 26.247, Max = 29.528, Label = "8-9m (26.2-29.5ft)" },
+                    new { Min = 29.528, Max = double.MaxValue, Label = "9m+ (29.5ft+)" }
                 };
 
-                foreach (var referenceLineGroup in referenceLineGroups)
+                foreach (var refLineGroup in wallsByReferenceLine)
                 {
-                    var refLineName = referenceLineGroup.Name;
+                    var refLineName = refLineGroup.Key.Name;
 
                     foreach (var range in ranges)
                     {
-                        var wallsInRange = referenceLineGroup.Walls
+                        var wallsInRange = refLineGroup
                             .Where(w => w.LimitingDistance.Value >= range.Min &&
                                        w.LimitingDistance.Value < range.Max)
                             .ToList();
@@ -1163,7 +1147,7 @@ namespace BoltFramePlugin.ViewModels
                             };
 
                             groups.Add(group);
-                            _logger.LogInformation($"Group {refLineName} - {range.Label}: {group.WallCount} walls, Gross: {group.TotalGrossArea:F2} ft²");
+                            _logger.LogInformation($"  {refLineName} - {range.Label}: {group.WallCount} walls, Gross: {group.TotalGrossArea:F2} ft²");
                         }
                     }
                 }
@@ -1175,11 +1159,11 @@ namespace BoltFramePlugin.ViewModels
                     DistanceGroups.Add(group);
                 }
 
-                _logger.LogInformation($"Distance groups calculated: {DistanceGroups.Count} groups across {referenceLineGroups.Count} reference lines");
+                _logger.LogInformation($"Distance groups calculated: {DistanceGroups.Count} groups");
             }
             catch (Exception ex)
             {
-                _logger.LogError("Error calculating distance groups", ex);
+                _logger.LogError("Error calculating distance groups from regions", ex);
             }
         }
 
@@ -1261,7 +1245,15 @@ namespace BoltFramePlugin.ViewModels
                     PerimeterWalls.ToList(),
                     ReferenceLines.ToList(),
                     null,
-                    AddCreatedView);
+                    AddCreatedView,
+                    (wallsWithRegions) => {
+                        // This callback runs after projections are created
+                        // Update Distance Groups based on walls that actually got regions
+                        System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                            new Action(() => {
+                                CalculateDistanceGroupsFromRegions(wallsWithRegions);
+                            }));
+                    });
 
                 // Raise the external event
                 _createProjectionsEvent.Raise();

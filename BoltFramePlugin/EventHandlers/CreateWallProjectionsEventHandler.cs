@@ -33,6 +33,7 @@ namespace BoltFramePlugin.EventHandlers
         private DistanceGroupSummary? _distanceGroup;
         private readonly ILoggingService _logger;
         private Action<ViewSection, int>? _onViewCreated;
+        private Action<List<WallInfo>>? _onProjectionsCompleted;
 
         #endregion
 
@@ -52,13 +53,14 @@ namespace BoltFramePlugin.EventHandlers
         /// <summary>
         /// Sets the parameters for wall projection creation
         /// </summary>
-        public void SetParameters(UIDocument uidoc, List<WallInfo> perimeterWalls, List<ReferenceLineInfo> referenceLines, DistanceGroupSummary? distanceGroup = null, Action<ViewSection, int>? onViewCreated = null)
+        public void SetParameters(UIDocument uidoc, List<WallInfo> perimeterWalls, List<ReferenceLineInfo> referenceLines, DistanceGroupSummary? distanceGroup = null, Action<ViewSection, int>? onViewCreated = null, Action<List<WallInfo>>? onProjectionsCompleted = null)
         {
             _uidoc = uidoc;
             _perimeterWalls = perimeterWalls;
             _referenceLines = referenceLines;
             _distanceGroup = distanceGroup;
             _onViewCreated = onViewCreated;
+            _onProjectionsCompleted = onProjectionsCompleted;
             _logger.LogInformation($"Parameters set - Walls: {perimeterWalls?.Count ?? 0}, Reference Lines: {referenceLines?.Count ?? 0}, Distance Group: {distanceGroup?.Orientation ?? "All"} {distanceGroup?.DistanceRange ?? ""}");
         }
 
@@ -426,6 +428,7 @@ namespace BoltFramePlugin.EventHandlers
                 try
                 {
                     int viewsCreated = 0;
+                    var wallsWithRegions = new List<WallInfo>();
 
                     foreach (var group in orientationGroups)
                     {
@@ -433,17 +436,26 @@ namespace BoltFramePlugin.EventHandlers
 
                         if (elevationView != null)
                         {
-                            CreateRegionsForWalls(doc, elevationView, group);
+                            var createdWalls = CreateRegionsForWalls(doc, elevationView, group);
+                            wallsWithRegions.AddRange(createdWalls);
                             viewsCreated++;
                         }
                     }
 
                     trans.Commit();
 
+                    // Calculate distance groups summary based on created regions
+                    var distanceGroupsSummary = CalculateDistanceGroupsSummary(wallsWithRegions);
+
+                    // Invoke callback to update ViewModel with walls that have regions
+                    _onProjectionsCompleted?.Invoke(wallsWithRegions);
+
                     TaskDialog.Show("Success",
                         $"Created {viewsCreated} elevation views with wall projections.\n\n" +
                         $"Orientation groups: {orientationGroups.Count}\n" +
-                        $"Total walls: {_perimeterWalls.Count}");
+                        $"Total walls: {_perimeterWalls.Count}\n" +
+                        $"Walls with regions: {wallsWithRegions.Count}\n\n" +
+                        $"{distanceGroupsSummary}");
 
                     _logger.LogInformation($"Successfully created {viewsCreated} elevation views");
                 }
@@ -687,8 +699,10 @@ namespace BoltFramePlugin.EventHandlers
         /// <summary>
         /// Creates filled regions for walls in the elevation view
         /// </summary>
-        private void CreateRegionsForWalls(Document doc, ViewSection elevationView, WallGroup group)
+        private List<WallInfo> CreateRegionsForWalls(Document doc, ViewSection elevationView, WallGroup group)
         {
+            var wallsWithRegions = new List<WallInfo>();
+
             try
             {
                 var viewOrigin = elevationView.Origin;
@@ -712,13 +726,19 @@ namespace BoltFramePlugin.EventHandlers
 
                 foreach (var wallInfo in wallsToProject)
                 {
-                    CreateRegionForWall(doc, elevationView, wallInfo, viewOrigin, viewRightDirection, viewUpDirection);
+                    bool success = CreateRegionForWall(doc, elevationView, wallInfo, viewOrigin, viewRightDirection, viewUpDirection);
+                    if (success)
+                    {
+                        wallsWithRegions.Add(wallInfo);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error creating regions for walls in group {group.GroupName}", ex);
             }
+
+            return wallsWithRegions;
         }
 
         /// <summary>
@@ -737,8 +757,9 @@ namespace BoltFramePlugin.EventHandlers
         /// <summary>
         /// Creates a filled region for a single wall using Revit's geometry projection
         /// Applies ceiling trimming if top-most ceilings are detected
+        /// Returns true if region was successfully created
         /// </summary>
-        private void CreateRegionForWall(Document doc, ViewSection elevationView, WallInfo wallInfo,
+        private bool CreateRegionForWall(Document doc, ViewSection elevationView, WallInfo wallInfo,
             XYZ viewOrigin, XYZ viewRightDirection, XYZ viewUpDirection)
         {
             try
@@ -761,7 +782,7 @@ namespace BoltFramePlugin.EventHandlers
                 if (geometryElement == null)
                 {
                     _logger.LogWarning($"Wall {wall.Id.Value} has no geometry in section view");
-                    return;
+                    return false;
                 }
 
                 // Extract curve loops from the geometry as it appears in the view
@@ -770,7 +791,7 @@ namespace BoltFramePlugin.EventHandlers
                 if (curveLoops == null || curveLoops.Count == 0)
                 {
                     _logger.LogWarning($"Wall {wall.Id.Value} produced no curve loops in section view");
-                    return;
+                    return false;
                 }
 
                 _logger.LogInformation($"Wall {wall.Id.Value} extracted {curveLoops.Count} curve loops from view geometry");
@@ -784,7 +805,7 @@ namespace BoltFramePlugin.EventHandlers
                 if (projectedLoop == null)
                 {
                     _logger.LogWarning($"Wall {wall.Id.Value} failed to project curve loop to view plane");
-                    return;
+                    return false;
                 }
 
                 // Check if we need to trim by top-most ceiling
@@ -794,7 +815,7 @@ namespace BoltFramePlugin.EventHandlers
                 if (!wallInfo.LimitingDistance.HasValue)
                 {
                     _logger.LogWarning($"Wall {wall.Id.Value} has no limiting distance");
-                    return;
+                    return false;
                 }
 
                 var distanceGroup = GetDistanceGroupForWall(wallInfo.LimitingDistance.Value);
@@ -807,7 +828,10 @@ namespace BoltFramePlugin.EventHandlers
                         var region = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, new List<CurveLoop> { loop });
                         _logger.LogInformation($"Successfully created region for wall {wall.Id.Value} using view geometry");
                     }
+                    return true;
                 }
+
+                return false;
             }
             catch (Exception ex)
             {
@@ -816,6 +840,7 @@ namespace BoltFramePlugin.EventHandlers
                 _logger.LogError($"View Right: X={viewRightDirection.X:F3}, Y={viewRightDirection.Y:F3}, Z={viewRightDirection.Z:F3}");
                 _logger.LogError($"View Up: X={viewUpDirection.X:F3}, Y={viewUpDirection.Y:F3}, Z={viewUpDirection.Z:F3}");
                 _logger.LogError($"Stack trace: {ex.StackTrace}");
+                return false;
             }
         }
 
@@ -1775,6 +1800,51 @@ namespace BoltFramePlugin.EventHandlers
             }
 
             return ranges[^1];
+        }
+
+        /// <summary>
+        /// Calculates summary statistics for distance groups based on walls with created regions
+        /// Groups by: Linked Reference Line -> Distance Group
+        /// </summary>
+        private string CalculateDistanceGroupsSummary(List<WallInfo> wallsWithRegions)
+        {
+            if (wallsWithRegions == null || wallsWithRegions.Count == 0)
+            {
+                return "Distance Groups Summary:\n  No walls with regions created";
+            }
+
+            // Group walls by reference line, then by distance group
+            var groupedByRefLine = wallsWithRegions
+                .Where(w => w.LimitingDistance.HasValue && w.ReferenceLine != null)
+                .GroupBy(w => w.ReferenceLine)
+                .OrderBy(g => g.Key.LineTypeFormatted)
+                .ThenBy(g => g.Key.Name);
+
+            if (!groupedByRefLine.Any())
+            {
+                return "Distance Groups Summary:\n  No walls with reference lines and limiting distances";
+            }
+
+            var summary = new System.Text.StringBuilder();
+            summary.AppendLine("Distance Groups Summary:");
+
+            foreach (var refLineGroup in groupedByRefLine)
+            {
+                summary.AppendLine($"\n  {refLineGroup.Key.Name}:");
+
+                // Within each reference line, group by distance group
+                var distanceGroups = refLineGroup
+                    .GroupBy(w => GetDistanceGroupForWall(w.LimitingDistance.Value))
+                    .OrderBy(g => g.Key.ColorIndex)
+                    .ToList();
+
+                foreach (var distGroup in distanceGroups)
+                {
+                    summary.AppendLine($"    {distGroup.Key.Label}: {distGroup.Count()} wall(s)");
+                }
+            }
+
+            return summary.ToString().TrimEnd();
         }
 
         /// <summary>
