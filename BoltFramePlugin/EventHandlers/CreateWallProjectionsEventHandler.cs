@@ -280,10 +280,25 @@ namespace BoltFramePlugin.EventHandlers
 
                 if (wallsForThisLine.Count > 0)
                 {
+                    // For imaginary lines, the line direction is perpendicular to the walls
+                    // We need to rotate 90 degrees to get the direction parallel to the walls
+                    XYZ groupOrientation;
+                    if (referenceLine.LineType == ReferenceLineType.ImaginaryLine)
+                    {
+                        // Rotate 90 degrees: (x, y) -> (-y, x)
+                        groupOrientation = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
+                        _logger.LogInformation($"Imaginary line detected - rotated orientation to: X={groupOrientation.X:F3}, Y={groupOrientation.Y:F3}");
+                    }
+                    else
+                    {
+                        // For property lines and road centerlines, use direction as-is
+                        groupOrientation = lineDirection;
+                    }
+
                     var newGroup = new WallGroup
                     {
                         LimitingDistance = wallsForThisLine.Average(w => w.LimitingDistance ?? 0),
-                        Orientation = lineDirection,
+                        Orientation = groupOrientation,
                         ReferenceLine = referenceLine
                     };
 
