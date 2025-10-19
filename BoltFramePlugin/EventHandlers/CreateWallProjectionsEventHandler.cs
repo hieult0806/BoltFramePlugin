@@ -643,6 +643,11 @@ namespace BoltFramePlugin.EventHandlers
 
                 LogViewCoordinateSystem(viewOrigin, viewDirection, viewRightDirection, viewUpDirection);
 
+                // Log the reference line direction to help diagnose angled views
+                _logger.LogInformation($"Reference line direction: X={group.Orientation.X:F3}, Y={group.Orientation.Y:F3}");
+                var angle = Math.Atan2(group.Orientation.Y, group.Orientation.X) * 180 / Math.PI;
+                _logger.LogInformation($"Reference line angle from X-axis: {angle:F2}°");
+
                 EnsureSketchPlaneExists(doc, elevationView, viewDirection, viewOrigin);
 
                 var wallsToProject = FilterWallsByGroupOrientation(group);
@@ -700,7 +705,8 @@ namespace BoltFramePlugin.EventHandlers
         }
 
         /// <summary>
-        /// Creates a filled region for a single wall
+        /// Creates a filled region for a single wall using Revit's geometry projection
+        /// Applies ceiling trimming if top-most ceilings are detected
         /// </summary>
         private void CreateRegionForWall(Document doc, ViewSection elevationView, WallInfo wallInfo,
             XYZ viewOrigin, XYZ viewRightDirection, XYZ viewUpDirection)
@@ -708,34 +714,387 @@ namespace BoltFramePlugin.EventHandlers
             try
             {
                 var wall = wallInfo.Wall;
-                var locationCurve = (wall.Location as LocationCurve)?.Curve;
 
-                if (locationCurve == null)
+                _logger.LogInformation($"=== Processing wall {wall.Id.Value} for region creation ===");
+
+                // Get geometry as it appears in the section view - this is the key!
+                // Note: When View is set, DetailLevel is automatically taken from the view
+                var options = new Options
                 {
-                    _logger.LogWarning($"Wall {wall.Id.Value} has no location curve");
+                    View = elevationView,
+                    ComputeReferences = false,
+                    IncludeNonVisibleObjects = false
+                };
+
+                var geometryElement = wall.get_Geometry(options);
+
+                if (geometryElement == null)
+                {
+                    _logger.LogWarning($"Wall {wall.Id.Value} has no geometry in section view");
                     return;
                 }
 
-                var (baseElevation, topElevation) = GetWallElevations(doc, wall);
-                _logger.LogInformation($"Wall {wall.Id.Value}: Base={baseElevation:F2}, Top={topElevation:F2}, Height={topElevation - baseElevation:F2}");
+                // Extract curve loops from the geometry as it appears in the view
+                var curveLoops = ExtractCurveLoopsFromGeometry(geometryElement, wall.Id);
 
-                var rectanglePoints = CalculateWallRectanglePoints(locationCurve, baseElevation, topElevation,
-                    viewOrigin, viewRightDirection, viewUpDirection);
-
-                var outerLoop = CreateRectangleCurveLoop(wall.Id, rectanglePoints);
-
-                if (outerLoop != null)
+                if (curveLoops == null || curveLoops.Count == 0)
                 {
-                    // Get wall openings (doors, windows, etc.) and create curve loops for them
-                    var openingLoops = GetWallOpeningLoops(doc, wall, baseElevation, viewOrigin, viewRightDirection, viewUpDirection);
+                    _logger.LogWarning($"Wall {wall.Id.Value} produced no curve loops in section view");
+                    return;
+                }
 
-                    CreateFilledRegionWithOpenings(doc, elevationView, wall.Id, wallInfo, outerLoop, openingLoops, viewOrigin, viewRightDirection, viewUpDirection);
+                _logger.LogInformation($"Wall {wall.Id.Value} extracted {curveLoops.Count} curve loops from view geometry");
+
+                // Use the first (outer) curve loop as the wall boundary
+                var outerLoop = curveLoops[0];
+
+                // Project the curve loop onto the view's sketch plane
+                var projectedLoop = ProjectCurveLoopToViewPlane(outerLoop, viewOrigin, viewRightDirection, viewUpDirection, wall.Id);
+
+                if (projectedLoop == null)
+                {
+                    _logger.LogWarning($"Wall {wall.Id.Value} failed to project curve loop to view plane");
+                    return;
+                }
+
+                // Check if we need to trim by top-most ceiling
+                var trimmedLoops = ApplyCeilingTrimming(doc, wall, projectedLoop, viewOrigin, viewRightDirection, viewUpDirection);
+
+                // Try to create filled region(s) with the extracted geometry
+                if (!wallInfo.LimitingDistance.HasValue)
+                {
+                    _logger.LogWarning($"Wall {wall.Id.Value} has no limiting distance");
+                    return;
+                }
+
+                var distanceGroup = GetDistanceGroupForWall(wallInfo.LimitingDistance.Value);
+                var filledRegionType = GetOrCreateColoredFilledRegionType(doc, distanceGroup);
+
+                if (filledRegionType != null)
+                {
+                    foreach (var loop in trimmedLoops)
+                    {
+                        var region = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, new List<CurveLoop> { loop });
+                        _logger.LogInformation($"Successfully created region for wall {wall.Id.Value} using view geometry");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning($"Could not create region for wall {wallInfo.ElementId.Value}: {ex.Message}");
+                _logger.LogError($"Could not create region for wall {wallInfo.ElementId.Value}: {ex.Message}", ex);
+                _logger.LogError($"Wall orientation: X={wallInfo.Orientation?.X:F3}, Y={wallInfo.Orientation?.Y:F3}");
+                _logger.LogError($"View Right: X={viewRightDirection.X:F3}, Y={viewRightDirection.Y:F3}, Z={viewRightDirection.Z:F3}");
+                _logger.LogError($"View Up: X={viewUpDirection.X:F3}, Y={viewUpDirection.Y:F3}, Z={viewUpDirection.Z:F3}");
+                _logger.LogError($"Stack trace: {ex.StackTrace}");
             }
+        }
+
+        /// <summary>
+        /// Projects a curve loop from 3D world coordinates onto the view's sketch plane
+        /// </summary>
+        private CurveLoop? ProjectCurveLoopToViewPlane(CurveLoop loop, XYZ viewOrigin, XYZ viewRight, XYZ viewUp, ElementId wallId)
+        {
+            try
+            {
+                var projectedLoop = new CurveLoop();
+
+                foreach (Curve curve in loop)
+                {
+                    var startPoint = curve.GetEndPoint(0);
+                    var endPoint = curve.GetEndPoint(1);
+
+                    // Project both points onto the view plane
+                    var projectedStart = ProjectPointToViewPlane(startPoint, viewOrigin, viewRight, viewUp);
+                    var projectedEnd = ProjectPointToViewPlane(endPoint, viewOrigin, viewRight, viewUp);
+
+                    // Check if points are too close (degenerate curve)
+                    if (projectedStart.DistanceTo(projectedEnd) > POINT_EQUALITY_TOLERANCE)
+                    {
+                        var projectedCurve = Line.CreateBound(projectedStart, projectedEnd);
+                        projectedLoop.Append(projectedCurve);
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Wall {wallId.Value}: Skipping degenerate curve (length: {projectedStart.DistanceTo(projectedEnd):F6})");
+                    }
+                }
+
+                if (projectedLoop.NumberOfCurves() < 3)
+                {
+                    _logger.LogWarning($"Wall {wallId.Value}: Projected loop has only {projectedLoop.NumberOfCurves()} curves, need at least 3");
+                    return null;
+                }
+
+                if (projectedLoop.IsOpen())
+                {
+                    _logger.LogWarning($"Wall {wallId.Value}: Projected loop is open");
+                    return null;
+                }
+
+                _logger.LogInformation($"Wall {wallId.Value}: Successfully projected {projectedLoop.NumberOfCurves()} curves to view plane");
+                return projectedLoop;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error projecting curve loop for wall {wallId.Value}: {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Trims a curve loop at a specific height (Z coordinate in the projected view plane)
+        /// </summary>
+        private CurveLoop? TrimCurveLoopAtHeight(CurveLoop loop, double maxHeight, ElementId wallId)
+        {
+            try
+            {
+                // Get all points from the loop
+                var points = new List<XYZ>();
+                foreach (Curve curve in loop)
+                {
+                    points.Add(curve.GetEndPoint(0));
+                }
+
+                // Find min and max Z (vertical in the view)
+                double minZ = points.Min(p => p.Z);
+                double maxZ = points.Max(p => p.Z);
+
+                _logger.LogInformation($"Wall {wallId.Value}: Original loop Z range: [{minZ:F3}, {maxZ:F3}], trimming to max {maxHeight:F3}");
+
+                // If the ceiling is above the wall top, no trimming needed
+                if (maxHeight >= maxZ)
+                {
+                    _logger.LogInformation($"  NOT trimmed - ceiling ({maxHeight:F3}) is at or above wall top ({maxZ:F3})");
+                    return loop;
+                }
+
+                // If the ceiling is below the wall base, the wall is completely hidden
+                if (maxHeight <= minZ)
+                {
+                    _logger.LogWarning($"Wall {wallId.Value}: Ceiling ({maxHeight:F3}) is below wall base ({minZ:F3}), wall completely hidden");
+                    return null;
+                }
+
+                // The wall needs trimming - modify the top edge
+                // Assume rectangular wall: bottom-left, bottom-right, top-right, top-left
+                var trimmedPoints = new List<XYZ>();
+
+                foreach (var point in points)
+                {
+                    if (point.Z <= maxHeight)
+                    {
+                        // Point is below ceiling, keep as is
+                        trimmedPoints.Add(point);
+                    }
+                    else
+                    {
+                        // Point is above ceiling, clamp to ceiling height
+                        trimmedPoints.Add(new XYZ(point.X, point.Y, maxHeight));
+                    }
+                }
+
+                // Create new curve loop from trimmed points
+                var trimmedLoop = new CurveLoop();
+                for (int i = 0; i < trimmedPoints.Count; i++)
+                {
+                    var nextIndex = (i + 1) % trimmedPoints.Count;
+                    var p1 = trimmedPoints[i];
+                    var p2 = trimmedPoints[nextIndex];
+
+                    if (p1.DistanceTo(p2) > POINT_EQUALITY_TOLERANCE)
+                    {
+                        trimmedLoop.Append(Line.CreateBound(p1, p2));
+                    }
+                }
+
+                if (trimmedLoop.NumberOfCurves() >= 3 && !trimmedLoop.IsOpen())
+                {
+                    _logger.LogInformation($"  *** TRIMMED *** New Z max: {maxHeight:F3} (was {maxZ:F3})");
+                    return trimmedLoop;
+                }
+                else
+                {
+                    _logger.LogWarning($"Wall {wallId.Value}: Trimmed loop is invalid (curves: {trimmedLoop.NumberOfCurves()}, open: {trimmedLoop.IsOpen()})");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error trimming curve loop for wall {wallId.Value}: {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Applies ceiling trimming to a wall's curve loop if top-most ceilings are detected
+        /// Returns one or more trimmed curve loops (wall may be split by ceiling)
+        /// </summary>
+        private List<CurveLoop> ApplyCeilingTrimming(Document doc, Wall wall, CurveLoop outerLoop,
+            XYZ viewOrigin, XYZ viewRightDirection, XYZ viewUpDirection)
+        {
+            var resultLoops = new List<CurveLoop>();
+
+            try
+            {
+                // Get connected ceilings
+                var connectedCeilings = Helpers.CeilingWallAnalyzer.GetConnectedCeilings(wall, doc);
+                _logger.LogInformation($"Wall {wall.Id.Value}: Found {connectedCeilings.Count} connected ceiling(s)");
+
+                double? maxWallHeightIn2D = null;
+
+                // Find the top-most ceiling that limits the wall
+                foreach (var relationship in connectedCeilings)
+                {
+                    _logger.LogInformation($"  Checking ceiling {relationship.Ceiling.Id.Value}: IsJoined={relationship.IsJoined}");
+
+                    // Check if ceiling is top-most
+                    var isTopMostParam = relationship.Ceiling.LookupParameter("IsTopMost");
+                    if (isTopMostParam != null && isTopMostParam.StorageType == StorageType.Integer && isTopMostParam.AsInteger() == 1)
+                    {
+                        // Get ceiling elevation in 3D world coordinates
+                        var ceilingElevation3D = relationship.CeilingElevation;
+                        var wallBaseElevation = relationship.WallBaseElevation;
+                        var wallTopElevation = relationship.WallTopElevation;
+
+                        // Project a point at ceiling elevation to the 2D view plane
+                        var wallLocationCurve = (wall.Location as LocationCurve)?.Curve;
+                        if (wallLocationCurve != null)
+                        {
+                            var wallMidPoint = wallLocationCurve.Evaluate(0.5, true);
+                            var ceilingPoint3D = new XYZ(wallMidPoint.X, wallMidPoint.Y, ceilingElevation3D);
+                            _logger.LogInformation($"    Ceiling point 3D: ({ceilingPoint3D.X:F3}, {ceilingPoint3D.Y:F3}, {ceilingPoint3D.Z:F3})");
+
+                            var ceilingPoint2D = ProjectPointToViewPlane(ceilingPoint3D, viewOrigin, viewRightDirection, viewUpDirection);
+                            _logger.LogInformation($"    Ceiling point 2D: ({ceilingPoint2D.X:F3}, {ceilingPoint2D.Y:F3}, {ceilingPoint2D.Z:F3})");
+
+                            // The Z component of the projected point is the vertical position in the 2D view
+                            var ceilingHeightIn2D = ceilingPoint2D.Z;
+
+                            // Keep track of the lowest ceiling (most restrictive)
+                            if (!maxWallHeightIn2D.HasValue || ceilingHeightIn2D < maxWallHeightIn2D.Value)
+                            {
+                                maxWallHeightIn2D = ceilingHeightIn2D;
+                                _logger.LogInformation($"    ** SELECTED as limiting ceiling **");
+                                _logger.LogInformation($"    Ceiling 3D elevation: {ceilingElevation3D:F2} ft, projected 2D height: {ceilingHeightIn2D:F3}");
+                                _logger.LogInformation($"    Wall base 3D: {wallBaseElevation:F2} ft, Wall top 3D: {wallTopElevation:F2} ft");
+                            }
+                            else
+                            {
+                                _logger.LogInformation($"    Not selected (higher than current limit {maxWallHeightIn2D.Value:F3})");
+                            }
+                        }
+                    }
+                }
+
+                // If there's a top-most ceiling, trim the wall curve loop
+                if (maxWallHeightIn2D.HasValue)
+                {
+                    _logger.LogInformation($"Wall {wall.Id.Value}: Applying ceiling trim at height {maxWallHeightIn2D.Value:F3}");
+
+                    // The outerLoop is already projected onto the view plane
+                    // Extract the actual 2D coordinates (in view's local coordinate system)
+                    var trimmedLoop = TrimCurveLoopAtHeight(outerLoop, maxWallHeightIn2D.Value, wall.Id);
+
+                    if (trimmedLoop != null)
+                    {
+                        resultLoops.Add(trimmedLoop);
+                        _logger.LogInformation($"Wall {wall.Id.Value}: Successfully trimmed curve loop at ceiling height");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Failed to trim curve loop for wall {wall.Id.Value}, using original");
+                        resultLoops.Add(outerLoop);
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation($"Wall {wall.Id.Value}: No top-most ceiling found, no trimming");
+                    resultLoops.Add(outerLoop);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error applying ceiling trimming for wall {wall.Id.Value}: {ex.Message}", ex);
+                // Fall back to original loop if trimming fails
+                resultLoops.Add(outerLoop);
+            }
+
+            return resultLoops;
+        }
+
+        /// <summary>
+        /// Extracts curve loops from geometry element (as it appears in the view)
+        /// </summary>
+        private List<CurveLoop> ExtractCurveLoopsFromGeometry(GeometryElement geometryElement, ElementId wallId)
+        {
+            var curveLoops = new List<CurveLoop>();
+
+            try
+            {
+                foreach (GeometryObject geomObj in geometryElement)
+                {
+                    if (geomObj is Solid solid && solid.Faces.Size > 0)
+                    {
+                        _logger.LogInformation($"Wall {wallId.Value}: Found solid with {solid.Faces.Size} faces");
+
+                        // Get the largest planar face (this should be the wall face in the section)
+                        Face largestFace = null;
+                        double largestArea = 0;
+
+                        foreach (Face face in solid.Faces)
+                        {
+                            if (face is PlanarFace planarFace)
+                            {
+                                double area = face.Area;
+                                if (area > largestArea)
+                                {
+                                    largestArea = area;
+                                    largestFace = face;
+                                }
+                            }
+                        }
+
+                        if (largestFace != null)
+                        {
+                            _logger.LogInformation($"Wall {wallId.Value}: Using largest planar face with area {largestArea:F2} ft²");
+
+                            // Get edge loops from the face
+                            var edgeArrays = largestFace.EdgeLoops;
+                            foreach (EdgeArray edgeArray in edgeArrays)
+                            {
+                                var curveLoop = new CurveLoop();
+                                foreach (Edge edge in edgeArray)
+                                {
+                                    var curve = edge.AsCurve();
+                                    curveLoop.Append(curve);
+                                }
+
+                                if (curveLoop.NumberOfCurves() > 0)
+                                {
+                                    curveLoops.Add(curveLoop);
+                                    _logger.LogInformation($"Wall {wallId.Value}: Extracted curve loop with {curveLoop.NumberOfCurves()} curves");
+                                }
+                            }
+                        }
+                    }
+                    else if (geomObj is GeometryInstance geometryInstance)
+                    {
+                        // Recursively process geometry instances
+                        var instGeometry = geometryInstance.GetInstanceGeometry();
+                        if (instGeometry != null)
+                        {
+                            var nestedLoops = ExtractCurveLoopsFromGeometry(instGeometry, wallId);
+                            curveLoops.AddRange(nestedLoops);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error extracting curve loops for wall {wallId.Value}: {ex.Message}", ex);
+            }
+
+            return curveLoops;
         }
 
         /// <summary>
