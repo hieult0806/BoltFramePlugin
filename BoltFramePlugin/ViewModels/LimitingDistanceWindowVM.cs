@@ -1128,9 +1128,10 @@ namespace BoltFramePlugin.ViewModels
 
                     foreach (var range in ranges)
                     {
+                        // For the last range (9m+), handle infinity properly
                         var wallsInRange = refLineGroup
                             .Where(w => w.LimitingDistance.Value >= range.Min &&
-                                       w.LimitingDistance.Value < range.Max)
+                                       (w.LimitingDistance.Value < range.Max || range.Max == double.MaxValue))
                             .ToList();
 
                         if (wallsInRange.Any())

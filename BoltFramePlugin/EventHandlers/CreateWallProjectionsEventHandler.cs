@@ -819,16 +819,23 @@ namespace BoltFramePlugin.EventHandlers
                 }
 
                 var distanceGroup = GetDistanceGroupForWall(wallInfo.LimitingDistance.Value);
+                _logger.LogInformation($"Wall {wall.Id.Value}: Limiting distance = {wallInfo.LimitingDistance.Value:F2} ft, Distance group: {distanceGroup.Label}");
+
                 var filledRegionType = GetOrCreateColoredFilledRegionType(doc, distanceGroup);
 
                 if (filledRegionType != null)
                 {
+                    _logger.LogInformation($"Wall {wall.Id.Value}: Using filled region type '{filledRegionType.Name}' (Id: {filledRegionType.Id.Value})");
                     foreach (var loop in trimmedLoops)
                     {
                         var region = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, new List<CurveLoop> { loop });
                         _logger.LogInformation($"Successfully created region for wall {wall.Id.Value} using view geometry");
                     }
                     return true;
+                }
+                else
+                {
+                    _logger.LogWarning($"Wall {wall.Id.Value}: Failed to get/create filled region type for distance group '{distanceGroup.Label}'");
                 }
 
                 return false;
@@ -1795,10 +1802,13 @@ namespace BoltFramePlugin.EventHandlers
 
             foreach (var range in ranges)
             {
-                if (limitingDistance >= range.Min && limitingDistance < range.Max)
+                // For the last range (9m+), only check lower bound since Max is infinity
+                // For all other ranges, check both bounds with < for exclusive upper bound
+                if (limitingDistance >= range.Min && (limitingDistance < range.Max || range.Max == double.MaxValue))
                     return range;
             }
 
+            // Fallback to last range
             return ranges[^1];
         }
 
@@ -1855,7 +1865,7 @@ namespace BoltFramePlugin.EventHandlers
         {
             try
             {
-                var typeName = $"LD_{distanceGroup.Label.Replace(" ", "_").Replace("(", "").Replace(")", "")}";
+                var typeName = $"LD_{distanceGroup.Label.Replace(" ", "_").Replace("(", "").Replace("(", "").Replace(")", "").Replace("+", "plus")}";
 
                 var existingType = new FilteredElementCollector(doc)
                     .OfClass(typeof(FilledRegionType))
@@ -1863,7 +1873,13 @@ namespace BoltFramePlugin.EventHandlers
                     .FirstOrDefault(frt => frt.Name == typeName);
 
                 if (existingType != null)
+                {
+                    // Always update the pattern to ensure solid fill is applied
+                    // (in case the type was created before solid fill was implemented)
+                    ApplyColorToFilledRegionType(doc, existingType, distanceGroup);
+                    _logger.LogInformation($"Updated existing filled region type '{typeName}' for distance group '{distanceGroup.Label}'");
                     return existingType;
+                }
 
                 var baseType = new FilteredElementCollector(doc)
                     .OfClass(typeof(FilledRegionType))
@@ -1895,25 +1911,52 @@ namespace BoltFramePlugin.EventHandlers
         }
 
         /// <summary>
-        /// Applies color to a filled region type
+        /// Applies color to a filled region type with solid fill pattern
         /// </summary>
         private void ApplyColorToFilledRegionType(Document doc, FilledRegionType newType,
             (double Min, double Max, string Label, int ColorIndex) distanceGroup)
         {
+            _logger.LogInformation($"ApplyColorToFilledRegionType called for distance group '{distanceGroup.Label}' (ColorIndex: {distanceGroup.ColorIndex})");
+
             var color = GetColorFromDistanceGroupIndex(distanceGroup.ColorIndex);
             var revitColor = new Autodesk.Revit.DB.Color(color.Red, color.Green, color.Blue);
 
-            if (newType.ForegroundPatternId != ElementId.InvalidElementId)
+            _logger.LogInformation($"Color for group '{distanceGroup.Label}': RGB({color.Red}, {color.Green}, {color.Blue})");
+
+            // Get solid fill pattern
+            var solidPattern = new FilteredElementCollector(doc)
+                .OfClass(typeof(FillPatternElement))
+                .Cast<FillPatternElement>()
+                .FirstOrDefault(fp => fp.GetFillPattern().IsSolidFill);
+
+            if (solidPattern != null)
             {
+                _logger.LogInformation($"Found solid fill pattern (Id: {solidPattern.Id.Value}, Name: {solidPattern.Name})");
+
+                // Set foreground pattern to solid fill with the specified color
+                newType.ForegroundPatternId = solidPattern.Id;
                 newType.ForegroundPatternColor = revitColor;
+                _logger.LogInformation($"Applied solid fill pattern with color RGB({color.Red}, {color.Green}, {color.Blue}) to region type '{newType.Name}'");
             }
-
-            if (newType.BackgroundPatternId != ElementId.InvalidElementId)
+            else
             {
-                newType.BackgroundPatternColor = revitColor;
-            }
+                _logger.LogWarning($"Solid fill pattern not found in document!");
 
-            _logger.LogInformation($"Applied color RGB({color.Red}, {color.Green}, {color.Blue}) to region type");
+                // Fallback: just set color if solid pattern not found
+                if (newType.ForegroundPatternId != ElementId.InvalidElementId)
+                {
+                    newType.ForegroundPatternColor = revitColor;
+                    _logger.LogInformation($"Set foreground color to existing pattern (Id: {newType.ForegroundPatternId.Value})");
+                }
+
+                if (newType.BackgroundPatternId != ElementId.InvalidElementId)
+                {
+                    newType.BackgroundPatternColor = revitColor;
+                    _logger.LogInformation($"Set background color to existing pattern (Id: {newType.BackgroundPatternId.Value})");
+                }
+
+                _logger.LogWarning($"Applied color RGB({color.Red}, {color.Green}, {color.Blue}) to existing pattern instead of solid fill");
+            }
         }
 
         /// <summary>
