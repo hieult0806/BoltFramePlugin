@@ -17,8 +17,7 @@ namespace BoltFramePlugin.EventHandlers
         #region Constants
 
         private const double ORIENTATION_TOLERANCE_DEGREES = 5.0;
-        private const double WALL_SIMILARITY_THRESHOLD = 0.5;
-        private const double VIEW_DISTANCE_FROM_WALLS = 500.0;
+        private const double VIEW_DISTANCE_FROM_WALLS = 0;
         private const double VIEW_FAR_CLIP_OFFSET = 1000.0;
         private const double BOUNDING_BOX_PADDING = 20.0;
         private const double VIEW_DEPTH = 100.0;
@@ -147,6 +146,14 @@ namespace BoltFramePlugin.EventHandlers
         {
             _logger.LogInformation("Calculating limiting distances for walls...");
 
+            // Skip recalculation if walls already have reference lines assigned from detection
+            bool allWallsHaveReferenceLines = _perimeterWalls.All(w => w.ReferenceLine != null);
+            if (allWallsHaveReferenceLines)
+            {
+                _logger.LogInformation("All walls already have reference lines assigned from detection - skipping recalculation");
+                return;
+            }
+
             foreach (var wallInfo in _perimeterWalls)
             {
                 CalculateWallLimitingDistance(wallInfo);
@@ -225,6 +232,21 @@ namespace BoltFramePlugin.EventHandlers
 
             _logger.LogInformation($"GroupWallsByReferenceLine: Processing {_referenceLines.Count} reference lines with {walls.Count} walls");
 
+            // Log all walls and their assigned reference lines
+            _logger.LogInformation("=== Wall to Reference Line Assignments ===");
+            foreach (var wall in walls)
+            {
+                if (wall.ReferenceLine != null)
+                {
+                    _logger.LogInformation($"  Wall {wall.Wall.Id.Value} -> {wall.ReferenceLine.Name}");
+                }
+                else
+                {
+                    _logger.LogWarning($"  Wall {wall.Wall.Id.Value} -> NO REFERENCE LINE");
+                }
+            }
+            _logger.LogInformation("==========================================");
+
             // Group walls by reference line
             foreach (var referenceLine in _referenceLines)
             {
@@ -240,20 +262,21 @@ namespace BoltFramePlugin.EventHandlers
 
                 _logger.LogInformation($"Reference line '{referenceLine.Name}' direction: X={lineDirection.X:F3}, Y={lineDirection.Y:F3}");
 
-                // Get the perpendicular to the reference line (this is the normal direction)
-                // For a line with direction (X, Y), the perpendicular is (-Y, X)
-                var lineNormal = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
-                _logger.LogInformation($"Reference line '{referenceLine.Name}' perpendicular (normal): X={lineNormal.X:F3}, Y={lineNormal.Y:F3}");
-
-                // Find all walls that are parallel to this reference line
-                // (i.e., walls whose normal is perpendicular to the line, or parallel to the line normal)
+                // Find all walls that detected (hit) this specific reference line
+                // wallInfo.ReferenceLine is set when the wall's ray hits the reference line during detection
+                // Use reference equality since we now ensure all walls share the same canonical instance
                 var wallsForThisLine = walls.Where(w =>
-                    w.Orientation != null &&
-                    (AreOrientationsSimilar(w.Orientation, lineNormal, ORIENTATION_TOLERANCE_DEGREES) ||
-                     AreOrientationsSimilar(w.Orientation, new XYZ(-lineNormal.X, -lineNormal.Y, 0), ORIENTATION_TOLERANCE_DEGREES)))
+                    w.ReferenceLine != null &&
+                    ReferenceEquals(w.ReferenceLine, referenceLine))
                     .ToList();
 
-                _logger.LogInformation($"Reference line '{referenceLine.Name}': Found {wallsForThisLine.Count} parallel walls (tolerance: {ORIENTATION_TOLERANCE_DEGREES}°)");
+                _logger.LogInformation($"Reference line '{referenceLine.Name}': Found {wallsForThisLine.Count} walls that detected this reference line");
+
+                if (wallsForThisLine.Count > 0)
+                {
+                    var wallIds = string.Join(", ", wallsForThisLine.Select(w => w.Wall.Id.Value));
+                    _logger.LogInformation($"  Walls: {wallIds}");
+                }
 
                 if (wallsForThisLine.Count > 0)
                 {
@@ -430,7 +453,20 @@ namespace BoltFramePlugin.EventHandlers
                     return null;
 
                 var boundingBox = CalculateBoundingBoxForWalls(group.Walls);
-                var centerPoint = (boundingBox.Min + boundingBox.Max) / 2.0;
+
+                // Use the reference line's midpoint as the section view's center
+                XYZ centerPoint;
+                if (group.ReferenceLine?.Curve != null)
+                {
+                    centerPoint = group.ReferenceLine.Curve.Evaluate(0.5, true);
+                    _logger.LogInformation($"Using reference line midpoint as section origin: ({centerPoint.X:F2}, {centerPoint.Y:F2}, {centerPoint.Z:F2})");
+                }
+                else
+                {
+                    // Fallback to walls' bounding box center
+                    centerPoint = (boundingBox.Min + boundingBox.Max) / 2.0;
+                    _logger.LogWarning($"No reference line curve found, using walls bounding box center");
+                }
 
                 var (viewDirection, rightDirection, upDirection, sectionOrigin) =
                     CalculateViewCoordinateSystem(group.Orientation, centerPoint);
@@ -650,9 +686,10 @@ namespace BoltFramePlugin.EventHandlers
 
                 EnsureSketchPlaneExists(doc, elevationView, viewDirection, viewOrigin);
 
-                var wallsToProject = FilterWallsByGroupOrientation(group);
+                // Use the walls that were assigned to this reference line during detection
+                var wallsToProject = group.Walls;
 
-                _logger.LogInformation($"Creating regions for {wallsToProject.Count} walls (out of {_perimeterWalls.Count} total) in view {elevationView.Name}");
+                _logger.LogInformation($"Creating regions for {wallsToProject.Count} walls in view {elevationView.Name} (group: {group.GroupName})");
 
                 foreach (var wallInfo in wallsToProject)
                 {
@@ -676,32 +713,6 @@ namespace BoltFramePlugin.EventHandlers
                 elevationView.SketchPlane = SketchPlane.Create(doc, plane);
                 _logger.LogInformation($"Created sketch plane for view {elevationView.Name}");
             }
-        }
-
-        /// <summary>
-        /// Filters walls to show only those with the same orientation as the group
-        /// group.Orientation is now the reference line direction (parallel to walls)
-        /// </summary>
-        private List<WallInfo> FilterWallsByGroupOrientation(WallGroup group)
-        {
-            // group.Orientation is the reference line direction (parallel to walls)
-            var lineDirection = new XYZ(group.Orientation.X, group.Orientation.Y, 0).Normalize();
-
-            // Calculate the perpendicular (this is the wall normal direction)
-            var lineNormal = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
-
-            return _perimeterWalls.Where(w =>
-            {
-                if (w.Orientation == null || !w.LimitingDistance.HasValue)
-                    return false;
-
-                var wallNormal = new XYZ(w.Orientation.X, w.Orientation.Y, 0).Normalize();
-
-                // Check if wall normal matches the line normal (or its opposite)
-                var dotProduct = Math.Abs(wallNormal.DotProduct(lineNormal));
-
-                return dotProduct > WALL_SIMILARITY_THRESHOLD;
-            }).ToList();
         }
 
         /// <summary>

@@ -147,6 +147,11 @@ namespace BoltFramePlugin.EventHandlers
 
                     var hitResult = CastRayAndFindIntersection(wall, midpoint, rayEndPoint, allPerimeterWalls, propertyLineCurves, roadCenterlines);
 
+                    if (hitResult != null)
+                    {
+                        _logger.LogInformation($"Wall {wall.Id.Value}: Ray hit '{hitResult.Name}' (Type: {hitResult.LineType}, ElementId: {hitResult.ElementId.Value})");
+                    }
+
                     // Get wall's base constraint level
                     var baseLevelParam = wall.get_Parameter(BuiltInParameter.WALL_BASE_CONSTRAINT);
                     var levelId = baseLevelParam?.AsElementId() ?? ElementId.InvalidElementId;
@@ -157,25 +162,16 @@ namespace BoltFramePlugin.EventHandlers
                     {
                         actualEndPoint = hitResult.IntersectionPoint;
 
-                        // Update wall's limiting distance immediately
-                        wallInfo.LimitingDistance = hitResult.Distance;
-                        wallInfo.ReferenceLine = hitResult;
-                        _logger.LogInformation($"Wall {wall.Id.Value}: Limiting distance = {hitResult.Distance:F2} ft to {hitResult.LineTypeFormatted}");
-                    }
-                    else
-                    {
-                        _logger.LogWarning($"Wall {wall.Id.Value}: No reference line hit");
-                    }
-
-                    raysToDrawn.Add((wall, midpoint, actualEndPoint, levelId));
-
-                    if (hitResult != null)
-                    {
+                        // Find or add the canonical reference line instance
                         var key = $"{hitResult.LineType}_{hitResult.ElementId.Value}";
+                        ReferenceLineInfo canonicalReferenceLine;
+
                         if (!createdImaginaryLines.Contains(key))
                         {
+                            // First time seeing this reference line - add it
                             _referenceLines.Add(hitResult);
                             createdImaginaryLines.Add(key);
+                            canonicalReferenceLine = hitResult;
 
                             switch (hitResult.LineType)
                             {
@@ -191,7 +187,25 @@ namespace BoltFramePlugin.EventHandlers
                                     break;
                             }
                         }
+                        else
+                        {
+                            // Reference line already exists - find the canonical instance
+                            canonicalReferenceLine = _referenceLines.First(rl =>
+                                rl.LineType == hitResult.LineType &&
+                                rl.ElementId.Value == hitResult.ElementId.Value);
+                        }
+
+                        // Assign the canonical instance to the wall
+                        wallInfo.LimitingDistance = hitResult.Distance;
+                        wallInfo.ReferenceLine = canonicalReferenceLine;
+                        _logger.LogInformation($"Wall {wall.Id.Value}: Limiting distance = {hitResult.Distance:F2} ft to {hitResult.LineTypeFormatted}");
                     }
+                    else
+                    {
+                        _logger.LogWarning($"Wall {wall.Id.Value}: No reference line hit");
+                    }
+
+                    raysToDrawn.Add((wall, midpoint, actualEndPoint, levelId));
                 }
 
                 // Draw rays as Detail Lines on their respective floor plans (only if enabled)
