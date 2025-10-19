@@ -558,50 +558,72 @@ namespace BoltFramePlugin.Services.DataImport
                             var cell = GetClosedXMLCell(worksheet, row, col);
                             if (cell != null)
                             {
-                                // Try to get Style.Fill.BackgroundColor
+                                string? bgColor = null;
+                                string? alignment = null;
+
+                                // Try to get Style
                                 var styleObj = cell.GetType().GetProperty("Style")?.GetValue(cell);
                                 if (styleObj != null)
                                 {
+                                    // Extract background color
                                     var fillObj = styleObj.GetType().GetProperty("Fill")?.GetValue(styleObj);
                                     if (fillObj != null)
                                     {
                                         var bgColorObj = fillObj.GetType().GetProperty("BackgroundColor")?.GetValue(fillObj);
                                         if (bgColorObj != null)
                                         {
-                                            // Get the Color property (System.Drawing.Color)
                                             var colorObj = bgColorObj.GetType().GetProperty("Color")?.GetValue(bgColorObj);
-
                                             if (colorObj != null)
                                             {
-                                                // Try to get ARGB value using ToArgb method
                                                 var toArgbMethod = colorObj.GetType().GetMethod("ToArgb");
                                                 if (toArgbMethod != null)
                                                 {
                                                     var argbValue = (int)toArgbMethod.Invoke(colorObj, null);
                                                     var hexColor = argbValue.ToString("X8");
-
-                                                    // Skip white/transparent colors
                                                     if (hexColor != "00000000" && hexColor != "FFFFFFFF")
                                                     {
-                                                        result.CellFormats.Add(new CellFormat
-                                                        {
-                                                            Row = row - dataStartRow,
-                                                            Column = col - firstColNum,
-                                                            BackgroundColor = hexColor
-                                                        });
-                                                        colorCount++;
-                                                        _logger.LogInformation($"Found color at R{row}C{col} -> data row {row - dataStartRow}, col {col - firstColNum}: {hexColor}");
+                                                        bgColor = hexColor;
                                                     }
                                                 }
                                             }
                                         }
                                     }
+
+                                    // Extract text alignment
+                                    var alignmentObj = styleObj.GetType().GetProperty("Alignment")?.GetValue(styleObj);
+                                    if (alignmentObj != null)
+                                    {
+                                        var horizontalProp = alignmentObj.GetType().GetProperty("Horizontal")?.GetValue(alignmentObj);
+                                        if (horizontalProp != null)
+                                        {
+                                            var horizontalStr = horizontalProp.ToString();
+                                            // Map ClosedXML alignment to our format
+                                            if (horizontalStr == "Center") alignment = "Center";
+                                            else if (horizontalStr == "Right") alignment = "Right";
+                                            else if (horizontalStr == "Left") alignment = "Left";
+                                            else if (horizontalStr == "General") alignment = null; // Use default
+                                        }
+                                    }
+                                }
+
+                                // Add cell format if there's any formatting
+                                if (bgColor != null || alignment != null)
+                                {
+                                    result.CellFormats.Add(new CellFormat
+                                    {
+                                        Row = row - dataStartRow,
+                                        Column = col - firstColNum,
+                                        BackgroundColor = bgColor,
+                                        TextAlignment = alignment
+                                    });
+                                    if (bgColor != null) colorCount++;
+                                    _logger.LogInformation($"Found formatting at R{row}C{col} -> data row {row - dataStartRow}, col {col - firstColNum}: color={bgColor}, align={alignment}");
                                 }
                             }
                         }
                         catch (Exception cellEx)
                         {
-                            _logger.LogWarning($"Error extracting color from R{row}C{col}: {cellEx.Message}");
+                            _logger.LogWarning($"Error extracting formatting from R{row}C{col}: {cellEx.Message}");
                         }
                     }
                 }

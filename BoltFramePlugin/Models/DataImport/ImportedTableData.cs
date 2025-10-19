@@ -62,6 +62,11 @@ namespace BoltFramePlugin.Models.DataImport
         /// Text color in hex format
         /// </summary>
         public string? TextColor { get; set; }
+
+        /// <summary>
+        /// Text alignment: "Left", "Center", "Right"
+        /// </summary>
+        public string? TextAlignment { get; set; }
     }
 
     /// <summary>

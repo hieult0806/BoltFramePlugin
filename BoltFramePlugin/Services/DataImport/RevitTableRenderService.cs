@@ -245,11 +245,20 @@ namespace BoltFramePlugin.Services.DataImport
                     }
                 }
 
+                // Determine text alignment - use cell format if available, otherwise use default
+                TextAlignment cellAlignment = options.TextAlign;
+                if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForAlign) && !string.IsNullOrEmpty(formatForAlign.TextAlignment))
+                {
+                    if (formatForAlign.TextAlignment == "Center") cellAlignment = TextAlignment.Center;
+                    else if (formatForAlign.TextAlignment == "Right") cellAlignment = TextAlignment.Right;
+                    else if (formatForAlign.TextAlignment == "Left") cellAlignment = TextAlignment.Left;
+                }
+
                 // Calculate text position based on alignment
                 double textX = currentX;
                 double padding = options.TextHeight * 0.2; // Small padding
 
-                switch (options.TextAlign)
+                switch (cellAlignment)
                 {
                     case TextAlignment.Center:
                         textX = currentX + cellWidth / 2;
@@ -270,7 +279,7 @@ namespace BoltFramePlugin.Services.DataImport
                 textY += options.TextOffsetY;
 
                 // Create text note with specified height
-                CreateTextNote(doc, view, cellText, textX, textY, textType, options.TextAlign, options.TextHeight);
+                CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight);
 
                 // Draw grid lines
                 if (options.DrawGridLines)
@@ -639,14 +648,22 @@ namespace BoltFramePlugin.Services.DataImport
                     if (sizeParam != null && !sizeParam.IsReadOnly)
                     {
                         sizeParam.Set(textHeight);
-                        _logger.LogInformation($"Created new text type '{newType.Name}' with size {textHeight:F6} ft");
-                        return newType;
+                    }
+
+                    // Set text background to transparent
+                    var backgroundParam = newType.get_Parameter(BuiltInParameter.TEXT_BACKGROUND);
+                    if (backgroundParam != null && !backgroundParam.IsReadOnly)
+                    {
+                        backgroundParam.Set(1); // 1 = Transparent
+                        _logger.LogInformation($"Set text background to transparent for type '{newType.Name}'");
                     }
                     else
                     {
-                        _logger.LogWarning($"TEXT_SIZE parameter is read-only on duplicated type, using original");
-                        return textNoteType;
+                        _logger.LogWarning($"TEXT_BACKGROUND parameter not available or read-only");
                     }
+
+                    _logger.LogInformation($"Created new text type '{newType.Name}' with size {textHeight:F6} ft");
+                    return newType;
                 }
             }
             catch (Exception ex)
