@@ -19,7 +19,7 @@ namespace BoltFramePlugin.EventHandlers
         private const double ORIENTATION_TOLERANCE_DEGREES = 5.0;
         private const double VIEW_DISTANCE_FROM_WALLS = 0;
         private const double VIEW_FAR_CLIP_OFFSET = 1000.0;
-        private const double BOUNDING_BOX_PADDING = 20.0;
+        private const double BOUNDING_BOX_PADDING = 0;
         private const double VIEW_DEPTH = 100.0;
         private const double POINT_EQUALITY_TOLERANCE = 1e-6;
 
@@ -469,12 +469,16 @@ namespace BoltFramePlugin.EventHandlers
 
                 var boundingBox = CalculateBoundingBoxForWalls(group.Walls);
 
-                // Use the reference line's midpoint as the section view's center
+                // Use the reference line's XY position, but use the walls' average Z position
                 XYZ centerPoint;
                 if (group.ReferenceLine?.Curve != null)
                 {
-                    centerPoint = group.ReferenceLine.Curve.Evaluate(0.5, true);
-                    _logger.LogInformation($"Using reference line midpoint as section origin: ({centerPoint.X:F2}, {centerPoint.Y:F2}, {centerPoint.Z:F2})");
+                    var refLineMidpoint = group.ReferenceLine.Curve.Evaluate(0.5, true);
+                    var wallsCenterZ = (boundingBox.Min.Z + boundingBox.Max.Z) / 2.0;
+
+                    // Use reference line XY, but walls' center Z
+                    centerPoint = new XYZ(refLineMidpoint.X, refLineMidpoint.Y, wallsCenterZ);
+                    _logger.LogInformation($"Using reference line XY position: ({refLineMidpoint.X:F2}, {refLineMidpoint.Y:F2}), Walls center Z: {wallsCenterZ:F2}");
                 }
                 else
                 {
@@ -582,8 +586,8 @@ namespace BoltFramePlugin.EventHandlers
             return new BoundingBoxXYZ
             {
                 Transform = transform,
-                Min = new XYZ(-width / 2, -VIEW_DEPTH / 2, minZ - 10),
-                Max = new XYZ(width / 2, VIEW_DEPTH / 2, maxZ + 10)
+                Min = new XYZ(-width / 2, -VIEW_DEPTH / 2, minZ),
+                Max = new XYZ(width / 2, VIEW_DEPTH / 2, maxZ)
             };
         }
 
