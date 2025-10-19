@@ -393,7 +393,10 @@ namespace BoltFramePlugin.EventHandlers
                     if (result == SetComparisonResult.Overlap && results != null && results.Size > 0)
                     {
                         var intersection = results.get_Item(0);
-                        var distance = rayStart.DistanceTo(intersection.XYZPoint);
+                        // Calculate 2D distance (plan view only, ignore Z)
+                        var rayStart2D = new XYZ(rayStart.X, rayStart.Y, 0);
+                        var intersection2D = new XYZ(intersection.XYZPoint.X, intersection.XYZPoint.Y, 0);
+                        var distance = rayStart2D.DistanceTo(intersection2D);
 
                         if (distance > 0.01) // Minimum distance check
                         {
@@ -455,7 +458,10 @@ namespace BoltFramePlugin.EventHandlers
                     if (result == SetComparisonResult.Overlap && results != null && results.Size > 0)
                     {
                         var intersection = results.get_Item(0);
-                        var distance = rayStart.DistanceTo(intersection.XYZPoint);
+                        // Calculate 2D distance (plan view only, ignore Z)
+                        var rayStart2D = new XYZ(rayStart.X, rayStart.Y, 0);
+                        var intersection2D = new XYZ(intersection.XYZPoint.X, intersection.XYZPoint.Y, 0);
+                        var distance = rayStart2D.DistanceTo(intersection2D);
 
                         _logger.LogInformation($"Property line {propLine.Id.Value} hit at distance {distance} ft");
 
@@ -492,7 +498,10 @@ namespace BoltFramePlugin.EventHandlers
                     if (result == SetComparisonResult.Overlap && results != null && results.Size > 0)
                     {
                         var intersection = results.get_Item(0);
-                        var distance = rayStart.DistanceTo(intersection.XYZPoint);
+                        // Calculate 2D distance (plan view only, ignore Z)
+                        var rayStart2D = new XYZ(rayStart.X, rayStart.Y, 0);
+                        var intersection2D = new XYZ(intersection.XYZPoint.X, intersection.XYZPoint.Y, 0);
+                        var distance = rayStart2D.DistanceTo(intersection2D);
 
                         _logger.LogInformation($"Road centerline {roadCL.Id.Value} hit at distance {distance} ft");
 
