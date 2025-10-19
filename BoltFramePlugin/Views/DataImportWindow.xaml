@@ -98,65 +98,24 @@
                             </StackPanel>
                         </GroupBox>
 
-                        <GroupBox Header="View Scale" Padding="10" Margin="0,0,0,15">
+                        <GroupBox Header="View Configuration" Padding="10" Margin="0,0,0,15">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="150"/>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="100"/>
+                                    <ColumnDefinition Width="150"/>
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="View Scale:" VerticalAlignment="Center" Margin="0,0,0,10"/>
-                                <Slider Grid.Row="0" Grid.Column="1" Value="{Binding ViewScale}" Minimum="12" Maximum="192"
-                                        TickFrequency="12" IsSnapToTickEnabled="True" Margin="10,0,10,10"/>
-                                <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="0,0,0,10">
-                                    <Run Text="1/"/>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="View Scale:" VerticalAlignment="Center"/>
+                                <Slider Grid.Row="0" Grid.Column="1" Value="{Binding ViewScale}" Minimum="4" Maximum="96"
+                                        TickFrequency="4" IsSnapToTickEnabled="True" Margin="10,0,10,0"/>
+                                <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
                                     <Run Text="{Binding ViewScale, StringFormat={}{0:F0}, Mode=OneWay}"/>
                                     <Run Text="&quot; = 1'-0&quot;"/>
                                 </TextBlock>
-
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Paper Text Size:" VerticalAlignment="Center"/>
-                                <Slider Grid.Row="1" Grid.Column="1" Value="{Binding PaperTextHeight}" Minimum="0.0625" Maximum="0.25"
-                                        TickFrequency="0.0625" IsSnapToTickEnabled="True" Margin="10,0,10,0"/>
-                                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding PaperTextHeight, StringFormat={}{0:F4}\&quot;}"
-                                           VerticalAlignment="Center"/>
-                            </Grid>
-                        </GroupBox>
-
-                        <GroupBox Header="Table Dimensions" Padding="10" Margin="0,0,0,15">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="150"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="80"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Column Width:" VerticalAlignment="Center" Margin="0,0,0,10"/>
-                                <Slider Grid.Row="0" Grid.Column="1" Value="{Binding ColumnWidth}" Minimum="0.5" Maximum="3"
-                                        TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="10,0,10,10"/>
-                                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ColumnWidth, StringFormat={}{0:F1} ft}"
-                                           VerticalAlignment="Center" Margin="0,0,0,10"/>
-
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Row Height:" VerticalAlignment="Center" Margin="0,0,0,10"/>
-                                <Slider Grid.Row="1" Grid.Column="1" Value="{Binding RowHeight}" Minimum="0.1" Maximum="1"
-                                        TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="10,0,10,10"/>
-                                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding RowHeight, StringFormat={}{0:F2} ft}"
-                                           VerticalAlignment="Center" Margin="0,0,0,10"/>
-
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Text Height (Calculated):" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding TextHeight, StringFormat={}{0:F4} ft}"
-                                           VerticalAlignment="Center" Margin="10,0,10,0" FontWeight="Bold"/>
-                                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding TextHeight, StringFormat={}{0:F4} ft}"
-                                           VerticalAlignment="Center"/>
                             </Grid>
                         </GroupBox>
 

@@ -23,13 +23,16 @@ namespace BoltFramePlugin.ViewModels
         private bool _skipEmptyRows = true;
         private bool _trimWhitespace = true;
         private string _viewName = string.Empty;
-        private double _columnWidth = 1.5;
-        private double _rowHeight = 0.15;
-        private double _textHeight = 0.0104; // Calculated based on scale
-        private double _viewScale = 96; // Default: 1/8" = 1'-0"
-        private double _paperTextHeight = 0.125; // 1/8" on paper
+        private double _columnWidth = 1.5; // 1.5 feet in model space (at scale 4, appears as 4.5" on paper)
+        private double _rowHeight = 0.167; // 0.167 feet in model space (at scale 4, appears as 0.5" on paper)
+        private double _borderOffset = 0.0208; // 0.0208 feet in model space (at scale 4, appears as 5/64" on paper)
+        private double _textHeight = 0.0208; // Calculated from paper text height
+        private double _textOffsetX = 0; // Text horizontal offset in feet
+        private double _textOffsetY = 0; // Text vertical offset in feet
+        private double _viewScale = 4; // Default: 3" = 1'-0" (1:4 scale)
+        private double _paperTextHeight = 0.25; // 1/4" Arial on paper
         private bool _drawGridLines = true;
-        private bool _fillHeaderBackground = true;
+        private bool _fillHeaderBackground = false; // Transparent background
         private bool _autoSizeColumns = false;
         private TextAlignment _textAlignment = TextAlignment.Left;
         private ImportedTableData? _previewData = null;
@@ -49,6 +52,9 @@ namespace BoltFramePlugin.ViewModels
             PreviewDataCommand = new RelayCommand(async param => await PreviewDataAsync(), param => CanPreview);
             ImportAndRenderCommand = new RelayCommand(async param => await ImportAndRenderAsync(), param => CanImportAndRender);
             CloseCommand = new RelayCommand(Close);
+
+            // Calculate initial dimensions based on default scale
+            RecalculateDimensionsFromScale();
 
             _logger.LogInformation("DataImportWindowVM initialized");
         }
@@ -129,31 +135,16 @@ namespace BoltFramePlugin.ViewModels
         public double ColumnWidth
         {
             get => _columnWidth;
-            set
-            {
-                _columnWidth = value;
-                OnPropertyChanged(nameof(ColumnWidth));
-            }
         }
 
         public double RowHeight
         {
             get => _rowHeight;
-            set
-            {
-                _rowHeight = value;
-                OnPropertyChanged(nameof(RowHeight));
-            }
         }
 
         public double TextHeight
         {
             get => _textHeight;
-            set
-            {
-                _textHeight = value;
-                OnPropertyChanged(nameof(TextHeight));
-            }
         }
 
         public double ViewScale
@@ -163,21 +154,29 @@ namespace BoltFramePlugin.ViewModels
             {
                 _viewScale = value;
                 OnPropertyChanged(nameof(ViewScale));
-                // Recalculate text height when scale changes
-                CalculateTextHeight();
+                // Recalculate all dimensions when scale changes
+                RecalculateDimensionsFromScale();
             }
         }
 
         public double PaperTextHeight
         {
             get => _paperTextHeight;
-            set
-            {
-                _paperTextHeight = value;
-                OnPropertyChanged(nameof(PaperTextHeight));
-                // Recalculate text height when paper size changes
-                CalculateTextHeight();
-            }
+        }
+
+        public double BorderOffset
+        {
+            get => _borderOffset;
+        }
+
+        public double TextOffsetX
+        {
+            get => _textOffsetX;
+        }
+
+        public double TextOffsetY
+        {
+            get => _textOffsetY;
         }
 
         public bool DrawGridLines
@@ -352,6 +351,9 @@ namespace BoltFramePlugin.ViewModels
                     TextHeight = TextHeight,
                     ViewScale = ViewScale,
                     PaperTextHeight = PaperTextHeight,
+                    BorderOffset = BorderOffset,
+                    TextOffsetX = TextOffsetX,
+                    TextOffsetY = TextOffsetY,
                     DrawGridLines = DrawGridLines,
                     FillHeaderBackground = FillHeaderBackground,
                     AutoSizeColumns = AutoSizeColumns,
@@ -396,16 +398,71 @@ namespace BoltFramePlugin.ViewModels
         }
 
         /// <summary>
-        /// Calculate text height in Revit units (feet) based on view scale and paper text height
-        /// Formula: TextHeight (feet) = PaperTextHeight (inches) * ViewScale / 12
-        /// Example: For 1/8" text at 1/8"=1'-0" scale (96): 0.125 * 96 / 12 = 1" = 0.0833 feet
+        /// Recalculate all table dimensions based on the view scale
+        /// This ensures consistent sizing across different scales
+        /// Standard paper sizes:
+        /// - Text: 1/4" (0.25")
+        /// - Column width: 4.5" on paper
+        /// - Row height: 0.5" on paper
+        /// - Border offset: 1/16" on paper
+        /// View scale N means 1:N ratio. Model space = Paper space × Scale / 12
+        /// Example: At scale 48 (1/4"=1'-0"), 0.5" on paper = 0.5 × 48 / 12 = 2 ft in model
         /// </summary>
-        private void CalculateTextHeight()
+        private void RecalculateDimensionsFromScale()
         {
-            // Convert: paper inches * scale / 12 = model feet
-            _textHeight = (_paperTextHeight * _viewScale) / 12.0;
+            // Paper sizes in inches
+            const double paperTextSize = 0.25;      // 1/4" text
+            const double paperColumnWidth = 4.5;    // 4.5" column width
+            const double paperRowHeight = 0.5;      // 1/2" row height
+            const double paperBorderOffset = 0.0625; // 1/16" border offset
+
+            // Calculate model space dimensions
+            // Model dimension (ft) = Paper size (inches) × ViewScale / 12
+            // This accounts for the 1:N scale ratio
+            _columnWidth = paperColumnWidth * _viewScale / 12.0;
+            _rowHeight = paperRowHeight * _viewScale / 12.0;
+            _borderOffset = paperBorderOffset * _viewScale / 12.0;
+
+            // Text offset calculation based on measured values
+            // Reference measurements:
+            // Scale 4:  Move Right 69/256" (0.02246 ft), Move Up 95/128" (0.06185 ft)
+            // Scale 36: Move Right 3" (0.25 ft), Move Up 6.25" (0.5208 ft)
+            //
+            // Using linear interpolation: Offset = A + B × ViewScale
+            //
+            // For X: 0.02246 = A + B×4, and 0.25 = A + B×36
+            // Solving: B = (0.25 - 0.02246)/(36-4) = 0.22754/32 = 0.007110625
+            //          A = 0.02246 - (0.007110625×4) = 0.02246 - 0.028442 = -0.005982
+            // Therefore: OffsetX = -0.005982 + 0.007110625 × ViewScale
+            //
+            // For Y: 0.06185 = A + B×4, and 0.5208 = A + B×36
+            // Solving: B = (0.5208 - 0.06185)/(36-4) = 0.45895/32 = 0.01434219
+            //          A = 0.06185 - (0.01434219×4) = 0.06185 - 0.05737 = 0.00448
+            // Therefore: OffsetY = 0.00448 + 0.01434219 × ViewScale
+
+            const double offsetXIntercept = -0.005982;
+            const double offsetXSlope = 0.007110625;
+            const double offsetYIntercept = 0.00448;
+            const double offsetYSlope = 0.01434219;
+
+            _textOffsetX = offsetXIntercept + (offsetXSlope * _viewScale);
+            _textOffsetY = offsetYIntercept + (offsetYSlope * _viewScale);
+
+            // Text size is paper size (not affected by view scale in drafting views)
+            const double minTextHeight = 3.0 / 256.0 / 12.0;
+            const double maxTextHeight = (16.0 + 73.0 / 256.0) / 12.0;
+            double calculatedTextHeight = paperTextSize / 12.0;
+            _textHeight = Math.Max(minTextHeight, Math.Min(maxTextHeight, calculatedTextHeight));
+
+            // Notify property changes
+            OnPropertyChanged(nameof(ColumnWidth));
+            OnPropertyChanged(nameof(RowHeight));
+            OnPropertyChanged(nameof(BorderOffset));
             OnPropertyChanged(nameof(TextHeight));
-            _logger.LogInformation($"Text height calculated: {_textHeight:F4} feet (Paper: {_paperTextHeight}\", Scale: 1:{_viewScale})");
+            OnPropertyChanged(nameof(TextOffsetX));
+            OnPropertyChanged(nameof(TextOffsetY));
+
+            _logger.LogInformation($"Dimensions recalculated for scale 1:{_viewScale} - Column: {_columnWidth:F3}ft, Row: {_rowHeight:F3}ft, Border: {_borderOffset:F4}ft, Text: {_textHeight:F4}ft, TextOffset: ({_textOffsetX:F3}, {_textOffsetY:F3})");
         }
 
         #endregion

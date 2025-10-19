@@ -97,9 +97,9 @@ namespace BoltFramePlugin.Services.DataImport
 
                     try
                     {
-                        // Create drafting view
-                        _logger.LogInformation("Creating drafting view...");
-                        view = _renderService.CreateDraftingView(doc, viewName);
+                        // Create drafting view with specified scale
+                        _logger.LogInformation($"Creating drafting view with scale 1:{renderOptions.ViewScale}...");
+                        view = _renderService.CreateDraftingView(doc, viewName, (int)renderOptions.ViewScale);
                         _logger.LogInformation($"Drafting view created: {view?.Name ?? "NULL"}");
 
                         if (view == null)

@@ -22,7 +22,8 @@ namespace BoltFramePlugin.Services.DataImport
         /// </summary>
         /// <param name="doc">Revit document</param>
         /// <param name="viewName">Name for the new view</param>
+        /// <param name="viewScale">View scale (e.g., 96 for 1/8" = 1'-0")</param>
         /// <returns>Created drafting view</returns>
-        ViewDrafting CreateDraftingView(Document doc, string viewName);
+        ViewDrafting CreateDraftingView(Document doc, string viewName, int viewScale);
     }
 }

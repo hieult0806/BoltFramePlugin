@@ -54,29 +54,52 @@ namespace BoltFramePlugin.Models.DataImport
         public double StartY { get; set; } = 0;
 
         /// <summary>
-        /// Column width in feet
+        /// Column width in feet (model space)
+        /// Default: 1.5 ft (appears as 4.5" on paper at scale 4)
         /// </summary>
         public double ColumnWidth { get; set; } = 1.5;
 
         /// <summary>
-        /// Row height in feet
+        /// Row height in feet (model space)
+        /// Default: 0.167 ft (appears as 0.5" on paper at scale 4)
         /// </summary>
-        public double RowHeight { get; set; } = 0.15;
+        public double RowHeight { get; set; } = 0.167;
 
         /// <summary>
-        /// Text height in feet (calculated from ViewScale and PaperTextHeight)
+        /// Text height in feet (paper size)
+        /// Calculated from PaperTextHeight / 12
+        /// Default: 0.0208 ft = 1/4"
         /// </summary>
-        public double TextHeight { get; set; } = 0.0104;
+        public double TextHeight { get; set; } = 0.0208;
 
         /// <summary>
-        /// View scale (e.g., 48 for 1/4" = 1'-0", 96 for 1/8" = 1'-0")
+        /// View scale (default: 4 for 3" = 1'-0")
+        /// Common values: 4 (3"=1'-0"), 12 (1"=1'-0"), 24 (1/2"=1'-0"), 48 (1/4"=1'-0"), 96 (1/8"=1'-0")
         /// </summary>
-        public double ViewScale { get; set; } = 96;
+        public double ViewScale { get; set; } = 4;
 
         /// <summary>
-        /// Paper text height in inches (default 1/8")
+        /// Paper text height in inches (default: 1/4" Arial)
         /// </summary>
-        public double PaperTextHeight { get; set; } = 0.125;
+        public double PaperTextHeight { get; set; } = 0.25;
+
+        /// <summary>
+        /// Border offset for leader/border in feet (model space)
+        /// Default: 0.0208 ft (appears as 1/16" on paper at scale 4)
+        /// </summary>
+        public double BorderOffset { get; set; } = 0.0208;
+
+        /// <summary>
+        /// Text horizontal offset in feet (model space)
+        /// Adjusts text position to the right
+        /// </summary>
+        public double TextOffsetX { get; set; } = 0;
+
+        /// <summary>
+        /// Text vertical offset in feet (model space)
+        /// Adjusts text position upward
+        /// </summary>
+        public double TextOffsetY { get; set; } = 0;
 
         /// <summary>
         /// Whether to draw grid lines
@@ -84,9 +107,9 @@ namespace BoltFramePlugin.Models.DataImport
         public bool DrawGridLines { get; set; } = true;
 
         /// <summary>
-        /// Whether to fill header with background
+        /// Whether to fill header with background (default: false for transparent)
         /// </summary>
-        public bool FillHeaderBackground { get; set; } = true;
+        public bool FillHeaderBackground { get; set; } = false;
 
         /// <summary>
         /// Text style name (must exist in Revit)

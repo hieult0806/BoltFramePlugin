@@ -18,7 +18,7 @@ namespace BoltFramePlugin.Services.DataImport
             _logger = logger;
         }
 
-        public ViewDrafting CreateDraftingView(Document doc, string viewName)
+        public ViewDrafting CreateDraftingView(Document doc, string viewName, int viewScale)
         {
             // Find a drafting view type
             var viewFamilyType = new FilteredElementCollector(doc)
@@ -34,7 +34,23 @@ namespace BoltFramePlugin.Services.DataImport
             var draftingView = ViewDrafting.Create(doc, viewFamilyType.Id);
             draftingView.Name = viewName;
 
-            _logger.LogInformation($"Created drafting view: {viewName}");
+            // Set the view scale using the Scale property (not the parameter, which is read-only)
+            try
+            {
+                _logger.LogInformation($"Current view scale before setting: {draftingView.Scale}");
+
+                // Set the scale using the Scale property
+                draftingView.Scale = viewScale;
+
+                _logger.LogInformation($"Set view scale to: {viewScale}");
+                _logger.LogInformation($"View scale after setting: {draftingView.Scale}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error setting view scale: {ex.Message}\n{ex.StackTrace}");
+            }
+
+            _logger.LogInformation($"Created drafting view: {viewName} with scale 1:{viewScale}");
             return draftingView;
         }
 
@@ -115,8 +131,12 @@ namespace BoltFramePlugin.Services.DataImport
                 // Position text vertically centered in the cell (accounting for text baseline)
                 double textY = startY - (rowHeight / 2) - (options.TextHeight / 4);
 
-                // Create text note
-                CreateTextNote(doc, view, cellText, textX, textY, textType, options.TextAlign);
+                // Apply text offsets
+                textX += options.TextOffsetX;
+                textY += options.TextOffsetY;
+
+                // Create text note with specified height
+                CreateTextNote(doc, view, cellText, textX, textY, textType, options.TextAlign, options.TextHeight);
 
                 // Draw grid lines
                 if (options.DrawGridLines)
@@ -180,7 +200,7 @@ namespace BoltFramePlugin.Services.DataImport
             return columnWidths;
         }
 
-        private void CreateTextNote(Document doc, Autodesk.Revit.DB.View view, string text, double x, double y, TextNoteType textType, TextAlignment align)
+        private void CreateTextNote(Document doc, Autodesk.Revit.DB.View view, string text, double x, double y, TextNoteType textType, TextAlignment align, double textHeight)
         {
             if (string.IsNullOrEmpty(text))
                 return;
@@ -205,6 +225,9 @@ namespace BoltFramePlugin.Services.DataImport
             };
 
             TextNote.Create(doc, view.Id, point, text, textNoteOptions);
+
+            // Note: TextNote size is controlled by the TextNoteType, not by individual parameters
+            // The textHeight parameter is used when creating/finding the appropriate TextNoteType
         }
 
         private void DrawDetailLine(Document doc, Autodesk.Revit.DB.View view, double x1, double y1, double x2, double y2, string lineStyleName)
@@ -311,26 +334,37 @@ namespace BoltFramePlugin.Services.DataImport
                 throw new InvalidOperationException("No text note type found in the document. Please ensure the document contains at least one text note type.");
             }
 
-            // Duplicate the text note type to create a custom one with the specified height
+            // Try to create a new text type with the exact size we need
             try
             {
-                var duplicatedType = textNoteType.Duplicate($"Table_Text_{textHeight:F3}") as TextNoteType;
-                if (duplicatedType != null)
+                // Duplicate the base text type
+                TextNoteType newType = textNoteType.Duplicate($"Import Text {textHeight:F6}ft") as TextNoteType;
+
+                if (newType != null)
                 {
                     // Set the text size
-                    var textSizeParam = duplicatedType.get_Parameter(BuiltInParameter.TEXT_SIZE);
-                    if (textSizeParam != null && !textSizeParam.IsReadOnly)
+                    var sizeParam = newType.get_Parameter(BuiltInParameter.TEXT_SIZE);
+                    if (sizeParam != null && !sizeParam.IsReadOnly)
                     {
-                        textSizeParam.Set(textHeight);
+                        sizeParam.Set(textHeight);
+                        _logger.LogInformation($"Created new text type '{newType.Name}' with size {textHeight:F6} ft");
+                        return newType;
                     }
-                    return duplicatedType;
+                    else
+                    {
+                        _logger.LogWarning($"TEXT_SIZE parameter is read-only on duplicated type, using original");
+                        return textNoteType;
+                    }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // If duplication fails, use the original type
-                _logger.LogWarning($"Could not create custom text type with height {textHeight}, using default");
+                _logger.LogWarning($"Could not create custom text type: {ex.Message}");
             }
+
+            // If creation failed, use the default and log a message
+            var defaultSize = textNoteType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
+            _logger.LogInformation($"Using default text type '{textNoteType.Name}' with size {defaultSize:F6} ft (requested {textHeight:F6} ft)");
 
             return textNoteType;
         }
