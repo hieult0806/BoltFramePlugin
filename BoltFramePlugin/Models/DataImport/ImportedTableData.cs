@@ -3,6 +3,68 @@ using System.Collections.Generic;
 namespace BoltFramePlugin.Models.DataImport
 {
     /// <summary>
+    /// Represents a merged cell range in the table
+    /// </summary>
+    public class MergedCellRange
+    {
+        /// <summary>
+        /// Starting row index (0-based, including header row)
+        /// </summary>
+        public int StartRow { get; set; }
+
+        /// <summary>
+        /// Starting column index (0-based)
+        /// </summary>
+        public int StartColumn { get; set; }
+
+        /// <summary>
+        /// Ending row index (0-based, inclusive)
+        /// </summary>
+        public int EndRow { get; set; }
+
+        /// <summary>
+        /// Ending column index (0-based, inclusive)
+        /// </summary>
+        public int EndColumn { get; set; }
+
+        /// <summary>
+        /// Number of rows spanned
+        /// </summary>
+        public int RowSpan => EndRow - StartRow + 1;
+
+        /// <summary>
+        /// Number of columns spanned
+        /// </summary>
+        public int ColumnSpan => EndColumn - StartColumn + 1;
+    }
+
+    /// <summary>
+    /// Represents cell formatting information
+    /// </summary>
+    public class CellFormat
+    {
+        /// <summary>
+        /// Row index (0-based, including header row)
+        /// </summary>
+        public int Row { get; set; }
+
+        /// <summary>
+        /// Column index (0-based)
+        /// </summary>
+        public int Column { get; set; }
+
+        /// <summary>
+        /// Background color in hex format (e.g., "FFFF0000" for red)
+        /// </summary>
+        public string? BackgroundColor { get; set; }
+
+        /// <summary>
+        /// Text color in hex format
+        /// </summary>
+        public string? TextColor { get; set; }
+    }
+
+    /// <summary>
     /// Represents imported tabular data from CSV or Excel
     /// </summary>
     public class ImportedTableData
@@ -16,6 +78,16 @@ namespace BoltFramePlugin.Models.DataImport
         /// Data rows (each row is a list of cell values)
         /// </summary>
         public List<List<string>> Rows { get; set; } = new List<List<string>>();
+
+        /// <summary>
+        /// Merged cell ranges
+        /// </summary>
+        public List<MergedCellRange> MergedCells { get; set; } = new List<MergedCellRange>();
+
+        /// <summary>
+        /// Cell formatting information
+        /// </summary>
+        public List<CellFormat> CellFormats { get; set; } = new List<CellFormat>();
 
         /// <summary>
         /// Source file path

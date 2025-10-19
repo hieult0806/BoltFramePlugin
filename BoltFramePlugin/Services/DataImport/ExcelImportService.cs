@@ -249,8 +249,129 @@ namespace BoltFramePlugin.Services.DataImport
                 }
             }
 
-            _logger.LogInformation($"Successfully imported {result.RowCount} rows with {result.ColumnCount} columns");
+            // Extract merged cells using EPPlus
+            try
+            {
+                var mergedCellsProp = worksheet.GetType().GetProperty("MergedCells");
+                var mergedCells = mergedCellsProp?.GetValue(worksheet) as System.Collections.IEnumerable;
+
+                if (mergedCells != null)
+                {
+                    foreach (var mergedRange in mergedCells)
+                    {
+                        var rangeStr = mergedRange.ToString();
+                        var parts = rangeStr.Split(':');
+                        if (parts.Length == 2)
+                        {
+                            var start = ParseCellAddress(parts[0]);
+                            var end = ParseCellAddress(parts[1]);
+
+                            var mergedCell = new MergedCellRange
+                            {
+                                StartRow = start.Row - dataStartRow,
+                                StartColumn = start.Column - startCol,
+                                EndRow = end.Row - dataStartRow,
+                                EndColumn = end.Column - startCol
+                            };
+
+                            _logger.LogInformation($"Merged cell: {rangeStr} -> Row {mergedCell.StartRow}-{mergedCell.EndRow}, Col {mergedCell.StartColumn}-{mergedCell.EndColumn}");
+                            result.MergedCells.Add(mergedCell);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to extract merged cells: {ex.Message}");
+            }
+
+            // Extract cell background colors using EPPlus
+            try
+            {
+                for (int row = dataStartRow; row <= endRow; row++)
+                {
+                    for (int col = startCol; col <= endCol; col++)
+                    {
+                        var cell = GetEPPlusCell(worksheet, row, col);
+                        if (cell != null)
+                        {
+                            var style = cell.GetType().GetProperty("Style")?.GetValue(cell);
+                            if (style != null)
+                            {
+                                var fill = style.GetType().GetProperty("Fill")?.GetValue(style);
+                                if (fill != null)
+                                {
+                                    var bgColor = fill.GetType().GetProperty("BackgroundColor")?.GetValue(fill);
+                                    if (bgColor != null)
+                                    {
+                                        var rgbProp = bgColor.GetType().GetProperty("Rgb");
+                                        var rgb = rgbProp?.GetValue(bgColor)?.ToString();
+
+                                        if (!string.IsNullOrEmpty(rgb) && rgb != "00000000")
+                                        {
+                                            result.CellFormats.Add(new CellFormat
+                                            {
+                                                Row = row - dataStartRow,
+                                                Column = col - startCol,
+                                                BackgroundColor = rgb
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to extract cell colors: {ex.Message}");
+            }
+
+            _logger.LogInformation($"Successfully imported {result.RowCount} rows with {result.ColumnCount} columns, {result.MergedCells.Count} merged cells, {result.CellFormats.Count} formatted cells");
             return result;
+        }
+
+        private (int Row, int Column) ParseCellAddress(string address)
+        {
+            int col = 0;
+            int row = 0;
+            int i = 0;
+
+            // Parse column (letters)
+            while (i < address.Length && char.IsLetter(address[i]))
+            {
+                col = col * 26 + (char.ToUpper(address[i]) - 'A' + 1);
+                i++;
+            }
+
+            // Parse row (numbers)
+            while (i < address.Length && char.IsDigit(address[i]))
+            {
+                row = row * 10 + (address[i] - '0');
+                i++;
+            }
+
+            return (row, col);
+        }
+
+        private object? GetEPPlusCell(object worksheet, int row, int col)
+        {
+            try
+            {
+                var cellsProp = worksheet.GetType().GetProperty("Cells");
+                var cells = cellsProp?.GetValue(worksheet);
+                if (cells != null)
+                {
+                    var indexer = cells.GetType().GetProperty("Item", new[] { typeof(int), typeof(int) });
+                    return indexer?.GetValue(cells, new object[] { row, col });
+                }
+            }
+            catch
+            {
+                // Ignore errors
+            }
+            return null;
         }
 
         private ImportedTableData ExtractDataFromClosedXMLWorksheet(object worksheet, ImportConfiguration config, string filePath)
@@ -337,11 +458,116 @@ namespace BoltFramePlugin.Services.DataImport
                 if (!isEmptyRow || !config.SkipEmptyRows)
                 {
                     result.Rows.Add(rowData);
+                    _logger.LogInformation($"ClosedXML Row {row} -> Data row index {result.Rows.Count - 1}: [{string.Join(", ", rowData.Select(c => $"\"{c}\""))}]");
                 }
             }
 
-            _logger.LogInformation($"Successfully imported {result.RowCount} rows with {result.ColumnCount} columns");
+            // Extract merged cells using ClosedXML
+            try
+            {
+                var mergedRangesProp = worksheet.GetType().GetProperty("MergedRanges");
+                var mergedRanges = mergedRangesProp?.GetValue(worksheet) as System.Collections.IEnumerable;
+
+                if (mergedRanges != null)
+                {
+                    foreach (var range in mergedRanges)
+                    {
+                        var mergeAddress = range.GetType().GetProperty("RangeAddress")?.GetValue(range);
+                        if (mergeAddress != null)
+                        {
+                            var firstRow = (int)mergeAddress.GetType().GetProperty("FirstAddress")?.GetValue(mergeAddress)?.GetType().GetProperty("RowNumber")?.GetValue(mergeAddress.GetType().GetProperty("FirstAddress")?.GetValue(mergeAddress));
+                            var lastRow = (int)mergeAddress.GetType().GetProperty("LastAddress")?.GetValue(mergeAddress)?.GetType().GetProperty("RowNumber")?.GetValue(mergeAddress.GetType().GetProperty("LastAddress")?.GetValue(mergeAddress));
+                            var firstCol = (int)mergeAddress.GetType().GetProperty("FirstAddress")?.GetValue(mergeAddress)?.GetType().GetProperty("ColumnNumber")?.GetValue(mergeAddress.GetType().GetProperty("FirstAddress")?.GetValue(mergeAddress));
+                            var lastCol = (int)mergeAddress.GetType().GetProperty("LastAddress")?.GetValue(mergeAddress)?.GetType().GetProperty("ColumnNumber")?.GetValue(mergeAddress.GetType().GetProperty("LastAddress")?.GetValue(mergeAddress));
+
+                            var mergedCell = new MergedCellRange
+                            {
+                                StartRow = firstRow - dataStartRow,
+                                StartColumn = firstCol - firstColNum,
+                                EndRow = lastRow - dataStartRow,
+                                EndColumn = lastCol - firstColNum
+                            };
+
+                            _logger.LogInformation($"ClosedXML merged cell: Excel R{firstRow}C{firstCol}:R{lastRow}C{lastCol} (dataStartRow={dataStartRow}, firstColNum={firstColNum}) -> Row {mergedCell.StartRow}-{mergedCell.EndRow}, Col {mergedCell.StartColumn}-{mergedCell.EndColumn}");
+                            result.MergedCells.Add(mergedCell);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to extract merged cells from ClosedXML: {ex.Message}");
+            }
+
+            // Extract cell background colors using ClosedXML
+            try
+            {
+                for (int row = dataStartRow; row <= lastRowNum; row++)
+                {
+                    for (int col = firstColNum; col <= lastColNum; col++)
+                    {
+                        var cell = GetClosedXMLCell(worksheet, row, col);
+                        if (cell != null)
+                        {
+                            var style = cell.GetType().GetProperty("Style")?.GetValue(cell);
+                            if (style != null)
+                            {
+                                var fill = style.GetType().GetProperty("Fill")?.GetValue(style);
+                                if (fill != null)
+                                {
+                                    var bgColor = fill.GetType().GetProperty("BackgroundColor")?.GetValue(fill);
+                                    if (bgColor != null)
+                                    {
+                                        var colorType = bgColor.GetType().GetProperty("ColorType")?.GetValue(bgColor);
+                                        if (colorType != null && colorType.ToString() != "NoColor")
+                                        {
+                                            var color = bgColor.GetType().GetProperty("Color")?.GetValue(bgColor);
+                                            if (color != null)
+                                            {
+                                                var argb = color.GetType().GetProperty("ToArgb")?.GetValue(color);
+                                                if (argb != null)
+                                                {
+                                                    var hexColor = ((int)argb).ToString("X8");
+                                                    if (hexColor != "00000000")
+                                                    {
+                                                        result.CellFormats.Add(new CellFormat
+                                                        {
+                                                            Row = row - dataStartRow,
+                                                            Column = col - firstColNum,
+                                                            BackgroundColor = hexColor
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to extract cell colors from ClosedXML: {ex.Message}");
+            }
+
+            _logger.LogInformation($"Successfully imported {result.RowCount} rows with {result.ColumnCount} columns, {result.MergedCells.Count} merged cells, {result.CellFormats.Count} formatted cells");
             return result;
+        }
+
+        private object? GetClosedXMLCell(object worksheet, int row, int col)
+        {
+            try
+            {
+                var cellMethod = worksheet.GetType().GetMethod("Cell", new[] { typeof(int), typeof(int) });
+                return cellMethod?.Invoke(worksheet, new object[] { row, col });
+            }
+            catch
+            {
+                // Ignore errors
+            }
+            return null;
         }
 
         private string GetCellValue(object worksheet, int row, int col)

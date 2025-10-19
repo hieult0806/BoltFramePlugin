@@ -20,7 +20,7 @@ namespace BoltFramePlugin.ViewModels
         private string _filePath = string.Empty;
         private bool _hasHeaders = true;
         private char _csvDelimiter = ',';
-        private bool _skipEmptyRows = true;
+        private bool _skipEmptyRows = false; // Keep empty rows to preserve table structure
         private bool _trimWhitespace = true;
         private string _viewName = string.Empty;
         private double _columnWidth = 1.5; // 1.5 feet in model space (at scale 4, appears as 4.5" on paper)
