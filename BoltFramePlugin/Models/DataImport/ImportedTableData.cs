@@ -90,6 +90,16 @@ namespace BoltFramePlugin.Models.DataImport
         public List<CellFormat> CellFormats { get; set; } = new List<CellFormat>();
 
         /// <summary>
+        /// Column widths in Excel units (points). Used for proportional scaling.
+        /// </summary>
+        public List<double> ColumnWidths { get; set; } = new List<double>();
+
+        /// <summary>
+        /// Row heights in Excel units (points). Used for proportional scaling.
+        /// </summary>
+        public List<double> RowHeights { get; set; } = new List<double>();
+
+        /// <summary>
         /// Source file path
         /// </summary>
         public string SourceFilePath { get; set; } = string.Empty;

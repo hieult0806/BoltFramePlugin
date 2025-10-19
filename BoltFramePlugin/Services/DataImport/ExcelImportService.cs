@@ -462,6 +462,52 @@ namespace BoltFramePlugin.Services.DataImport
                 }
             }
 
+            // Extract column widths using ClosedXML
+            try
+            {
+                for (int col = firstColNum; col <= lastColNum; col++)
+                {
+                    var column = worksheet.GetType().GetMethod("Column", new[] { typeof(int) })?.Invoke(worksheet, new object[] { col });
+                    if (column != null)
+                    {
+                        var widthProp = column.GetType().GetProperty("Width");
+                        if (widthProp != null)
+                        {
+                            var width = (double)widthProp.GetValue(column);
+                            result.ColumnWidths.Add(width);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to extract column widths: {ex.Message}");
+            }
+
+            // Extract row heights using ClosedXML
+            try
+            {
+                // Include header row if present
+                int startRow = config.HasHeaders ? firstRowNum : dataStartRow;
+                for (int row = startRow; row <= lastRowNum; row++)
+                {
+                    var rowObj = worksheet.GetType().GetMethod("Row", new[] { typeof(int) })?.Invoke(worksheet, new object[] { row });
+                    if (rowObj != null)
+                    {
+                        var heightProp = rowObj.GetType().GetProperty("Height");
+                        if (heightProp != null)
+                        {
+                            var height = (double)heightProp.GetValue(rowObj);
+                            result.RowHeights.Add(height);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to extract row heights: {ex.Message}");
+            }
+
             // Extract merged cells using ClosedXML
             try
             {

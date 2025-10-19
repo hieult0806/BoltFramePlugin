@@ -90,13 +90,17 @@ namespace BoltFramePlugin.Services.DataImport
 
                 double currentY = options.StartY;
 
+                // Calculate proportional row heights if Excel data is available
+                List<double> rowHeights = CalculateRowHeights(data, options);
+
                 // Render header
                 if (data.Headers.Count > 0)
                 {
                     // Header is not part of the data rows, so use a dummy index (-1 or similar)
                     // Merged cells are indexed relative to data rows only, not including header
+                    double headerHeight = rowHeights.Count > 0 ? rowHeights[0] : options.RowHeight;
                     currentY = RenderRow(doc, view, data.Headers, options.StartX, currentY, columnWidths, options, textType,
-                        -1, mergedCellLookup, cellFormatLookup, isHeader: true);
+                        -1, mergedCellLookup, cellFormatLookup, isHeader: true, rowHeight: headerHeight);
                 }
 
                 // Render data rows
@@ -112,8 +116,10 @@ namespace BoltFramePlugin.Services.DataImport
                     }
 
                     _logger.LogInformation($"Rendering data row {rowIndex}: [{string.Join(", ", row.Select(c => $"\"{c}\""))}]");
+                    int heightIndex = rowHeights.Count > 0 ? (rowIndex + 1) : 0; // +1 because header is at index 0
+                    double dataRowHeight = (heightIndex < rowHeights.Count) ? rowHeights[heightIndex] : options.RowHeight;
                     currentY = RenderRow(doc, view, row, options.StartX, currentY, columnWidths, options, textType,
-                        rowIndex, mergedCellLookup, cellFormatLookup, isHeader: false);
+                        rowIndex, mergedCellLookup, cellFormatLookup, isHeader: false, rowHeight: dataRowHeight);
                     rowIndex++;
                 }
 
@@ -155,10 +161,9 @@ namespace BoltFramePlugin.Services.DataImport
         private double RenderRow(Document doc, Autodesk.Revit.DB.View view, List<string> cells, double startX, double startY,
             List<double> columnWidths, TableRenderOptions options, TextNoteType textType, int rowIndex,
             Dictionary<(int Row, int Col), MergedCellRange> mergedCellLookup,
-            Dictionary<(int Row, int Col), CellFormat> cellFormatLookup, bool isHeader)
+            Dictionary<(int Row, int Col), CellFormat> cellFormatLookup, bool isHeader, double rowHeight)
         {
             double currentX = startX;
-            double rowHeight = options.RowHeight;
 
             // Track the maximum row span in this row (for calculating next Y position)
             int maxRowSpan = 1;
@@ -297,7 +302,23 @@ namespace BoltFramePlugin.Services.DataImport
         {
             var columnWidths = new List<double>();
 
-            if (options.AutoSizeColumns)
+            // If Excel column widths are available, use proportional scaling
+            if (data.ColumnWidths.Count == data.ColumnCount)
+            {
+                // Calculate average Excel column width
+                double avgExcelWidth = data.ColumnWidths.Average();
+
+                // Scale each column proportionally based on options.ColumnWidth as the baseline
+                for (int i = 0; i < data.ColumnCount; i++)
+                {
+                    double ratio = data.ColumnWidths[i] / avgExcelWidth;
+                    double scaledWidth = options.ColumnWidth * ratio;
+                    columnWidths.Add(scaledWidth);
+                }
+
+                _logger.LogInformation($"Using proportional column widths (avg Excel width: {avgExcelWidth:F2}, baseline: {options.ColumnWidth:F4} ft)");
+            }
+            else if (options.AutoSizeColumns)
             {
                 // Calculate based on content (rough estimation)
                 for (int i = 0; i < data.ColumnCount; i++)
@@ -327,6 +348,30 @@ namespace BoltFramePlugin.Services.DataImport
             }
 
             return columnWidths;
+        }
+
+        private List<double> CalculateRowHeights(ImportedTableData data, TableRenderOptions options)
+        {
+            var rowHeights = new List<double>();
+
+            // If Excel row heights are available, use proportional scaling
+            if (data.RowHeights.Count > 0)
+            {
+                // Calculate average Excel row height
+                double avgExcelHeight = data.RowHeights.Average();
+
+                // Scale each row proportionally based on options.RowHeight as the baseline
+                foreach (var excelHeight in data.RowHeights)
+                {
+                    double ratio = excelHeight / avgExcelHeight;
+                    double scaledHeight = options.RowHeight * ratio;
+                    rowHeights.Add(scaledHeight);
+                }
+
+                _logger.LogInformation($"Using proportional row heights (avg Excel height: {avgExcelHeight:F2}, baseline: {options.RowHeight:F4} ft, count: {rowHeights.Count})");
+            }
+
+            return rowHeights;
         }
 
         private void CreateTextNote(Document doc, Autodesk.Revit.DB.View view, string text, double x, double y, TextNoteType textType, TextAlignment align, double textHeight)
@@ -446,31 +491,106 @@ namespace BoltFramePlugin.Services.DataImport
 
                 var curveLoop = CurveLoop.Create(curves);
 
-                // Get or create a solid fill type
-                var filledRegionType = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FilledRegionType))
-                    .Cast<FilledRegionType>()
-                    .FirstOrDefault(frt => frt.Name.Contains("Solid"));
+                // Get or create a FilledRegionType with the specified color
+                var filledRegionType = GetOrCreateFilledRegionTypeWithColor(doc, hexColor);
 
                 if (filledRegionType == null)
                 {
-                    _logger.LogWarning("No solid fill type found for cell background");
+                    _logger.LogWarning($"Could not get or create filled region type for color {hexColor}");
                     return;
                 }
 
                 // Create the filled region
                 var filledRegion = FilledRegion.Create(doc, filledRegionType.Id, view.Id, new List<CurveLoop> { curveLoop });
 
-                // Note: Revit doesn't support setting fill colors directly in the API
-                // The fill pattern color is controlled by the FilledRegionType
-                // For now, we'll just create the filled region with the default solid fill
-                // To support colors, you would need to create different FilledRegionTypes with different fill patterns/colors
-
                 _logger.LogInformation($"Created cell background at ({x:F2}, {y:F2}) with size {width:F2}x{height:F2}, color: {hexColor}");
             }
             catch (Exception ex)
             {
                 _logger.LogWarning($"Could not create cell background: {ex.Message}");
+            }
+        }
+
+        private FilledRegionType GetOrCreateFilledRegionTypeWithColor(Document doc, string hexColor)
+        {
+            try
+            {
+                // Parse hex color (format: AARRGGBB or RRGGBB)
+                byte r, g, b;
+                if (hexColor.Length == 8) // AARRGGBB
+                {
+                    r = Convert.ToByte(hexColor.Substring(2, 2), 16);
+                    g = Convert.ToByte(hexColor.Substring(4, 2), 16);
+                    b = Convert.ToByte(hexColor.Substring(6, 2), 16);
+                }
+                else if (hexColor.Length == 6) // RRGGBB
+                {
+                    r = Convert.ToByte(hexColor.Substring(0, 2), 16);
+                    g = Convert.ToByte(hexColor.Substring(2, 2), 16);
+                    b = Convert.ToByte(hexColor.Substring(4, 2), 16);
+                }
+                else
+                {
+                    _logger.LogWarning($"Invalid hex color format: {hexColor}");
+                    return null;
+                }
+
+                var color = new Autodesk.Revit.DB.Color(r, g, b);
+                string typeName = $"TableCell_{hexColor}";
+
+                // Check if type already exists
+                var existingType = new FilteredElementCollector(doc)
+                    .OfClass(typeof(FilledRegionType))
+                    .Cast<FilledRegionType>()
+                    .FirstOrDefault(frt => frt.Name == typeName);
+
+                if (existingType != null)
+                {
+                    return existingType;
+                }
+
+                // Get a solid fill pattern
+                var solidPattern = new FilteredElementCollector(doc)
+                    .OfClass(typeof(FillPatternElement))
+                    .Cast<FillPatternElement>()
+                    .FirstOrDefault(fp => fp.GetFillPattern().IsSolidFill);
+
+                if (solidPattern == null)
+                {
+                    _logger.LogWarning("No solid fill pattern found");
+                    return null;
+                }
+
+                // Get an existing FilledRegionType to duplicate
+                var baseType = new FilteredElementCollector(doc)
+                    .OfClass(typeof(FilledRegionType))
+                    .Cast<FilledRegionType>()
+                    .FirstOrDefault();
+
+                if (baseType == null)
+                {
+                    _logger.LogWarning("No base FilledRegionType found to duplicate");
+                    return null;
+                }
+
+                // Duplicate the base type
+                var newType = baseType.Duplicate(typeName) as FilledRegionType;
+
+                if (newType != null)
+                {
+                    // Set the foreground pattern and color
+                    newType.ForegroundPatternId = solidPattern.Id;
+                    newType.ForegroundPatternColor = color;
+
+                    _logger.LogInformation($"Created FilledRegionType '{typeName}' with color RGB({r},{g},{b})");
+                }
+
+                return newType;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to create FilledRegionType for color {hexColor}: {ex.Message}");
+                return null;
             }
         }
 
