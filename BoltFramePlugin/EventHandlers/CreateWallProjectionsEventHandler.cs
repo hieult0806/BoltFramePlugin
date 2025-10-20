@@ -347,39 +347,6 @@ namespace BoltFramePlugin.EventHandlers
         }
 
         /// <summary>
-        /// Groups walls by their orientation (legacy method - replaced by GroupWallsByReferenceLine)
-        /// </summary>
-        private List<WallGroup> GroupWallsByOrientation(List<WallInfo> walls)
-        {
-            var groups = new List<WallGroup>();
-
-            foreach (var wallInfo in walls.Where(w => w.LimitingDistance.HasValue && w.Orientation != null))
-            {
-                var matchingGroup = groups.FirstOrDefault(g =>
-                    AreOrientationsSimilar(g.Orientation, wallInfo.Orientation, ORIENTATION_TOLERANCE_DEGREES));
-
-                if (matchingGroup != null)
-                {
-                    matchingGroup.Walls.Add(wallInfo);
-                }
-                else
-                {
-                    var newGroup = new WallGroup
-                    {
-                        LimitingDistance = wallInfo.LimitingDistance.Value,
-                        Orientation = wallInfo.Orientation,
-                        ReferenceLine = wallInfo.ReferenceLine
-                    };
-                    newGroup.Walls.Add(wallInfo);
-                    newGroup.GroupName = $"Orientation - {newGroup.OrientationDescription}";
-                    groups.Add(newGroup);
-                }
-            }
-
-            return groups;
-        }
-
-        /// <summary>
         /// Determines if two orientations are similar within tolerance
         /// </summary>
         private bool AreOrientationsSimilar(XYZ orientation1, XYZ orientation2, double toleranceDegrees)
