@@ -796,20 +796,40 @@ namespace BoltFramePlugin.EventHandlers
 
                 _logger.LogInformation($"Wall {wall.Id.Value} extracted {curveLoops.Count} curve loops from view geometry");
 
-                // Use the first (outer) curve loop as the wall boundary
-                var outerLoop = curveLoops[0];
-
-                // Project the curve loop onto the view's sketch plane
-                var projectedLoop = ProjectCurveLoopToViewPlane(outerLoop, viewOrigin, viewRightDirection, viewUpDirection, wall.Id);
-
-                if (projectedLoop == null)
+                // Project all curve loops onto the view's sketch plane
+                // First loop is the outer boundary, subsequent loops are openings (windows/doors)
+                var projectedLoops = new List<CurveLoop>();
+                foreach (var loop in curveLoops)
                 {
-                    _logger.LogWarning($"Wall {wall.Id.Value} failed to project curve loop to view plane");
+                    var projectedLoop = ProjectCurveLoopToViewPlane(loop, viewOrigin, viewRightDirection, viewUpDirection, wall.Id);
+                    if (projectedLoop != null)
+                    {
+                        projectedLoops.Add(projectedLoop);
+                    }
+                }
+
+                if (projectedLoops.Count == 0)
+                {
+                    _logger.LogWarning($"Wall {wall.Id.Value} failed to project any curve loops to view plane");
                     return false;
                 }
 
-                // Check if we need to trim by top-most ceiling
-                var trimmedLoops = ApplyCeilingTrimming(doc, wall, projectedLoop, viewOrigin, viewRightDirection, viewUpDirection);
+                _logger.LogInformation($"Wall {wall.Id.Value}: Successfully projected {projectedLoops.Count} curve loops (1 outer + {projectedLoops.Count - 1} openings)");
+
+                // Check if we need to trim by top-most ceiling (only applies to outer loop)
+                var trimmedLoops = ApplyCeilingTrimming(doc, wall, projectedLoops[0], viewOrigin, viewRightDirection, viewUpDirection);
+
+                // If ceiling trimming split the outer loop into multiple pieces, we need to handle each piece separately
+                // For now, use the first trimmed loop as the outer boundary
+                var finalOuterLoop = trimmedLoops[0];
+
+                // Build the final list: trimmed outer loop + all opening loops
+                var finalLoops = new List<CurveLoop> { finalOuterLoop };
+                if (projectedLoops.Count > 1)
+                {
+                    // Add opening loops (skip the first one which is the outer loop)
+                    finalLoops.AddRange(projectedLoops.Skip(1));
+                }
 
                 // Try to create filled region(s) with the extracted geometry
                 if (!wallInfo.LimitingDistance.HasValue)
@@ -826,11 +846,12 @@ namespace BoltFramePlugin.EventHandlers
                 if (filledRegionType != null)
                 {
                     _logger.LogInformation($"Wall {wall.Id.Value}: Using filled region type '{filledRegionType.Name}' (Id: {filledRegionType.Id.Value})");
-                    foreach (var loop in trimmedLoops)
-                    {
-                        var region = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, new List<CurveLoop> { loop });
-                        _logger.LogInformation($"Successfully created region for wall {wall.Id.Value} using view geometry");
-                    }
+                    _logger.LogInformation($"Wall {wall.Id.Value}: Creating filled region with {finalLoops.Count} loops (1 outer + {finalLoops.Count - 1} openings)");
+
+                    // Create a single filled region with all loops (outer boundary + openings)
+                    var region = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, finalLoops);
+                    _logger.LogInformation($"Successfully created region for wall {wall.Id.Value} with openings cut out");
+
                     return true;
                 }
                 else
