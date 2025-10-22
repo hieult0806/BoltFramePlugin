@@ -213,11 +213,55 @@ namespace BoltFramePlugin.Services.DataImport
                     columnWidths, textType, cellFormatLookup, options);
             }
 
-            // Draw horizontal grid lines
+            // Draw grid lines for this row
+            // We draw grid lines per-cell to handle merged cells properly
             if (options.DrawGridLines)
             {
-                DrawDetailLine(doc, view, startX, startY, currentX, startY, options.LineStyleName);
-                DrawDetailLine(doc, view, startX, startY - rowHeight, currentX, startY - rowHeight, options.LineStyleName);
+                currentX = startX;
+                for (int colIndex = 0; colIndex < columnWidths.Count; colIndex++)
+                {
+                    double cellWidth = columnWidths[colIndex];
+                    double cellHeight = rowHeight;
+                    bool shouldDrawGridForCell = true;
+
+                    // Check if this cell is part of a merge
+                    if (mergedCellLookup.TryGetValue((rowIndex, colIndex), out var merge))
+                    {
+                        bool isTopLeft = merge.StartRow == rowIndex && merge.StartColumn == colIndex;
+
+                        if (isTopLeft)
+                        {
+                            // This is the top-left of a merge - draw the full merged cell boundary
+                            // Calculate merged cell dimensions
+                            cellWidth = 0;
+                            for (int c = merge.StartColumn; c <= merge.EndColumn && c < columnWidths.Count; c++)
+                            {
+                                cellWidth += columnWidths[c];
+                            }
+                            cellHeight = rowHeight * merge.RowSpan;
+
+                            // Draw full boundary of merged cell
+                            DrawDetailLine(doc, view, currentX, startY, currentX, startY - cellHeight, options.LineStyleName); // Left
+                            DrawDetailLine(doc, view, currentX + cellWidth, startY, currentX + cellWidth, startY - cellHeight, options.LineStyleName); // Right
+                            DrawDetailLine(doc, view, currentX, startY, currentX + cellWidth, startY, options.LineStyleName); // Top
+                            DrawDetailLine(doc, view, currentX, startY - cellHeight, currentX + cellWidth, startY - cellHeight, options.LineStyleName); // Bottom
+                        }
+
+                        // Skip grid drawing for non-top-left cells of merge
+                        shouldDrawGridForCell = false;
+                    }
+
+                    if (shouldDrawGridForCell)
+                    {
+                        // Draw grid for normal cell
+                        DrawDetailLine(doc, view, currentX, startY, currentX, startY - cellHeight, options.LineStyleName); // Left
+                        DrawDetailLine(doc, view, currentX + cellWidth, startY, currentX + cellWidth, startY - cellHeight, options.LineStyleName); // Right
+                        DrawDetailLine(doc, view, currentX, startY, currentX + cellWidth, startY, options.LineStyleName); // Top
+                        DrawDetailLine(doc, view, currentX, startY - cellHeight, currentX + cellWidth, startY - cellHeight, options.LineStyleName); // Bottom
+                    }
+
+                    currentX += columnWidths[colIndex];
+                }
             }
 
             return startY - rowHeight; // Subtract to move down by one row (Y decreases downward in Revit)
@@ -281,12 +325,7 @@ namespace BoltFramePlugin.Services.DataImport
                 CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight, isBold, isItalic, isUnderline);
             }
 
-            // Draw grid lines
-            if (options.DrawGridLines)
-            {
-                DrawDetailLine(doc, view, x, y, x, y - cellHeight, options.LineStyleName);
-                DrawDetailLine(doc, view, x + cellWidth, y, x + cellWidth, y - cellHeight, options.LineStyleName);
-            }
+            // Note: Grid lines are drawn at the row level to handle merged cells properly
         }
 
         private void RenderMergedCell(Document doc, Autodesk.Revit.DB.View view, string cellText, double startX, double startY,
@@ -367,18 +406,7 @@ namespace BoltFramePlugin.Services.DataImport
                 CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight, isBold, isItalic, isUnderline);
             }
 
-            // Draw grid lines for merged cell
-            if (options.DrawGridLines)
-            {
-                // Left vertical line
-                DrawDetailLine(doc, view, x, startY, x, startY - cellHeight, options.LineStyleName);
-                // Right vertical line
-                DrawDetailLine(doc, view, x + cellWidth, startY, x + cellWidth, startY - cellHeight, options.LineStyleName);
-                // Top horizontal line
-                DrawDetailLine(doc, view, x, startY, x + cellWidth, startY, options.LineStyleName);
-                // Bottom horizontal line
-                DrawDetailLine(doc, view, x, startY - cellHeight, x + cellWidth, startY - cellHeight, options.LineStyleName);
-            }
+            // Note: Grid lines are drawn at the row level to handle merged cells properly
         }
 
         private List<double> CalculateColumnWidths(ImportedTableData data, TableRenderOptions options)
