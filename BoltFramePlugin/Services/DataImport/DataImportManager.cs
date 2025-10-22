@@ -51,8 +51,33 @@ namespace BoltFramePlugin.Services.DataImport
                 throw new NotSupportedException($"File type not supported: {Path.GetExtension(filePath)}");
             }
 
-            _logger.LogInformation($"Importing file: {filePath}");
-            return await service.ImportAsync(filePath, config);
+            // Copy file to temp location to avoid file locking issues
+            string? tempFilePath = null;
+            try
+            {
+                tempFilePath = Path.Combine(Path.GetTempPath(), $"BoltFrame_Import_{Guid.NewGuid()}{Path.GetExtension(filePath)}");
+                _logger.LogInformation($"Copying file to temp location: {tempFilePath}");
+                File.Copy(filePath, tempFilePath, overwrite: true);
+
+                _logger.LogInformation($"Importing file from temp location: {tempFilePath}");
+                return await service.ImportAsync(tempFilePath, config);
+            }
+            finally
+            {
+                // Clean up temp file
+                if (!string.IsNullOrEmpty(tempFilePath) && File.Exists(tempFilePath))
+                {
+                    try
+                    {
+                        File.Delete(tempFilePath);
+                        _logger.LogInformation($"Deleted temp file: {tempFilePath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"Could not delete temp file {tempFilePath}: {ex.Message}");
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -97,6 +122,48 @@ namespace BoltFramePlugin.Services.DataImport
 
                     try
                     {
+                        // Check if a view with this name already exists and delete it
+                        var existingView = new FilteredElementCollector(doc)
+                            .OfClass(typeof(ViewDrafting))
+                            .Cast<ViewDrafting>()
+                            .FirstOrDefault(v => v.Name == viewName);
+
+                        if (existingView != null)
+                        {
+                            _logger.LogInformation($"Found existing view '{viewName}' (Id: {existingView.Id}). Attempting to delete it...");
+
+                            try
+                            {
+                                // If the view is currently active, switch to another view first
+                                if (doc.ActiveView.Id == existingView.Id)
+                                {
+                                    _logger.LogInformation("Existing view is active, switching to a different view first...");
+
+                                    // Find any other view to switch to
+                                    var anyOtherView = new FilteredElementCollector(doc)
+                                        .OfClass(typeof(Autodesk.Revit.DB.View))
+                                        .Cast<Autodesk.Revit.DB.View>()
+                                        .FirstOrDefault(v => v.Id != existingView.Id && !v.IsTemplate);
+
+                                    if (anyOtherView != null)
+                                    {
+                                        // Note: We can't set ActiveView inside a transaction, so we'll just proceed
+                                        _logger.LogInformation("Cannot switch active view inside transaction. The view will be deleted anyway.");
+                                    }
+                                }
+
+                                var deletedIds = doc.Delete(existingView.Id);
+                                _logger.LogInformation($"Existing view deleted (deleted {deletedIds.Count} elements)");
+                            }
+                            catch (Exception deleteEx)
+                            {
+                                _logger.LogWarning($"Could not delete existing view: {deleteEx.Message}. Will create view with modified name.");
+                                // If we can't delete, modify the view name to avoid conflict
+                                viewName = $"{viewName} ({DateTime.Now:HHmmss})";
+                                _logger.LogInformation($"Using modified view name: {viewName}");
+                            }
+                        }
+
                         // Create drafting view with specified scale
                         _logger.LogInformation($"Creating drafting view with scale 1:{renderOptions.ViewScale}...");
                         view = _renderService.CreateDraftingView(doc, viewName, (int)renderOptions.ViewScale);
