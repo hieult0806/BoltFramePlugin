@@ -159,184 +159,226 @@ namespace BoltFramePlugin.Services.DataImport
                 DrawFilledRegion(doc, view, startX, startY, columnWidths.Sum(), rowHeight, options.HeaderFillTypeName);
             }
 
-            // Track which cells have been processed (for merged cells)
-            var processedCells = new HashSet<int>();
             _logger.LogInformation($"Starting row {rowIndex} with {cells.Count} cells");
 
-            // Draw cells
+            // Collect merged cells that start in this row for later rendering
+            var mergedCellsToRender = new List<(int colIndex, MergedCellRange merge, string text)>();
+
+            // PASS 1: Render normal cells (skip any cell that's part of a merge)
+            currentX = startX;
             for (int colIndex = 0; colIndex < cells.Count && colIndex < columnWidths.Count; colIndex++)
             {
-                if (processedCells.Contains(colIndex))
-                {
-                    // Skip this cell - its width was already included in the merged cell
-                    _logger.LogInformation($"  Skipping col {colIndex} - already in processedCells");
-                    continue;
-                }
-
                 var cellText = cells[colIndex];
                 var cellWidth = columnWidths[colIndex];
-                double cellHeight = rowHeight;
 
                 _logger.LogInformation($"Processing cell at row {rowIndex}, col {colIndex}, text='{cellText}'");
 
-                // Check if this cell is part of a merged range
-                MergedCellRange? mergedRange = null;
-                bool shouldRenderText = true;
-                bool isPartOfHorizontalMerge = false;
-                bool shouldSkipCell = false;
-
-                _logger.LogInformation($"  Checking merge for ({rowIndex}, {colIndex})...");
+                // Check if this cell is part of any merged range
                 if (mergedCellLookup.TryGetValue((rowIndex, colIndex), out var merge))
                 {
                     _logger.LogInformation($"  Found merge: StartRow={merge.StartRow}, EndRow={merge.EndRow}, StartCol={merge.StartColumn}, EndCol={merge.EndColumn}");
-                    mergedRange = merge;
 
-                    // Only render text if this is the top-left cell of the merge
+                    // If this is the top-left cell of the merge, save it for later rendering
                     bool isTopLeft = (merge.StartRow == rowIndex && merge.StartColumn == colIndex);
-                    shouldRenderText = isTopLeft;
-
-                    // Check if this is part of a horizontal merge (but not the leftmost cell)
-                    isPartOfHorizontalMerge = (merge.StartColumn != colIndex);
-
-                    if (isPartOfHorizontalMerge)
-                    {
-                        // This cell is part of a horizontal merge (not the leftmost), skip it entirely
-                        _logger.LogInformation($"Skipping cell at row {rowIndex}, col {colIndex} - part of horizontal merge");
-                        continue;
-                    }
-
-                    // CRITICAL FIX: For vertical merges, if this is not the top row of the merge,
-                    // we should skip this cell entirely because it doesn't exist in this row
-                    bool isVerticalMergeNonTopRow = (merge.StartRow != rowIndex && merge.StartColumn == merge.EndColumn);
-                    if (isVerticalMergeNonTopRow)
-                    {
-                        _logger.LogInformation($"Skipping cell at row {rowIndex}, col {colIndex} - part of vertical merge but not top row");
-                        // Don't increment currentX, don't draw anything - this cell doesn't exist in this row
-                        continue;
-                    }
-
-                    _logger.LogInformation($"Cell at row {rowIndex}, col {colIndex} is part of merge (StartRow={merge.StartRow}, StartCol={merge.StartColumn}), isTopLeft={isTopLeft}");
-
-                    // For the top-left cell of any merge, calculate the full dimensions
                     if (isTopLeft)
                     {
-                        // Calculate merged cell dimensions (clamp to available columns)
-                        cellWidth = 0;
-                        int endCol = Math.Min(merge.EndColumn, columnWidths.Count - 1);
+                        mergedCellsToRender.Add((colIndex, merge, cellText));
+                        _logger.LogInformation($"  Saved merged cell for later rendering");
 
-                        _logger.LogInformation($"Rendering merged cell at row {rowIndex}, col {colIndex}: StartCol={merge.StartColumn}, EndCol={merge.EndColumn}, ClampedEndCol={endCol}, ColumnWidths.Count={columnWidths.Count}");
-
-                        for (int c = merge.StartColumn; c <= endCol; c++)
-                        {
-                            if (c < columnWidths.Count)
-                            {
-                                cellWidth += columnWidths[c];
-                                _logger.LogInformation($"  Adding column {c} width: {columnWidths[c]:F3} ft, cumulative width: {cellWidth:F3} ft");
-                                // Only mark cells as processed if this merge spans multiple columns horizontally
-                                if (c > colIndex)
-                                {
-                                    processedCells.Add(c);
-                                    _logger.LogInformation($"  Marking column {c} as processed (horizontal span)");
-                                }
-                            }
-                        }
-                        cellHeight = rowHeight * merge.RowSpan;
-
-                        _logger.LogInformation($"Final merged cell width: {cellWidth:F3} ft, height: {cellHeight:F3} ft");
-
-                        // Track the maximum row span in this row
+                        // Track max row span
                         if (merge.RowSpan > maxRowSpan)
                         {
                             maxRowSpan = merge.RowSpan;
                         }
                     }
+
+                    // Skip this cell - it's part of a merge and will be rendered in pass 2
+                    _logger.LogInformation($"  Skipping cell - part of merge");
+                    currentX += cellWidth;
+                    continue;
                 }
 
-                // Draw cell background if specified
-                if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var cellFormat))
-                {
-                    if (!string.IsNullOrEmpty(cellFormat.BackgroundColor))
-                    {
-                        // Draw filled region for cell background
-                        DrawCellBackground(doc, view, currentX, startY, cellWidth, cellHeight, cellFormat.BackgroundColor);
-                    }
-                }
-
-                // Determine text alignment - use cell format if available, otherwise use default
-                TextAlignment cellAlignment = options.TextAlign;
-                if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForAlign) && !string.IsNullOrEmpty(formatForAlign.TextAlignment))
-                {
-                    if (formatForAlign.TextAlignment == "Center") cellAlignment = TextAlignment.Center;
-                    else if (formatForAlign.TextAlignment == "Right") cellAlignment = TextAlignment.Right;
-                    else if (formatForAlign.TextAlignment == "Left") cellAlignment = TextAlignment.Left;
-                }
-
-                // Calculate text position based on alignment
-                double textX = currentX;
-                double padding = options.TextHeight * 0.2; // Small padding
-
-                switch (cellAlignment)
-                {
-                    case TextAlignment.Center:
-                        textX = currentX + cellWidth / 2;
-                        break;
-                    case TextAlignment.Right:
-                        textX = currentX + cellWidth - padding;
-                        break;
-                    default: // Left
-                        textX = currentX + padding;
-                        break;
-                }
-
-                // Position text vertically centered in the cell (accounting for text baseline)
-                double textY = startY - (cellHeight / 2) - (options.TextHeight / 4);
-
-                // Apply text offsets
-                textX += options.TextOffsetX;
-                textY += options.TextOffsetY;
-
-                // Get text formatting from cell format
-                bool isBold = false;
-                bool isItalic = false;
-                bool isUnderline = false;
-                if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForText))
-                {
-                    isBold = formatForText.IsBold;
-                    isItalic = formatForText.IsItalic;
-                    isUnderline = formatForText.IsUnderline;
-                }
-
-                // Create text note only if we should render text (not for non-top-left cells in merged ranges)
-                if (shouldRenderText)
-                {
-                    CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight, isBold, isItalic, isUnderline);
-                }
-
-                // Draw grid lines
-                if (options.DrawGridLines)
-                {
-                    // Left vertical line
-                    DrawDetailLine(doc, view, currentX, startY, currentX, startY - cellHeight, options.LineStyleName);
-
-                    // Right vertical line (for last column or merged cell)
-                    if (mergedRange != null || colIndex == cells.Count - 1)
-                    {
-                        DrawDetailLine(doc, view, currentX + cellWidth, startY, currentX + cellWidth, startY - cellHeight, options.LineStyleName);
-                    }
-                }
+                // This is a normal cell - render it
+                RenderNormalCell(doc, view, cellText, currentX, startY, cellWidth, rowHeight, rowIndex, colIndex,
+                    textType, cellFormatLookup, options);
 
                 currentX += cellWidth;
-                _logger.LogInformation($"  End of col {colIndex}: currentX={currentX:F3}, processedCells=[{string.Join(",", processedCells)}]");
+                _logger.LogInformation($"  End of col {colIndex}: currentX={currentX:F3}");
+            }
+
+            // PASS 2: Render merged cells
+            foreach (var (colIndex, merge, text) in mergedCellsToRender)
+            {
+                RenderMergedCell(doc, view, text, startX, startY, rowHeight, rowIndex, colIndex, merge,
+                    columnWidths, textType, cellFormatLookup, options);
             }
 
             // Draw horizontal grid lines
             if (options.DrawGridLines)
             {
                 DrawDetailLine(doc, view, startX, startY, currentX, startY, options.LineStyleName);
-                DrawDetailLine(doc, view, startX, startY - (rowHeight * maxRowSpan), currentX, startY - (rowHeight * maxRowSpan), options.LineStyleName);
+                DrawDetailLine(doc, view, startX, startY - rowHeight, currentX, startY - rowHeight, options.LineStyleName);
             }
 
-            return startY - (rowHeight * maxRowSpan); // Subtract to move down (Y decreases downward in Revit)
+            return startY - rowHeight; // Subtract to move down by one row (Y decreases downward in Revit)
+        }
+
+        private void RenderNormalCell(Document doc, Autodesk.Revit.DB.View view, string cellText, double x, double y,
+            double cellWidth, double cellHeight, int rowIndex, int colIndex, TextNoteType textType,
+            Dictionary<(int Row, int Col), CellFormat> cellFormatLookup, TableRenderOptions options)
+        {
+            // Draw cell background if specified
+            if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var cellFormat))
+            {
+                if (!string.IsNullOrEmpty(cellFormat.BackgroundColor))
+                {
+                    DrawCellBackground(doc, view, x, y, cellWidth, cellHeight, cellFormat.BackgroundColor);
+                }
+            }
+
+            // Determine text alignment
+            TextAlignment cellAlignment = options.TextAlign;
+            if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForAlign) && !string.IsNullOrEmpty(formatForAlign.TextAlignment))
+            {
+                if (formatForAlign.TextAlignment == "Center") cellAlignment = TextAlignment.Center;
+                else if (formatForAlign.TextAlignment == "Right") cellAlignment = TextAlignment.Right;
+                else if (formatForAlign.TextAlignment == "Left") cellAlignment = TextAlignment.Left;
+            }
+
+            // Calculate text position based on alignment
+            double textX = x;
+            double padding = options.TextHeight * 0.2;
+
+            switch (cellAlignment)
+            {
+                case TextAlignment.Center:
+                    textX = x + cellWidth / 2;
+                    break;
+                case TextAlignment.Right:
+                    textX = x + cellWidth - padding;
+                    break;
+                default: // Left
+                    textX = x + padding;
+                    break;
+            }
+
+            double textY = y - (cellHeight / 2) - (options.TextHeight / 4);
+            textX += options.TextOffsetX;
+            textY += options.TextOffsetY;
+
+            // Get text formatting
+            bool isBold = false, isItalic = false, isUnderline = false;
+            if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForText))
+            {
+                isBold = formatForText.IsBold;
+                isItalic = formatForText.IsItalic;
+                isUnderline = formatForText.IsUnderline;
+            }
+
+            // Create text note
+            if (!string.IsNullOrEmpty(cellText))
+            {
+                CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight, isBold, isItalic, isUnderline);
+            }
+
+            // Draw grid lines
+            if (options.DrawGridLines)
+            {
+                DrawDetailLine(doc, view, x, y, x, y - cellHeight, options.LineStyleName);
+                DrawDetailLine(doc, view, x + cellWidth, y, x + cellWidth, y - cellHeight, options.LineStyleName);
+            }
+        }
+
+        private void RenderMergedCell(Document doc, Autodesk.Revit.DB.View view, string cellText, double startX, double startY,
+            double rowHeight, int rowIndex, int colIndex, MergedCellRange merge, List<double> columnWidths,
+            TextNoteType textType, Dictionary<(int Row, int Col), CellFormat> cellFormatLookup, TableRenderOptions options)
+        {
+            // Calculate X position for this merged cell
+            double x = startX;
+            for (int c = 0; c < colIndex && c < columnWidths.Count; c++)
+            {
+                x += columnWidths[c];
+            }
+
+            // Calculate merged cell width
+            double cellWidth = 0;
+            int endCol = Math.Min(merge.EndColumn, columnWidths.Count - 1);
+            for (int c = merge.StartColumn; c <= endCol && c < columnWidths.Count; c++)
+            {
+                cellWidth += columnWidths[c];
+            }
+
+            // Calculate merged cell height
+            double cellHeight = rowHeight * merge.RowSpan;
+
+            _logger.LogInformation($"Rendering merged cell at row {rowIndex}, col {colIndex}: x={x:F3}, width={cellWidth:F3}, height={cellHeight:F3}");
+
+            // Draw cell background if specified
+            if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var cellFormat))
+            {
+                if (!string.IsNullOrEmpty(cellFormat.BackgroundColor))
+                {
+                    DrawCellBackground(doc, view, x, startY, cellWidth, cellHeight, cellFormat.BackgroundColor);
+                }
+            }
+
+            // Determine text alignment
+            TextAlignment cellAlignment = options.TextAlign;
+            if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForAlign) && !string.IsNullOrEmpty(formatForAlign.TextAlignment))
+            {
+                if (formatForAlign.TextAlignment == "Center") cellAlignment = TextAlignment.Center;
+                else if (formatForAlign.TextAlignment == "Right") cellAlignment = TextAlignment.Right;
+                else if (formatForAlign.TextAlignment == "Left") cellAlignment = TextAlignment.Left;
+            }
+
+            // Calculate text position
+            double textX = x;
+            double padding = options.TextHeight * 0.2;
+
+            switch (cellAlignment)
+            {
+                case TextAlignment.Center:
+                    textX = x + cellWidth / 2;
+                    break;
+                case TextAlignment.Right:
+                    textX = x + cellWidth - padding;
+                    break;
+                default: // Left
+                    textX = x + padding;
+                    break;
+            }
+
+            double textY = startY - (cellHeight / 2) - (options.TextHeight / 4);
+            textX += options.TextOffsetX;
+            textY += options.TextOffsetY;
+
+            // Get text formatting
+            bool isBold = false, isItalic = false, isUnderline = false;
+            if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForText))
+            {
+                isBold = formatForText.IsBold;
+                isItalic = formatForText.IsItalic;
+                isUnderline = formatForText.IsUnderline;
+            }
+
+            // Create text note
+            if (!string.IsNullOrEmpty(cellText))
+            {
+                CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight, isBold, isItalic, isUnderline);
+            }
+
+            // Draw grid lines for merged cell
+            if (options.DrawGridLines)
+            {
+                // Left vertical line
+                DrawDetailLine(doc, view, x, startY, x, startY - cellHeight, options.LineStyleName);
+                // Right vertical line
+                DrawDetailLine(doc, view, x + cellWidth, startY, x + cellWidth, startY - cellHeight, options.LineStyleName);
+                // Top horizontal line
+                DrawDetailLine(doc, view, x, startY, x + cellWidth, startY, options.LineStyleName);
+                // Bottom horizontal line
+                DrawDetailLine(doc, view, x, startY - cellHeight, x + cellWidth, startY - cellHeight, options.LineStyleName);
+            }
         }
 
         private List<double> CalculateColumnWidths(ImportedTableData data, TableRenderOptions options)
