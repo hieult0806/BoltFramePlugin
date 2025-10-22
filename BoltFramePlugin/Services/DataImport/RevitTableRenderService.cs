@@ -77,16 +77,8 @@ namespace BoltFramePlugin.Services.DataImport
                 // Build cell format lookup for fast access
                 var cellFormatLookup = BuildCellFormatLookup(data.CellFormats);
 
-                // Build set of rows that should be skipped (they're part of merged cells from previous rows)
-                var rowsToSkip = new HashSet<int>();
-                foreach (var merge in data.MergedCells)
-                {
-                    // Skip all rows except the first row of the merge
-                    for (int r = merge.StartRow + 1; r <= merge.EndRow; r++)
-                    {
-                        rowsToSkip.Add(r);
-                    }
-                }
+                // We no longer skip entire rows - we handle merged cells at the cell level
+                // This ensures that cells adjacent to vertical merges are still rendered
 
                 double currentY = options.StartY;
 
@@ -107,14 +99,7 @@ namespace BoltFramePlugin.Services.DataImport
                 int rowIndex = 0;
                 foreach (var row in data.Rows)
                 {
-                    // Skip rows that are part of merged cells from previous rows
-                    if (rowsToSkip.Contains(rowIndex))
-                    {
-                        _logger.LogInformation($"Skipping data row {rowIndex} (part of merged cell from previous row)");
-                        rowIndex++;
-                        continue;
-                    }
-
+                    // We now render all rows, handling merged cells at the cell level
                     _logger.LogInformation($"Rendering data row {rowIndex}: [{string.Join(", ", row.Select(c => $"\"{c}\""))}]");
                     int heightIndex = rowHeights.Count > 0 ? (rowIndex + 1) : 0; // +1 because header is at index 0
                     double dataRowHeight = (heightIndex < rowHeights.Count) ? rowHeights[heightIndex] : options.RowHeight;
@@ -176,6 +161,7 @@ namespace BoltFramePlugin.Services.DataImport
 
             // Track which cells have been processed (for merged cells)
             var processedCells = new HashSet<int>();
+            _logger.LogInformation($"Starting row {rowIndex} with {cells.Count} cells");
 
             // Draw cells
             for (int colIndex = 0; colIndex < cells.Count && colIndex < columnWidths.Count; colIndex++)
@@ -183,6 +169,7 @@ namespace BoltFramePlugin.Services.DataImport
                 if (processedCells.Contains(colIndex))
                 {
                     // Skip this cell - its width was already included in the merged cell
+                    _logger.LogInformation($"  Skipping col {colIndex} - already in processedCells");
                     continue;
                 }
 
@@ -190,48 +177,78 @@ namespace BoltFramePlugin.Services.DataImport
                 var cellWidth = columnWidths[colIndex];
                 double cellHeight = rowHeight;
 
+                _logger.LogInformation($"Processing cell at row {rowIndex}, col {colIndex}, text='{cellText}'");
+
                 // Check if this cell is part of a merged range
                 MergedCellRange? mergedRange = null;
+                bool shouldRenderText = true;
+                bool isPartOfHorizontalMerge = false;
+                bool shouldSkipCell = false;
+
+                _logger.LogInformation($"  Checking merge for ({rowIndex}, {colIndex})...");
                 if (mergedCellLookup.TryGetValue((rowIndex, colIndex), out var merge))
                 {
+                    _logger.LogInformation($"  Found merge: StartRow={merge.StartRow}, EndRow={merge.EndRow}, StartCol={merge.StartColumn}, EndCol={merge.EndColumn}");
                     mergedRange = merge;
 
-                    // Only render if this is the top-left cell of the merge
+                    // Only render text if this is the top-left cell of the merge
                     bool isTopLeft = (merge.StartRow == rowIndex && merge.StartColumn == colIndex);
+                    shouldRenderText = isTopLeft;
 
-                    if (!isTopLeft)
+                    // Check if this is part of a horizontal merge (but not the leftmost cell)
+                    isPartOfHorizontalMerge = (merge.StartColumn != colIndex);
+
+                    if (isPartOfHorizontalMerge)
                     {
-                        // Skip rendering for non-top-left cells in merged range
-                        currentX += cellWidth;
+                        // This cell is part of a horizontal merge (not the leftmost), skip it entirely
+                        _logger.LogInformation($"Skipping cell at row {rowIndex}, col {colIndex} - part of horizontal merge");
                         continue;
                     }
 
-                    // Calculate merged cell dimensions (clamp to available columns)
-                    cellWidth = 0;
-                    int endCol = Math.Min(merge.EndColumn, columnWidths.Count - 1);
-
-                    _logger.LogInformation($"Rendering merged cell at row {rowIndex}, col {colIndex}: StartCol={merge.StartColumn}, EndCol={merge.EndColumn}, ClampedEndCol={endCol}, ColumnWidths.Count={columnWidths.Count}");
-
-                    for (int c = merge.StartColumn; c <= endCol; c++)
+                    // CRITICAL FIX: For vertical merges, if this is not the top row of the merge,
+                    // we should skip this cell entirely because it doesn't exist in this row
+                    bool isVerticalMergeNonTopRow = (merge.StartRow != rowIndex && merge.StartColumn == merge.EndColumn);
+                    if (isVerticalMergeNonTopRow)
                     {
-                        if (c < columnWidths.Count)
+                        _logger.LogInformation($"Skipping cell at row {rowIndex}, col {colIndex} - part of vertical merge but not top row");
+                        // Don't increment currentX, don't draw anything - this cell doesn't exist in this row
+                        continue;
+                    }
+
+                    _logger.LogInformation($"Cell at row {rowIndex}, col {colIndex} is part of merge (StartRow={merge.StartRow}, StartCol={merge.StartColumn}), isTopLeft={isTopLeft}");
+
+                    // For the top-left cell of any merge, calculate the full dimensions
+                    if (isTopLeft)
+                    {
+                        // Calculate merged cell dimensions (clamp to available columns)
+                        cellWidth = 0;
+                        int endCol = Math.Min(merge.EndColumn, columnWidths.Count - 1);
+
+                        _logger.LogInformation($"Rendering merged cell at row {rowIndex}, col {colIndex}: StartCol={merge.StartColumn}, EndCol={merge.EndColumn}, ClampedEndCol={endCol}, ColumnWidths.Count={columnWidths.Count}");
+
+                        for (int c = merge.StartColumn; c <= endCol; c++)
                         {
-                            cellWidth += columnWidths[c];
-                            _logger.LogInformation($"  Adding column {c} width: {columnWidths[c]:F3} ft, cumulative width: {cellWidth:F3} ft");
-                            if (c > colIndex)
+                            if (c < columnWidths.Count)
                             {
-                                processedCells.Add(c);
+                                cellWidth += columnWidths[c];
+                                _logger.LogInformation($"  Adding column {c} width: {columnWidths[c]:F3} ft, cumulative width: {cellWidth:F3} ft");
+                                // Only mark cells as processed if this merge spans multiple columns horizontally
+                                if (c > colIndex)
+                                {
+                                    processedCells.Add(c);
+                                    _logger.LogInformation($"  Marking column {c} as processed (horizontal span)");
+                                }
                             }
                         }
-                    }
-                    cellHeight = rowHeight * merge.RowSpan;
+                        cellHeight = rowHeight * merge.RowSpan;
 
-                    _logger.LogInformation($"Final merged cell width: {cellWidth:F3} ft, height: {cellHeight:F3} ft");
+                        _logger.LogInformation($"Final merged cell width: {cellWidth:F3} ft, height: {cellHeight:F3} ft");
 
-                    // Track the maximum row span in this row
-                    if (merge.RowSpan > maxRowSpan)
-                    {
-                        maxRowSpan = merge.RowSpan;
+                        // Track the maximum row span in this row
+                        if (merge.RowSpan > maxRowSpan)
+                        {
+                            maxRowSpan = merge.RowSpan;
+                        }
                     }
                 }
 
@@ -289,8 +306,11 @@ namespace BoltFramePlugin.Services.DataImport
                     isUnderline = formatForText.IsUnderline;
                 }
 
-                // Create text note with specified height and formatting
-                CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight, isBold, isItalic, isUnderline);
+                // Create text note only if we should render text (not for non-top-left cells in merged ranges)
+                if (shouldRenderText)
+                {
+                    CreateTextNote(doc, view, cellText, textX, textY, textType, cellAlignment, options.TextHeight, isBold, isItalic, isUnderline);
+                }
 
                 // Draw grid lines
                 if (options.DrawGridLines)
@@ -306,6 +326,7 @@ namespace BoltFramePlugin.Services.DataImport
                 }
 
                 currentX += cellWidth;
+                _logger.LogInformation($"  End of col {colIndex}: currentX={currentX:F3}, processedCells=[{string.Join(",", processedCells)}]");
             }
 
             // Draw horizontal grid lines
@@ -408,6 +429,28 @@ namespace BoltFramePlugin.Services.DataImport
             if (textType == null)
                 throw new ArgumentNullException(nameof(textType), "TextNoteType cannot be null");
 
+            // Ensure text is properly formatted for Revit
+            // Replace common superscript characters with normal equivalents if they don't render
+            string processedText = text;
+
+            // Log if text contains special characters
+            if (text.Contains("³") || text.Contains("²") || text.Contains("¹"))
+            {
+                _logger.LogDebug($"Text contains superscript characters: '{text}'");
+
+                // Revit may not display Unicode superscripts correctly, so we can convert them
+                // to regular text with ^ notation as an alternative
+                processedText = processedText
+                    .Replace("m³", "m^3")
+                    .Replace("m²", "m^2")
+                    .Replace("yd³", "yd^3")
+                    .Replace("yd²", "yd^2")
+                    .Replace("ft³", "ft^3")
+                    .Replace("ft²", "ft^2");
+
+                _logger.LogDebug($"Converted superscript text to: '{processedText}'");
+            }
+
             // Get or create a text type with the specified formatting
             var formattedTextType = GetOrCreateFormattedTextNoteType(doc, textType, textHeight, isBold, isItalic, isUnderline);
 
@@ -421,7 +464,14 @@ namespace BoltFramePlugin.Services.DataImport
                                      Autodesk.Revit.DB.HorizontalTextAlignment.Left
             };
 
-            TextNote.Create(doc, view.Id, point, text, textNoteOptions);
+            try
+            {
+                TextNote.Create(doc, view.Id, point, processedText, textNoteOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to create text note at ({x:F3}, {y:F3}) with text '{processedText}': {ex.Message}");
+            }
 
             // Note: TextNote size is controlled by the TextNoteType, not by individual parameters
             // The textHeight parameter is used when creating/finding the appropriate TextNoteType
@@ -649,11 +699,24 @@ namespace BoltFramePlugin.Services.DataImport
                 throw new InvalidOperationException("No text note type found in the document. Please ensure the document contains at least one text note type.");
             }
 
+            // First check if a text type with this exact name already exists
+            string desiredTypeName = $"Import Text {textHeight:F6}ft";
+            var existingCustomType = new FilteredElementCollector(doc)
+                .OfClass(typeof(TextNoteType))
+                .Cast<TextNoteType>()
+                .FirstOrDefault(tnt => tnt.Name == desiredTypeName);
+
+            if (existingCustomType != null)
+            {
+                _logger.LogInformation($"Found existing text type '{existingCustomType.Name}'");
+                return existingCustomType;
+            }
+
             // Try to create a new text type with the exact size we need
             try
             {
                 // Duplicate the base text type
-                TextNoteType newType = textNoteType.Duplicate($"Import Text {textHeight:F6}ft") as TextNoteType;
+                TextNoteType newType = textNoteType.Duplicate(desiredTypeName) as TextNoteType;
 
                 if (newType != null)
                 {
@@ -682,7 +745,15 @@ namespace BoltFramePlugin.Services.DataImport
             }
             catch (Exception ex)
             {
-                _logger.LogWarning($"Could not create custom text type: {ex.Message}");
+                // Only log warning if it's not a duplicate name issue (which is expected)
+                if (!ex.Message.Contains("name is already in use"))
+                {
+                    _logger.LogWarning($"Could not create custom text type: {ex.Message}");
+                }
+                else
+                {
+                    _logger.LogDebug($"Text type '{desiredTypeName}' already exists, using default");
+                }
             }
 
             // If creation failed, use the default and log a message
@@ -800,7 +871,15 @@ namespace BoltFramePlugin.Services.DataImport
             }
             catch (Exception ex)
             {
-                _logger.LogWarning($"Could not create formatted text type: {ex.Message}");
+                // Only log warning if it's not a duplicate name issue (which is expected)
+                if (!ex.Message.Contains("name is already in use"))
+                {
+                    _logger.LogWarning($"Could not create formatted text type: {ex.Message}");
+                }
+                else
+                {
+                    _logger.LogDebug($"Text type '{typeName}' already exists, using base type");
+                }
             }
 
             // Fallback to base type

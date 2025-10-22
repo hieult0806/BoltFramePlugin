@@ -7,9 +7,7 @@ using System.Threading.Tasks;
 namespace BoltFramePlugin.Services.DataImport
 {
     /// <summary>
-    /// Service for importing data from Excel files
-    /// NOTE: This requires EPPlus or ClosedXML NuGet package to be installed
-    /// Install via: Install-Package EPPlus (or ClosedXML)
+    /// Service for importing data from Excel files using ClosedXML library
     /// </summary>
     public class ExcelImportService : IDataImportService
     {
@@ -38,13 +36,6 @@ namespace BoltFramePlugin.Services.DataImport
 
             _logger.LogInformation($"Importing Excel file: {filePath}");
 
-            // Check if EPPlus is available
-            var epPlusType = Type.GetType("OfficeOpenXml.ExcelPackage, EPPlus");
-            if (epPlusType != null)
-            {
-                return await ImportWithEPPlusAsync(filePath, config);
-            }
-
             // Check if ClosedXML is available
             var closedXmlType = Type.GetType("ClosedXML.Excel.XLWorkbook, ClosedXML");
             if (closedXmlType != null)
@@ -52,77 +43,13 @@ namespace BoltFramePlugin.Services.DataImport
                 return await ImportWithClosedXMLAsync(filePath, config);
             }
 
-            // Fallback: Try to use COM automation (Excel Interop) - not recommended
-            _logger.LogWarning("No Excel library found (EPPlus or ClosedXML). Attempting COM automation.");
-            return await ImportWithComAutomationAsync(filePath, config);
+            // ClosedXML not found
+            throw new InvalidOperationException(
+                "ClosedXML library not found. " +
+                "Please ensure ClosedXML NuGet package is installed:\n" +
+                "Install-Package ClosedXML");
         }
 
-        private async Task<ImportedTableData> ImportWithEPPlusAsync(string filePath, ImportConfiguration config)
-        {
-            return await Task.Run(() =>
-            {
-                try
-                {
-                    // Use reflection to avoid compile-time dependency
-                    var epPlusAssembly = System.Reflection.Assembly.Load("EPPlus");
-                    var packageType = epPlusAssembly.GetType("OfficeOpenXml.ExcelPackage");
-                    var fileInfo = new FileInfo(filePath);
-
-                    // Set EPPlus license context (required for EPPlus 5.0+)
-                    var licenseContextType = epPlusAssembly.GetType("OfficeOpenXml.ExcelPackage+LicenseContext");
-                    if (licenseContextType != null)
-                    {
-                        var licenseContextProperty = packageType.GetProperty("LicenseContext");
-                        if (licenseContextProperty != null)
-                        {
-                            // Set to NonCommercial (1)
-                            licenseContextProperty.SetValue(null, 1);
-                        }
-                    }
-
-                    var package = Activator.CreateInstance(packageType, fileInfo);
-                    try
-                    {
-                        var workbookProp = packageType.GetProperty("Workbook");
-                        var workbook = workbookProp.GetValue(package);
-                        var worksheetsProp = workbook.GetType().GetProperty("Worksheets");
-                        var worksheets = worksheetsProp.GetValue(workbook);
-
-                        // Get worksheet
-                        object worksheet;
-                        if (!string.IsNullOrEmpty(config.ExcelSheetName))
-                        {
-                            var getByNameMethod = worksheets.GetType().GetMethod("get_Item", new[] { typeof(string) });
-                            worksheet = getByNameMethod.Invoke(worksheets, new object[] { config.ExcelSheetName });
-                        }
-                        else
-                        {
-                            var getByIndexMethod = worksheets.GetType().GetMethod("get_Item", new[] { typeof(int) });
-                            worksheet = getByIndexMethod.Invoke(worksheets, new object[] { config.ExcelSheetIndex });
-                        }
-
-                        if (worksheet == null)
-                        {
-                            throw new Exception("Worksheet not found");
-                        }
-
-                        return ExtractDataFromWorksheet(worksheet, config, filePath);
-                    }
-                    finally
-                    {
-                        if (package is IDisposable disposable)
-                        {
-                            disposable.Dispose();
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError($"Error importing Excel with EPPlus: {ex.Message}", ex);
-                    throw;
-                }
-            });
-        }
 
         private async Task<ImportedTableData> ImportWithClosedXMLAsync(string filePath, ImportConfiguration config)
         {
@@ -175,204 +102,8 @@ namespace BoltFramePlugin.Services.DataImport
             });
         }
 
-        private Task<ImportedTableData> ImportWithComAutomationAsync(string filePath, ImportConfiguration config)
-        {
-            throw new NotImplementedException(
-                "Excel COM automation is not implemented. " +
-                "Please install EPPlus or ClosedXML NuGet package:\n" +
-                "Install-Package EPPlus\n" +
-                "or\n" +
-                "Install-Package ClosedXML");
-        }
 
-        private ImportedTableData ExtractDataFromWorksheet(object worksheet, ImportConfiguration config, string filePath)
-        {
-            var result = new ImportedTableData
-            {
-                SourceFilePath = filePath,
-                ImportedAt = DateTime.Now
-            };
 
-            // Get dimension property
-            var dimensionProp = worksheet.GetType().GetProperty("Dimension");
-            var dimension = dimensionProp.GetValue(worksheet);
-            if (dimension == null)
-            {
-                _logger.LogWarning("Worksheet is empty");
-                return result;
-            }
-
-            var startRow = (int)dimension.GetType().GetProperty("Start").GetValue(dimension).GetType().GetProperty("Row").GetValue(dimension.GetType().GetProperty("Start").GetValue(dimension));
-            var endRow = (int)dimension.GetType().GetProperty("End").GetValue(dimension).GetType().GetProperty("Row").GetValue(dimension.GetType().GetProperty("End").GetValue(dimension));
-            var startCol = (int)dimension.GetType().GetProperty("Start").GetValue(dimension).GetType().GetProperty("Column").GetValue(dimension.GetType().GetProperty("Start").GetValue(dimension));
-            var endCol = (int)dimension.GetType().GetProperty("End").GetValue(dimension).GetType().GetProperty("Column").GetValue(dimension.GetType().GetProperty("End").GetValue(dimension));
-
-            int dataStartRow = startRow;
-
-            // Extract headers
-            if (config.HasHeaders)
-            {
-                for (int col = startCol; col <= endCol; col++)
-                {
-                    var cellValue = GetCellValue(worksheet, startRow, col);
-                    result.Headers.Add(config.TrimWhitespace ? cellValue.Trim() : cellValue);
-                }
-                dataStartRow++;
-            }
-            else
-            {
-                // Generate default headers
-                for (int col = startCol; col <= endCol; col++)
-                {
-                    result.Headers.Add($"Column{col}");
-                }
-            }
-
-            // Extract data rows
-            for (int row = dataStartRow; row <= endRow; row++)
-            {
-                var rowData = new List<string>();
-                bool isEmptyRow = true;
-
-                for (int col = startCol; col <= endCol; col++)
-                {
-                    var cellValue = GetCellValue(worksheet, row, col);
-                    if (!string.IsNullOrWhiteSpace(cellValue))
-                        isEmptyRow = false;
-
-                    rowData.Add(config.TrimWhitespace ? cellValue.Trim() : cellValue);
-                }
-
-                if (!isEmptyRow || !config.SkipEmptyRows)
-                {
-                    result.Rows.Add(rowData);
-                }
-            }
-
-            // Extract merged cells using EPPlus
-            try
-            {
-                var mergedCellsProp = worksheet.GetType().GetProperty("MergedCells");
-                var mergedCells = mergedCellsProp?.GetValue(worksheet) as System.Collections.IEnumerable;
-
-                if (mergedCells != null)
-                {
-                    foreach (var mergedRange in mergedCells)
-                    {
-                        var rangeStr = mergedRange.ToString();
-                        var parts = rangeStr.Split(':');
-                        if (parts.Length == 2)
-                        {
-                            var start = ParseCellAddress(parts[0]);
-                            var end = ParseCellAddress(parts[1]);
-
-                            var mergedCell = new MergedCellRange
-                            {
-                                StartRow = start.Row - dataStartRow,
-                                StartColumn = start.Column - startCol,
-                                EndRow = end.Row - dataStartRow,
-                                EndColumn = end.Column - startCol
-                            };
-
-                            _logger.LogInformation($"Merged cell: {rangeStr} -> Row {mergedCell.StartRow}-{mergedCell.EndRow}, Col {mergedCell.StartColumn}-{mergedCell.EndColumn}");
-                            result.MergedCells.Add(mergedCell);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Failed to extract merged cells: {ex.Message}");
-            }
-
-            // Extract cell background colors using EPPlus
-            try
-            {
-                for (int row = dataStartRow; row <= endRow; row++)
-                {
-                    for (int col = startCol; col <= endCol; col++)
-                    {
-                        var cell = GetEPPlusCell(worksheet, row, col);
-                        if (cell != null)
-                        {
-                            var style = cell.GetType().GetProperty("Style")?.GetValue(cell);
-                            if (style != null)
-                            {
-                                var fill = style.GetType().GetProperty("Fill")?.GetValue(style);
-                                if (fill != null)
-                                {
-                                    var bgColor = fill.GetType().GetProperty("BackgroundColor")?.GetValue(fill);
-                                    if (bgColor != null)
-                                    {
-                                        var rgbProp = bgColor.GetType().GetProperty("Rgb");
-                                        var rgb = rgbProp?.GetValue(bgColor)?.ToString();
-
-                                        if (!string.IsNullOrEmpty(rgb) && rgb != "00000000")
-                                        {
-                                            result.CellFormats.Add(new CellFormat
-                                            {
-                                                Row = row - dataStartRow,
-                                                Column = col - startCol,
-                                                BackgroundColor = rgb
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Failed to extract cell colors: {ex.Message}");
-            }
-
-            _logger.LogInformation($"Successfully imported {result.RowCount} rows with {result.ColumnCount} columns, {result.MergedCells.Count} merged cells, {result.CellFormats.Count} formatted cells");
-            return result;
-        }
-
-        private (int Row, int Column) ParseCellAddress(string address)
-        {
-            int col = 0;
-            int row = 0;
-            int i = 0;
-
-            // Parse column (letters)
-            while (i < address.Length && char.IsLetter(address[i]))
-            {
-                col = col * 26 + (char.ToUpper(address[i]) - 'A' + 1);
-                i++;
-            }
-
-            // Parse row (numbers)
-            while (i < address.Length && char.IsDigit(address[i]))
-            {
-                row = row * 10 + (address[i] - '0');
-                i++;
-            }
-
-            return (row, col);
-        }
-
-        private object? GetEPPlusCell(object worksheet, int row, int col)
-        {
-            try
-            {
-                var cellsProp = worksheet.GetType().GetProperty("Cells");
-                var cells = cellsProp?.GetValue(worksheet);
-                if (cells != null)
-                {
-                    var indexer = cells.GetType().GetProperty("Item", new[] { typeof(int), typeof(int) });
-                    return indexer?.GetValue(cells, new object[] { row, col });
-                }
-            }
-            catch
-            {
-                // Ignore errors
-            }
-            return null;
-        }
 
         private ImportedTableData ExtractDataFromClosedXMLWorksheet(object worksheet, ImportConfiguration config, string filePath)
         {
@@ -564,74 +295,111 @@ namespace BoltFramePlugin.Services.DataImport
                                 bool isItalic = false;
                                 bool isUnderline = false;
 
-                                // Try to get Style
-                                var styleObj = cell.GetType().GetProperty("Style")?.GetValue(cell);
-                                if (styleObj != null)
+                                // Try to get Style - wrap in try-catch as this might fail for merged cells
+                                try
                                 {
-                                    // Extract background color
-                                    var fillObj = styleObj.GetType().GetProperty("Fill")?.GetValue(styleObj);
-                                    if (fillObj != null)
+                                    var styleObj = cell.GetType().GetProperty("Style")?.GetValue(cell);
+                                    if (styleObj != null)
                                     {
-                                        var bgColorObj = fillObj.GetType().GetProperty("BackgroundColor")?.GetValue(fillObj);
-                                        if (bgColorObj != null)
+                                        // Extract background color
+                                        try
                                         {
-                                            var colorObj = bgColorObj.GetType().GetProperty("Color")?.GetValue(bgColorObj);
-                                            if (colorObj != null)
+                                            var fillObj = styleObj.GetType().GetProperty("Fill")?.GetValue(styleObj);
+                                            if (fillObj != null)
                                             {
-                                                var toArgbMethod = colorObj.GetType().GetMethod("ToArgb");
-                                                if (toArgbMethod != null)
+                                                var bgColorObj = fillObj.GetType().GetProperty("BackgroundColor")?.GetValue(fillObj);
+                                                if (bgColorObj != null)
                                                 {
-                                                    var argbValue = (int)toArgbMethod.Invoke(colorObj, null);
-                                                    var hexColor = argbValue.ToString("X8");
-                                                    if (hexColor != "00000000" && hexColor != "FFFFFFFF")
+                                                    // Check if this is a theme color or a standard color
+                                                    var colorTypeProperty = bgColorObj.GetType().GetProperty("ColorType");
+                                                    if (colorTypeProperty != null)
                                                     {
-                                                        bgColor = hexColor;
+                                                        var colorType = colorTypeProperty.GetValue(bgColorObj);
+                                                        var colorTypeStr = colorType?.ToString();
+
+                                                        // Only try to extract color if it's a standard color, not a theme color
+                                                        if (colorTypeStr == "Color")
+                                                        {
+                                                            var colorObj = bgColorObj.GetType().GetProperty("Color")?.GetValue(bgColorObj);
+                                                            if (colorObj != null && colorObj.GetType().Name == "Color")
+                                                            {
+                                                                try
+                                                                {
+                                                                    var toArgbMethod = colorObj.GetType().GetMethod("ToArgb", Type.EmptyTypes);
+                                                                    if (toArgbMethod != null)
+                                                                    {
+                                                                        var argbResult = toArgbMethod.Invoke(colorObj, null);
+                                                                        if (argbResult != null)
+                                                                        {
+                                                                            var argbValue = (int)argbResult;
+                                                                            var hexColor = argbValue.ToString("X8");
+                                                                            if (hexColor != "00000000" && hexColor != "FFFFFFFF")
+                                                                            {
+                                                                                bgColor = hexColor;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                catch
+                                                                {
+                                                                    // Try alternative approach
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
-                                    }
-
-                                    // Extract text alignment
-                                    var alignmentObj = styleObj.GetType().GetProperty("Alignment")?.GetValue(styleObj);
-                                    if (alignmentObj != null)
-                                    {
-                                        var horizontalProp = alignmentObj.GetType().GetProperty("Horizontal")?.GetValue(alignmentObj);
-                                        if (horizontalProp != null)
+                                        catch
                                         {
-                                            var horizontalStr = horizontalProp.ToString();
-                                            // Map ClosedXML alignment to our format
-                                            if (horizontalStr == "Center") alignment = "Center";
-                                            else if (horizontalStr == "Right") alignment = "Right";
-                                            else if (horizontalStr == "Left") alignment = "Left";
-                                            else if (horizontalStr == "General") alignment = null; // Use default
+                                            // Silently ignore color extraction errors
+                                        }
+
+                                        // Extract text alignment
+                                        var alignmentObj = styleObj.GetType().GetProperty("Alignment")?.GetValue(styleObj);
+                                        if (alignmentObj != null)
+                                        {
+                                            var horizontalProp = alignmentObj.GetType().GetProperty("Horizontal")?.GetValue(alignmentObj);
+                                            if (horizontalProp != null)
+                                            {
+                                                var horizontalStr = horizontalProp.ToString();
+                                                // Map ClosedXML alignment to our format
+                                                if (horizontalStr == "Center") alignment = "Center";
+                                                else if (horizontalStr == "Right") alignment = "Right";
+                                                else if (horizontalStr == "Left") alignment = "Left";
+                                                else if (horizontalStr == "General") alignment = null; // Use default
+                                            }
+                                        }
+
+                                        // Extract font formatting (Bold, Italic, Underline)
+                                        var fontObj = styleObj.GetType().GetProperty("Font")?.GetValue(styleObj);
+                                        if (fontObj != null)
+                                        {
+                                            var boldProp = fontObj.GetType().GetProperty("Bold")?.GetValue(fontObj);
+                                            if (boldProp != null && boldProp is bool)
+                                            {
+                                                isBold = (bool)boldProp;
+                                            }
+
+                                            var italicProp = fontObj.GetType().GetProperty("Italic")?.GetValue(fontObj);
+                                            if (italicProp != null && italicProp is bool)
+                                            {
+                                                isItalic = (bool)italicProp;
+                                            }
+
+                                            var underlineProp = fontObj.GetType().GetProperty("Underline")?.GetValue(fontObj);
+                                            if (underlineProp != null)
+                                            {
+                                                // Underline property might be an enum, check if it's not "None"
+                                                var underlineStr = underlineProp.ToString();
+                                                isUnderline = !string.IsNullOrEmpty(underlineStr) && underlineStr != "None";
+                                            }
                                         }
                                     }
-
-                                    // Extract font formatting (Bold, Italic, Underline)
-                                    var fontObj = styleObj.GetType().GetProperty("Font")?.GetValue(styleObj);
-                                    if (fontObj != null)
-                                    {
-                                        var boldProp = fontObj.GetType().GetProperty("Bold")?.GetValue(fontObj);
-                                        if (boldProp != null && boldProp is bool)
-                                        {
-                                            isBold = (bool)boldProp;
-                                        }
-
-                                        var italicProp = fontObj.GetType().GetProperty("Italic")?.GetValue(fontObj);
-                                        if (italicProp != null && italicProp is bool)
-                                        {
-                                            isItalic = (bool)italicProp;
-                                        }
-
-                                        var underlineProp = fontObj.GetType().GetProperty("Underline")?.GetValue(fontObj);
-                                        if (underlineProp != null)
-                                        {
-                                            // Underline property might be an enum, check if it's not "None"
-                                            var underlineStr = underlineProp.ToString();
-                                            isUnderline = !string.IsNullOrEmpty(underlineStr) && underlineStr != "None";
-                                        }
-                                    }
+                                }
+                                catch
+                                {
+                                    // Silently ignore style extraction errors
                                 }
 
                                 // Add cell format if there's any formatting
@@ -654,7 +422,11 @@ namespace BoltFramePlugin.Services.DataImport
                         }
                         catch (Exception cellEx)
                         {
-                            _logger.LogWarning($"Error extracting formatting from R{row}C{col}: {cellEx.Message}");
+                            // Only log if it's not a color extraction issue we're handling separately
+                            if (!cellEx.Message.Contains("Color"))
+                            {
+                                _logger.LogDebug($"Error extracting formatting from R{row}C{col}: {cellEx.Message}");
+                            }
                         }
                     }
                 }
@@ -683,48 +455,64 @@ namespace BoltFramePlugin.Services.DataImport
             return null;
         }
 
-        private string GetCellValue(object worksheet, int row, int col)
-        {
-            try
-            {
-                var cellsProp = worksheet.GetType().GetProperty("Cells");
-                var cells = cellsProp.GetValue(worksheet);
-                var getItemMethod = cells.GetType().GetMethod("get_Item", new[] { typeof(int), typeof(int) });
-                var cell = getItemMethod.Invoke(cells, new object[] { row, col });
-
-                if (cell == null)
-                    return string.Empty;
-
-                var valueProp = cell.GetType().GetProperty("Value");
-                var value = valueProp.GetValue(cell);
-
-                return value?.ToString() ?? string.Empty;
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
 
         private string GetClosedXMLCellValue(object worksheet, int row, int col)
         {
             try
             {
                 var cellMethod = worksheet.GetType().GetMethod("Cell", new[] { typeof(int), typeof(int) });
-                var cell = cellMethod.Invoke(worksheet, new object[] { row, col });
+                var cell = cellMethod?.Invoke(worksheet, new object[] { row, col });
+                if (cell == null) return string.Empty;
 
-                if (cell == null)
-                    return string.Empty;
+                // If the cell is part of a merged range, only the top-left cell should return the value.
+                var isMergedProp = cell.GetType().GetProperty("IsMerged");
+                if (isMergedProp != null && isMergedProp.GetValue(cell) is bool isMerged && isMerged)
+                {
+                    try
+                    {
+                        var mergedRange = cell.GetType().GetMethod("MergedRange")?.Invoke(cell, null);
+                        var firstCell = mergedRange?.GetType().GetMethod("FirstCell")?.Invoke(mergedRange, null);
 
+                        // Address of current cell
+                        var addr = cell.GetType().GetProperty("Address")?.GetValue(cell);
+                        var addrRow = (int)(addr?.GetType().GetProperty("RowNumber")?.GetValue(addr) ?? row);
+                        var addrCol = (int)(addr?.GetType().GetProperty("ColumnNumber")?.GetValue(addr) ?? col);
+
+                        // Address of first (top-left) cell in the merged block
+                        var faddr = firstCell?.GetType().GetProperty("Address")?.GetValue(firstCell);
+                        var fRow = (int)(faddr?.GetType().GetProperty("RowNumber")?.GetValue(faddr) ?? row);
+                        var fCol = (int)(faddr?.GetType().GetProperty("ColumnNumber")?.GetValue(faddr) ?? col);
+
+                        var isTopLeft = addrRow == fRow && addrCol == fCol;
+
+                        if (isTopLeft)
+                        {
+                            var v = firstCell?.GetType().GetProperty("Value")?.GetValue(firstCell);
+                            return v?.ToString() ?? string.Empty;
+                        }
+                        else
+                        {
+                            // Covered cell: keep grid alignment by returning empty string
+                            return string.Empty;
+                        }
+                    }
+                    catch
+                    {
+                        // Fall through to regular value extraction if anything above fails
+                    }
+                }
+
+                // Regular value extraction for non-merged cells
                 var valueProp = cell.GetType().GetProperty("Value");
-                var value = valueProp.GetValue(cell);
-
+                var value = valueProp?.GetValue(cell);
                 return value?.ToString() ?? string.Empty;
             }
-            catch
+            catch (Exception ex)
             {
-                return string.Empty;
+                _logger.LogDebug($"Error getting cell value at R{row}C{col}: {ex.Message}");
+                return string.Empty; // Never skip a column; preserve alignment
             }
         }
+
     }
 }

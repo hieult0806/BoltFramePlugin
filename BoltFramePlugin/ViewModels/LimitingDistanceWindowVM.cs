@@ -748,7 +748,7 @@ namespace BoltFramePlugin.ViewModels
                 _document.Selection.SetElementIds(wallIds);
 
                 _logger.LogInformation($"Highlighted {wallIds.Count} perimeter walls in 3D view.");
-                TaskDialog.Show("Success", $"Highlighted {wallIds.Count} perimeter walls in 3D view.");
+                // TaskDialog.Show("Success", $"Highlighted {wallIds.Count} perimeter walls in 3D view.");
             }
             catch (Exception ex)
             {
@@ -995,7 +995,7 @@ namespace BoltFramePlugin.ViewModels
                     _document.Selection.SetElementIds(wallsToHighlight);
 
                     _logger.LogInformation($"Highlighted {wallsToHighlight.Count} walls in distance group in 3D view.");
-                    TaskDialog.Show("Success", $"Highlighted {wallsToHighlight.Count} walls in {group.Orientation} - {group.DistanceRange} in 3D view.");
+                    // TaskDialog.Show("Success", $"Highlighted {wallsToHighlight.Count} walls in {group.Orientation} - {group.DistanceRange} in 3D view.");
                 }
             }
             catch (Exception ex)
@@ -1266,213 +1266,6 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
-        // Keep the CastRayAndFindIntersection method for the event handler to use
-        private void DetectReferenceLinesOld(object parameter)
-        {
-            try
-            {
-                _logger.LogInformation("Detecting reference lines by ray casting from exterior walls...");
-
-                ReferenceLines.Clear();
-                var doc = _document.Document;
-                var activeView = _document.ActiveView;
-
-                // Check if active view is a floor plan
-                if (activeView == null || activeView.ViewType != ViewType.FloorPlan)
-                {
-                    TaskDialog.Show("Error", "Please activate a Floor Plan view before detecting reference lines.");
-                    return;
-                }
-
-                // Collect all potential reference elements
-                // 1. Get all Road_LD instances
-                var roadCenterlines = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilyInstance))
-                    .Cast<FamilyInstance>()
-                    .Where(fi => fi.Symbol?.Family?.Name == "Road_LD")
-                    .ToList();
-
-                // 2. Get all property lines (from OST_SiteProperty category, not segments)
-                var propertyLines = new FilteredElementCollector(doc)
-                    .OfCategory(BuiltInCategory.OST_SiteProperty)
-                    .WhereElementIsNotElementType()
-                    .ToList();
-
-                _logger.LogInformation($"Property lines found (OST_SiteProperty): {propertyLines.Count}");
-
-                // Log property line types
-                foreach (var pl in propertyLines.Take(3))
-                {
-                    _logger.LogInformation($"Property line {pl.Id.Value} type: {pl.GetType().Name}, category: {pl.Category?.Name ?? "null"}");
-                }
-
-                // 3. Get all other perimeter walls (for imaginary lines)
-                var allPerimeterWalls = PerimeterWalls.Select(w => w.Wall).ToList();
-
-                // Extract curves from property lines (each property line may have multiple curves)
-                var propertyLineCurves = new List<(Element element, Curve curve)>();
-
-                foreach (var pl in propertyLines)
-                {
-                    var options = new Options
-                    {
-                        ComputeReferences = false,
-                        DetailLevel = ViewDetailLevel.Fine
-                    };
-
-                    var geom = pl.get_Geometry(options);
-                    if (geom != null)
-                    {
-                        int curveCount = 0;
-                        foreach (var geomObj in geom)
-                        {
-                            if (geomObj is Curve curve)
-                            {
-                                propertyLineCurves.Add((pl, curve));
-                                curveCount++;
-                            }
-                            else if (geomObj is GeometryInstance geomInst)
-                            {
-                                var instGeom = geomInst.GetInstanceGeometry();
-                                foreach (var instObj in instGeom)
-                                {
-                                    if (instObj is Curve instCurve)
-                                    {
-                                        propertyLineCurves.Add((pl, instCurve));
-                                        curveCount++;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (curveCount > 0)
-                        {
-                            _logger.LogInformation($"Property Line {pl.Id.Value}: Extracted {curveCount} curves");
-                        }
-                        else
-                        {
-                            _logger.LogWarning($"Property Line {pl.Id.Value}: No curves found in geometry");
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogWarning($"Property Line {pl.Id.Value}: get_Geometry returned null");
-                    }
-                }
-
-                _logger.LogInformation($"Total property line curves extracted: {propertyLineCurves.Count}");
-                _logger.LogInformation($"Found {roadCenterlines.Count} Road CLs, {propertyLineCurves.Count} Property Line Segments, {allPerimeterWalls.Count} Perimeter Walls");
-
-                // Process each perimeter wall and cast rays
-                var createdImaginaryLines = new HashSet<string>();
-                int imaginaryLineCount = 0;
-                int propertyLineCount = 0;
-                int roadCLCount = 0;
-
-                // Store ray information for drawing
-                var raysToDrawn = new List<(XYZ start, XYZ end, bool hit)>();
-
-                foreach (var wallInfo in PerimeterWalls)
-                {
-                    var wall = wallInfo.Wall;
-                    var locationCurve = wall.Location as LocationCurve;
-                    if (locationCurve == null) continue;
-
-                    var wallCurve = locationCurve.Curve;
-                    var midpoint = wallCurve.Evaluate(0.5, true);
-
-                    // Get wall normal direction (perpendicular outward)
-                    var wallDirection = (wallCurve.GetEndPoint(1) - wallCurve.GetEndPoint(0)).Normalize();
-                    var normal = new XYZ(-wallDirection.Y, wallDirection.X, 0); // Rotate 90 degrees in XY plane
-
-                    // Create ray end point (ray length limit in meters, convert to feet)
-                    var rayEndPoint = midpoint + (normal * (_rayLengthLimit * 3.28084)); // meters to feet
-
-                    // Log ray information for debugging
-                    _logger.LogInformation($"Wall {wall.Id.Value}: Ray from ({midpoint.X:F2}, {midpoint.Y:F2}) to ({rayEndPoint.X:F2}, {rayEndPoint.Y:F2})");
-
-                    // Cast ray and find intersections
-                    var hitResult = CastRayAndFindIntersection(wall, midpoint, rayEndPoint, allPerimeterWalls, propertyLineCurves, roadCenterlines);
-
-                    // Store ray for drawing (whether it hit or not)
-                    bool hasHit = hitResult != null;
-                    raysToDrawn.Add((midpoint, rayEndPoint, hasHit));
-
-                    if (hitResult != null)
-                    {
-                        // Check if we already created this reference line
-                        var key = $"{hitResult.LineType}_{hitResult.ElementId.Value}";
-                        if (!createdImaginaryLines.Contains(key))
-                        {
-                            ReferenceLines.Add(hitResult);
-                            createdImaginaryLines.Add(key);
-
-                            switch (hitResult.LineType)
-                            {
-                                case ReferenceLineType.ImaginaryLine:
-                                    imaginaryLineCount++;
-                                    break;
-                                case ReferenceLineType.PropertyLine_NonStreetEdge:
-                                case ReferenceLineType.PropertyLine_StreetEdge:
-                                    propertyLineCount++;
-                                    break;
-                                case ReferenceLineType.RoadCenterline:
-                                    roadCLCount++;
-                                    break;
-                            }
-
-                            _logger.LogInformation($"Wall {wall.Id.Value} → {hitResult.LineTypeFormatted} at distance {hitResult.Name}");
-                        }
-                    }
-                }
-
-                // Draw rays as Detail Lines in the active floor plan view
-                using (Transaction trans = new Transaction(doc, "Draw Reference Line Rays"))
-                {
-                    trans.Start();
-                    try
-                    {
-                        int rayCount = 0;
-                        foreach (var (start, end, hit) in raysToDrawn)
-                        {
-                            // Create 2D points (Z=0 for floor plan)
-                            var start2D = new XYZ(start.X, start.Y, 0);
-                            var end2D = new XYZ(end.X, end.Y, 0);
-
-                            // Create line
-                            var line = Line.CreateBound(start2D, end2D);
-
-                            // Create detail line in the active view
-                            var detailLine = doc.Create.NewDetailCurve(activeView, line);
-                            rayCount++;
-                        }
-
-                        _logger.LogInformation($"Created {rayCount} detail lines for rays in view {activeView.Name}");
-                        trans.Commit();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError($"Error creating detail lines: {ex.Message}", ex);
-                        trans.RollBack();
-                    }
-                }
-
-                _logger.LogInformation($"Total reference lines detected: {ReferenceLines.Count}");
-                _logger.LogInformation($"Breakdown - Imaginary Lines: {imaginaryLineCount}, Property Lines: {propertyLineCount}, Road CLs: {roadCLCount}");
-
-                TaskDialog.Show("Reference Lines Detected",
-                    $"Detected {ReferenceLines.Count} reference lines:\n" +
-                    $"- Imaginary Lines (between walls): {imaginaryLineCount}\n" +
-                    $"- Property Line Segments: {propertyLineCount}\n" +
-                    $"- Road Centerlines: {roadCLCount}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Error detecting reference lines", ex);
-                TaskDialog.Show("Error", $"Error detecting reference lines: {ex.Message}");
-            }
-        }
-
         private ReferenceLineInfo? CastRayAndFindIntersection(
             Wall sourceWall,
             XYZ rayStart,
@@ -1668,7 +1461,8 @@ namespace BoltFramePlugin.ViewModels
             // Save data before closing
             try
             {
-                SaveData();
+                //TODO: Uncomment and implement data saving if needed
+                // SaveData();
                 _logger.LogInformation("Cleanup: Data saved successfully.");
             }
             catch (Exception ex)

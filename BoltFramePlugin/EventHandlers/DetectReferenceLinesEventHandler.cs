@@ -330,12 +330,12 @@ namespace BoltFramePlugin.EventHandlers
                 _logger.LogInformation($"Total reference lines detected: {_referenceLines.Count}");
                 _logger.LogInformation($"Breakdown - Imaginary Lines: {imaginaryLineCount}, Property Lines: {propertyLineCount}, Road CLs: {roadCLCount}");
 
-                TaskDialog.Show("Reference Lines Detected",
-                    $"Detected {_referenceLines.Count} reference lines:\n" +
-                    $"- Imaginary Lines (between walls): {imaginaryLineCount}\n" +
-                    $"- Property Line Segments: {propertyLineCount}\n" +
-                    $"- Road Centerlines: {roadCLCount}\n\n" +
-                    $"Limiting distances have been updated in the table.");
+                // TaskDialog.Show("Reference Lines Detected",
+                //     $"Detected {_referenceLines.Count} reference lines:\n" +
+                //     $"- Imaginary Lines (between walls): {imaginaryLineCount}\n" +
+                //     $"- Property Line Segments: {propertyLineCount}\n" +
+                //     $"- Road Centerlines: {roadCLCount}\n\n" +
+                //     $"Limiting distances have been updated in the table.");
 
                 // Invoke callback if provided
                 _onComplete?.Invoke();
@@ -370,7 +370,9 @@ namespace BoltFramePlugin.EventHandlers
                 // 1. Check intersection with other walls
                 foreach (var wall in allWalls)
                 {
-                    if (wall.Id == sourceWall.Id) continue;
+                    bool diffFireCompartment = wall.LookupParameter("FireCompartment")?.AsString() !=
+                                              sourceWall.LookupParameter("FireCompartment")?.AsString();
+                    if (wall.Id == sourceWall.Id && !diffFireCompartment) continue;
 
                     // Only check walls on the same level
                     var wallBaseLevelParam = wall.get_Parameter(BuiltInParameter.WALL_BASE_CONSTRAINT);
