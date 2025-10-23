@@ -30,6 +30,8 @@ namespace BoltFramePlugin.Services
             container.RegisterSingleton<BoltFramePlugin.Services.DataImport.ExcelImportService>();
             container.RegisterSingleton<BoltFramePlugin.Services.DataImport.ITableRenderService, BoltFramePlugin.Services.DataImport.RevitTableRenderService>();
             container.RegisterSingleton<BoltFramePlugin.Services.DataImport.DataImportManager>();
+            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.FileWatcherService>();
+            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.AutoSyncEventHandler>();
 
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());

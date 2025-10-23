@@ -6,8 +6,11 @@ using BoltFramePlugin.ViewModels;
 using Microsoft.Win32;
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace BoltFramePlugin.ViewModels
 {
@@ -16,6 +19,9 @@ namespace BoltFramePlugin.ViewModels
         private readonly ILoggingService _logger;
         private readonly DataImportManager _importManager;
         private readonly UIDocument _uidoc;
+        private readonly FileWatcherService _fileWatcher;
+        private readonly AutoSyncEventHandler _autoSyncHandler;
+        private readonly ExternalEvent _autoSyncEvent;
 
         private string _filePath = string.Empty;
         private bool _hasHeaders = true;
@@ -30,6 +36,7 @@ namespace BoltFramePlugin.ViewModels
         private double _textOffsetX = 0; // Text horizontal offset in feet
         private double _textOffsetY = 0; // Text vertical offset in feet
         private double _viewScale = 4; // Default: 3" = 1'-0" (1:4 scale)
+        private double _scaleFactor = 1.0; // Scale factor for adjusting text size
         private double _paperTextHeight = 0.25; // 1/4" Arial on paper
         private bool _drawGridLines = true;
         private bool _fillHeaderBackground = false; // Transparent background
@@ -38,23 +45,41 @@ namespace BoltFramePlugin.ViewModels
         private ImportedTableData? _previewData = null;
         private bool _isImporting = false;
         private string _statusMessage = "Ready";
+        private bool _enableAutoSync = false;
+        private ObservableCollection<TrackedFileViewModel> _trackedFiles = new ObservableCollection<TrackedFileViewModel>();
+        private string _trackedFilesMessage = string.Empty;
 
         public DataImportWindowVM(UIDocument uidoc) : base(uidoc)
         {
             _uidoc = uidoc;
             _logger = DIContainerService.Container.GetInstance<ILoggingService>();
 
-            var renderService = new RevitTableRenderService(_logger);
-            _importManager = new DataImportManager(renderService, _logger);
+            // Get services from DI container (singletons that persist after window closes)
+            _importManager = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.DataImportManager>();
+            _fileWatcher = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.FileWatcherService>();
+            _autoSyncHandler = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.AutoSyncEventHandler>();
+            _autoSyncEvent = ExternalEvent.Create(_autoSyncHandler);
+
+            // Subscribe to sync requests from file watcher
+            _fileWatcher.OnSyncRequested += OnFileWatcherSyncRequested;
 
             // Initialize commands
             SelectFileCommand = new RelayCommand(SelectFile);
             PreviewDataCommand = new RelayCommand(async param => await PreviewDataAsync(), param => CanPreview);
             ImportAndRenderCommand = new RelayCommand(async param => await ImportAndRenderAsync(), param => CanImportAndRender);
             CloseCommand = new RelayCommand(Close);
+            RefreshTrackedFilesCommand = new RelayCommand(param => RefreshTrackedFiles());
+            SyncFileCommand = new RelayCommand(async param => await SyncFileAsync(param as TrackedFileViewModel));
+            StopTrackingCommand = new RelayCommand(param => StopTracking(param as TrackedFileViewModel));
 
             // Calculate initial dimensions based on default scale
             RecalculateDimensionsFromScale();
+
+            // Load tracked files from configuration
+            _fileWatcher.LoadTrackedFiles(_uidoc.Document);
+
+            // Refresh tracked files list in UI
+            RefreshTrackedFiles();
 
             _logger.LogInformation("DataImportWindowVM initialized");
         }
@@ -155,6 +180,18 @@ namespace BoltFramePlugin.ViewModels
                 _viewScale = value;
                 OnPropertyChanged(nameof(ViewScale));
                 // Recalculate all dimensions when scale changes
+                RecalculateDimensionsFromScale();
+            }
+        }
+
+        public double ScaleFactor
+        {
+            get => _scaleFactor;
+            set
+            {
+                _scaleFactor = value;
+                OnPropertyChanged(nameof(ScaleFactor));
+                // Recalculate all dimensions when scale factor changes
                 RecalculateDimensionsFromScale();
             }
         }
@@ -267,6 +304,37 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
+        public bool EnableAutoSync
+        {
+            get => _enableAutoSync;
+            set
+            {
+                _enableAutoSync = value;
+                OnPropertyChanged(nameof(EnableAutoSync));
+                _logger.LogInformation($"Auto-sync {(value ? "enabled" : "disabled")}");
+            }
+        }
+
+        public ObservableCollection<TrackedFileViewModel> TrackedFiles
+        {
+            get => _trackedFiles;
+            set
+            {
+                _trackedFiles = value;
+                OnPropertyChanged(nameof(TrackedFiles));
+            }
+        }
+
+        public string TrackedFilesMessage
+        {
+            get => _trackedFilesMessage;
+            set
+            {
+                _trackedFilesMessage = value;
+                OnPropertyChanged(nameof(TrackedFilesMessage));
+            }
+        }
+
         #endregion
 
         #region Commands
@@ -275,6 +343,9 @@ namespace BoltFramePlugin.ViewModels
         public ICommand PreviewDataCommand { get; }
         public ICommand ImportAndRenderCommand { get; }
         public ICommand CloseCommand { get; }
+        public ICommand RefreshTrackedFilesCommand { get; }
+        public ICommand SyncFileCommand { get; }
+        public ICommand StopTrackingCommand { get; }
 
         private bool CanPreview => !string.IsNullOrEmpty(FilePath) && !IsImporting;
         private bool CanImportAndRender => !string.IsNullOrEmpty(FilePath) && !string.IsNullOrEmpty(ViewName) && !IsImporting;
@@ -365,15 +436,36 @@ namespace BoltFramePlugin.ViewModels
                     FilePath,
                     ViewName,
                     importConfig,
-                    renderOptions);
+                    renderOptions,
+                    _uidoc);
 
                 StatusMessage = $"Successfully created view: {ViewName}";
                 _logger.LogInformation($"Successfully imported and rendered to view: {ViewName}");
 
+                // Track file for manual syncing if enabled
+                _logger.LogInformation($"Checking track file status: EnableAutoSync = {EnableAutoSync}");
+                if (EnableAutoSync)
+                {
+                    _logger.LogInformation($"Tracking file for manual sync...");
+                    _fileWatcher.TrackFile(FilePath, _uidoc.Document, ViewName, importConfig, renderOptions);
+                    StatusMessage += " (File tracked)";
+                    _logger.LogInformation($"File tracking setup completed for: {FilePath}");
+                }
+                else
+                {
+                    _logger.LogInformation("File tracking is disabled");
+                }
+
                 // Open the created view (no transaction needed - setting ActiveView doesn't modify the document)
                 _uidoc.ActiveView = view;
 
-                Autodesk.Revit.UI.TaskDialog.Show("Success", $"Table successfully imported to view:\n{ViewName}");
+                string message = $"Table successfully imported to view:\n{ViewName}";
+                if (EnableAutoSync)
+                {
+                    message += "\n\nAuto-sync is enabled. The view will automatically update when you save changes to the file.";
+                }
+
+                Autodesk.Revit.UI.TaskDialog.Show("Success", message);
 
                 // Close window
                 Close(null);
@@ -410,49 +502,26 @@ namespace BoltFramePlugin.ViewModels
         /// </summary>
         private void RecalculateDimensionsFromScale()
         {
-            // Paper sizes in inches
-            const double paperTextSize = 0.25;      // 1/4" text
-            const double paperColumnWidth = 4.5;    // 4.5" column width
-            const double paperRowHeight = 0.5;      // 1/2" row height
-            const double paperBorderOffset = 0.0625; // 1/16" border offset
+            // Fixed cell dimensions in model space (feet) - not affected by ScaleFactor
+            _columnWidth = 1.5;      // 1.5 ft column width (fixed)
+            _rowHeight = 0.167;      // 0.167 ft (2") row height (fixed)
+            _borderOffset = 0.0208;  // 0.0208 ft (1/4") border offset (fixed)
 
-            // Calculate model space dimensions
-            // Model dimension (ft) = Paper size (inches) × ViewScale / 12
-            // This accounts for the 1:N scale ratio
-            _columnWidth = paperColumnWidth * _viewScale / 12.0;
-            _rowHeight = paperRowHeight * _viewScale / 12.0;
-            _borderOffset = paperBorderOffset * _viewScale / 12.0;
-
-            // Text offset calculation based on measured values
-            // Reference measurements:
-            // Scale 4:  Move Right 69/256" (0.02246 ft), Move Up 95/128" (0.06185 ft)
-            // Scale 36: Move Right 3" (0.25 ft), Move Up 6.25" (0.5208 ft)
-            //
-            // Using linear interpolation: Offset = A + B × ViewScale
-            //
-            // For X: 0.02246 = A + B×4, and 0.25 = A + B×36
-            // Solving: B = (0.25 - 0.02246)/(36-4) = 0.22754/32 = 0.007110625
-            //          A = 0.02246 - (0.007110625×4) = 0.02246 - 0.028442 = -0.005982
-            // Therefore: OffsetX = -0.005982 + 0.007110625 × ViewScale
-            //
-            // For Y: 0.06185 = A + B×4, and 0.5208 = A + B×36
-            // Solving: B = (0.5208 - 0.06185)/(36-4) = 0.45895/32 = 0.01434219
-            //          A = 0.06185 - (0.01434219×4) = 0.06185 - 0.05737 = 0.00448
-            // Therefore: OffsetY = 0.00448 + 0.01434219 × ViewScale
-
-            const double offsetXIntercept = -0.005982;
-            const double offsetXSlope = 0.007110625;
-            const double offsetYIntercept = 0.00448;
-            const double offsetYSlope = 0.01434219;
-
-            _textOffsetX = offsetXIntercept + (offsetXSlope * _viewScale);
-            _textOffsetY = offsetYIntercept + (offsetYSlope * _viewScale);
-
-            // Text size is paper size (not affected by view scale in drafting views)
+            // Text size inversely proportional to ViewScale, then multiplied by ScaleFactor
+            // Higher ScaleFactor = larger text
+            // Model text height (ft) = Paper size (inches) / ViewScale / 12 * ScaleFactor
+            const double paperTextSize = 0.25;  // 1/4" text on paper (base size)
             const double minTextHeight = 3.0 / 256.0 / 12.0;
             const double maxTextHeight = (16.0 + 73.0 / 256.0) / 12.0;
-            double calculatedTextHeight = paperTextSize / 12.0;
+            double calculatedTextHeight = (paperTextSize / _viewScale / 12.0) * _scaleFactor;
             _textHeight = Math.Max(minTextHeight, Math.Min(maxTextHeight, calculatedTextHeight));
+
+            // Text offset calculation - inversely proportional to ViewScale, multiplied by ScaleFactor
+            const double baseOffsetX = 0.05;  // Base offset
+            const double baseOffsetY = 0.05;  // Base offset
+
+            _textOffsetX = (baseOffsetX / _viewScale) * _scaleFactor;
+            _textOffsetY = (baseOffsetY / _viewScale) * _scaleFactor;
 
             // Notify property changes
             OnPropertyChanged(nameof(ColumnWidth));
@@ -462,9 +531,163 @@ namespace BoltFramePlugin.ViewModels
             OnPropertyChanged(nameof(TextOffsetX));
             OnPropertyChanged(nameof(TextOffsetY));
 
-            _logger.LogInformation($"Dimensions recalculated for scale 1:{_viewScale} - Column: {_columnWidth:F3}ft, Row: {_rowHeight:F3}ft, Border: {_borderOffset:F4}ft, Text: {_textHeight:F4}ft, TextOffset: ({_textOffsetX:F3}, {_textOffsetY:F3})");
+            _logger.LogInformation($"Fixed cells, scaled text for 1:{_viewScale} (factor: {_scaleFactor:F1}x) - Column: {_columnWidth:F3}ft, Row: {_rowHeight:F3}ft, Text: {_textHeight:F6}ft ({_textHeight * 12:F4}\"), TextOffset: ({_textOffsetX:F6}, {_textOffsetY:F6})");
+        }
+
+        private void OnFileWatcherSyncRequested(object? sender, SyncRequestedEventArgs e)
+        {
+            try
+            {
+                _logger.LogInformation($"File watcher sync requested for: {e.FilePath}");
+
+                // Set the request parameters in the handler
+                _autoSyncHandler.SetRequest(e);
+
+                // Raise the external event to process on Revit main thread
+                _autoSyncEvent.Raise();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error handling sync request: {ex.Message}", ex);
+            }
+        }
+
+        private void RefreshTrackedFiles()
+        {
+            try
+            {
+                TrackedFiles.Clear();
+
+                var watchedFiles = _fileWatcher.GetWatchedFiles();
+
+                if (!watchedFiles.Any())
+                {
+                    TrackedFilesMessage = "No files are currently being tracked.";
+                    return;
+                }
+
+                TrackedFilesMessage = string.Empty;
+
+                foreach (var watchedFile in watchedFiles)
+                {
+                    var vm = new TrackedFileViewModel
+                    {
+                        FilePath = watchedFile.FilePath,
+                        FileName = Path.GetFileName(watchedFile.FilePath),
+                        ViewName = watchedFile.ViewName,
+                        LastModified = watchedFile.LastModified
+                    };
+
+                    // Check if file has changed
+                    if (_fileWatcher.HasFileChanged(watchedFile.FilePath, watchedFile.ViewName))
+                    {
+                        vm.Status = "Modified";
+                        vm.StatusColor = System.Windows.Media.Brushes.Orange;
+                    }
+                    else
+                    {
+                        vm.Status = "Up-to-date";
+                        vm.StatusColor = System.Windows.Media.Brushes.Green;
+                    }
+
+                    TrackedFiles.Add(vm);
+                }
+
+                _logger.LogInformation($"Refreshed tracked files list: {TrackedFiles.Count} files");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error refreshing tracked files: {ex.Message}", ex);
+                TrackedFilesMessage = $"Error: {ex.Message}";
+            }
+        }
+
+        private async Task SyncFileAsync(TrackedFileViewModel? fileVm)
+        {
+            if (fileVm == null)
+            {
+                _logger.LogWarning("SyncFileAsync called with null file");
+                return;
+            }
+
+            try
+            {
+                _logger.LogInformation($"Manually syncing file: {fileVm.FilePath} -> {fileVm.ViewName}");
+                StatusMessage = $"Syncing {fileVm.FileName}...";
+
+                // Get the tracked file info to retrieve import/render options
+                var watchedFiles = _fileWatcher.GetWatchedFiles();
+                var watchedFile = watchedFiles.FirstOrDefault(w =>
+                    w.FilePath == fileVm.FilePath && w.ViewName == fileVm.ViewName);
+
+                if (watchedFile == null)
+                {
+                    throw new InvalidOperationException("File is no longer being tracked");
+                }
+
+                // Call ImportAndRenderAsync directly (just like re-import does)
+                var view = await _importManager.ImportAndRenderAsync(
+                    _uidoc.Document,
+                    watchedFile.FilePath,
+                    watchedFile.ViewName,
+                    watchedFile.ImportConfig,
+                    watchedFile.RenderOptions,
+                    _uidoc);
+
+                // Switch to the synced view
+                _uidoc.ActiveView = view;
+
+                StatusMessage = $"Successfully synced {fileVm.FileName}";
+                _logger.LogInformation($"Successfully synced view: {fileVm.ViewName}");
+
+                // Refresh the tracked files list
+                RefreshTrackedFiles();
+
+                Autodesk.Revit.UI.TaskDialog.Show("Sync Complete", $"View '{fileVm.ViewName}' has been synced with latest file changes.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error syncing file: {ex.Message}", ex);
+                StatusMessage = $"Error syncing: {ex.Message}";
+                Autodesk.Revit.UI.TaskDialog.Show("Sync Error", $"Failed to sync file:\n{ex.Message}");
+            }
+        }
+
+        private void StopTracking(TrackedFileViewModel? fileVm)
+        {
+            if (fileVm == null)
+            {
+                _logger.LogWarning("StopTracking called with null file");
+                return;
+            }
+
+            try
+            {
+                _logger.LogInformation($"Stopping tracking for: {fileVm.FilePath} -> {fileVm.ViewName}");
+                _fileWatcher.StopWatching(fileVm.FilePath, fileVm.ViewName);
+                RefreshTrackedFiles();
+                StatusMessage = $"Stopped tracking {fileVm.FileName}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error stopping tracking: {ex.Message}", ex);
+                StatusMessage = $"Error: {ex.Message}";
+            }
         }
 
         #endregion
+    }
+
+    /// <summary>
+    /// ViewModel for displaying tracked file information in the UI
+    /// </summary>
+    public class TrackedFileViewModel
+    {
+        public string FilePath { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public string ViewName { get; set; } = string.Empty;
+        public DateTime LastModified { get; set; }
+        public string Status { get; set; } = "Unknown";
+        public System.Windows.Media.Brush StatusColor { get; set; } = System.Windows.Media.Brushes.Gray;
     }
 }

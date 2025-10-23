@@ -7,7 +7,7 @@ using BoltFramePlugin.Models;
 
 namespace BoltFramePlugin.Services
 {
-    internal interface IProjectConfigurationManager
+    public interface IProjectConfigurationManager
     {
         ProjectConfigurationModel LoadProjectConfiguration(Guid projectId);
         void SaveProjectConfiguration(ProjectConfigurationModel config);

@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
 using BoltFramePlugin.Models.DataImport;
 using System;
 using System.Collections.Generic;
@@ -88,7 +89,8 @@ namespace BoltFramePlugin.Services.DataImport
             string filePath,
             string viewName = null,
             ImportConfiguration importConfig = null,
-            TableRenderOptions renderOptions = null)
+            TableRenderOptions renderOptions = null,
+            UIDocument uidoc = null)
         {
             try
             {
@@ -134,24 +136,6 @@ namespace BoltFramePlugin.Services.DataImport
 
                             try
                             {
-                                // If the view is currently active, switch to another view first
-                                if (doc.ActiveView.Id == existingView.Id)
-                                {
-                                    _logger.LogInformation("Existing view is active, switching to a different view first...");
-
-                                    // Find any other view to switch to
-                                    var anyOtherView = new FilteredElementCollector(doc)
-                                        .OfClass(typeof(Autodesk.Revit.DB.View))
-                                        .Cast<Autodesk.Revit.DB.View>()
-                                        .FirstOrDefault(v => v.Id != existingView.Id && !v.IsTemplate);
-
-                                    if (anyOtherView != null)
-                                    {
-                                        // Note: We can't set ActiveView inside a transaction, so we'll just proceed
-                                        _logger.LogInformation("Cannot switch active view inside transaction. The view will be deleted anyway.");
-                                    }
-                                }
-
                                 var deletedIds = doc.Delete(existingView.Id);
                                 _logger.LogInformation($"Existing view deleted (deleted {deletedIds.Count} elements)");
                             }

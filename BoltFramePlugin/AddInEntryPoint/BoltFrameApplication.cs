@@ -92,6 +92,18 @@ namespace BoltFramePlugin.AddInEntryPoint
         {
             _logger.LogInformation($"Document closing: {e.Document.Title}");
 
+            // Stop all file watchers for this document
+            try
+            {
+                var fileWatcher = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.FileWatcherService>();
+                fileWatcher.StopAll();
+                _logger.LogInformation("All file watchers stopped due to document closing.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error stopping file watchers during document close: {ex.Message}");
+            }
+
             // Close all open plugin windows when document closes
             try
             {
