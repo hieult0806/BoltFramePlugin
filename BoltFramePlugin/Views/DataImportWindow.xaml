@@ -125,29 +125,35 @@
                             </StackPanel>
                         </GroupBox>
 
-                        <GroupBox Header="Scale Factor" Padding="10" Margin="0,0,0,15">
-                            <StackPanel>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="150"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="150"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
+                        <GroupBox Header="Scale Factors" Padding="10" Margin="0,0,0,15">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Text Scale Factor:" VerticalAlignment="Center"/>
-                                    <Slider Grid.Row="0" Grid.Column="1" Value="{Binding ScaleFactor}" Minimum="0.1" Maximum="100"
-                                            TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="10,0,10,0"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                        <Run Text="{Binding ScaleFactor, StringFormat={}{0:F1}, Mode=OneWay}"/>
-                                        <Run Text="x"/>
-                                    </TextBlock>
-                                </Grid>
-                                <TextBlock Text="Multiplier for text size only (1.0 = normal, higher = larger text)"
-                                           FontSize="10" Foreground="Gray" Margin="0,5,0,0"/>
-                            </StackPanel>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Text Scale:" VerticalAlignment="Center" Margin="0,0,10,10"/>
+                                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ScaleFactor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Padding="5" Margin="0,0,0,10"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Column Width Scale:" VerticalAlignment="Center" Margin="0,0,10,10"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding WidthScaleFactor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Padding="5" Margin="0,0,0,10"/>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Row Height Scale:" VerticalAlignment="Center" Margin="0,0,10,10"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding HeightScaleFactor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Padding="5" Margin="0,0,0,10"/>
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2"
+                                           Text="Enter numeric values (e.g., 0.5, 1.0, 2.5, 100)"
+                                           FontSize="10" Foreground="Gray"/>
+                            </Grid>
                         </GroupBox>
 
                         <GroupBox Header="Appearance" Padding="10">

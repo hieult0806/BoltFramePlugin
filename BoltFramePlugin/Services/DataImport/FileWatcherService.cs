@@ -107,7 +107,22 @@ namespace BoltFramePlugin.Services.DataImport
             try
             {
                 _currentDocument = doc;
-                var projectId = Guid.Parse(doc.ProjectInformation.UniqueId);
+
+                // Use ProjectInformation ElementId as a stable identifier
+                var projectIdString = doc.ProjectInformation.UniqueId;
+                Guid projectId;
+
+                // Try to parse as GUID, if fails create a deterministic GUID from the string
+                if (!Guid.TryParse(projectIdString, out projectId))
+                {
+                    // Create a deterministic GUID from the unique ID string
+                    using (var md5 = System.Security.Cryptography.MD5.Create())
+                    {
+                        byte[] hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(projectIdString));
+                        projectId = new Guid(hash);
+                    }
+                }
+
                 var config = _projectConfig.LoadProjectConfiguration(projectId);
 
                 if (config.TrackedFiles == null || !config.TrackedFiles.Any())
@@ -179,7 +194,21 @@ namespace BoltFramePlugin.Services.DataImport
 
             try
             {
-                var projectId = Guid.Parse(_currentDocument.ProjectInformation.UniqueId);
+                // Use ProjectInformation ElementId as a stable identifier
+                var projectIdString = _currentDocument.ProjectInformation.UniqueId;
+                Guid projectId;
+
+                // Try to parse as GUID, if fails create a deterministic GUID from the string
+                if (!Guid.TryParse(projectIdString, out projectId))
+                {
+                    // Create a deterministic GUID from the unique ID string
+                    using (var md5 = System.Security.Cryptography.MD5.Create())
+                    {
+                        byte[] hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(projectIdString));
+                        projectId = new Guid(hash);
+                    }
+                }
+
                 var config = _projectConfig.LoadProjectConfiguration(projectId);
 
                 // Convert current watched files to TrackedFileConfig

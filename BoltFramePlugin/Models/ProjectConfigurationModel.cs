@@ -15,6 +15,36 @@ namespace BoltFramePlugin.Models
 
         // Store tracked files for data import syncing
         public List<TrackedFileConfig> TrackedFiles { get; set; } = new List<TrackedFileConfig>();
+
+        // Store data import window settings
+        public DataImportSettings? DataImportSettings { get; set; }
+    }
+
+    /// <summary>
+    /// Settings for the Data Import window that persist with the project
+    /// </summary>
+    public class DataImportSettings
+    {
+        // Import configuration
+        public bool HasHeaders { get; set; } = true;
+        public char CsvDelimiter { get; set; } = ',';
+        public bool SkipEmptyRows { get; set; } = false;
+        public bool TrimWhitespace { get; set; } = true;
+
+        // View configuration
+        public string ViewName { get; set; } = string.Empty;
+        public int ViewScale { get; set; } = 4;
+
+        // Scale factors
+        public double TextScaleFactor { get; set; } = 1.0;
+        public double WidthScaleFactor { get; set; } = 1.0;
+        public double HeightScaleFactor { get; set; } = 1.0;
+
+        // Appearance
+        public bool DrawGridLines { get; set; } = true;
+        public bool FillHeaderBackground { get; set; } = false;
+        public bool AutoSizeColumns { get; set; } = false;
+        public int TextAlignment { get; set; } = 0; // 0 = Left, 1 = Center, 2 = Right
     }
 
     /// <summary>

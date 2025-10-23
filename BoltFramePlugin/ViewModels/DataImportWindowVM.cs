@@ -22,6 +22,7 @@ namespace BoltFramePlugin.ViewModels
         private readonly FileWatcherService _fileWatcher;
         private readonly AutoSyncEventHandler _autoSyncHandler;
         private readonly ExternalEvent _autoSyncEvent;
+        private readonly IProjectConfigurationManager _projectConfig;
 
         private string _filePath = string.Empty;
         private bool _hasHeaders = true;
@@ -37,6 +38,8 @@ namespace BoltFramePlugin.ViewModels
         private double _textOffsetY = 0; // Text vertical offset in feet
         private double _viewScale = 4; // Default: 3" = 1'-0" (1:4 scale)
         private double _scaleFactor = 1.0; // Scale factor for adjusting text size
+        private double _widthScaleFactor = 1.0; // Scale factor for column width
+        private double _heightScaleFactor = 1.0; // Scale factor for row height
         private double _paperTextHeight = 0.25; // 1/4" Arial on paper
         private bool _drawGridLines = true;
         private bool _fillHeaderBackground = false; // Transparent background
@@ -59,6 +62,7 @@ namespace BoltFramePlugin.ViewModels
             _fileWatcher = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.FileWatcherService>();
             _autoSyncHandler = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.AutoSyncEventHandler>();
             _autoSyncEvent = ExternalEvent.Create(_autoSyncHandler);
+            _projectConfig = DIContainerService.Container.GetInstance<IProjectConfigurationManager>();
 
             // Subscribe to sync requests from file watcher
             _fileWatcher.OnSyncRequested += OnFileWatcherSyncRequested;
@@ -74,6 +78,9 @@ namespace BoltFramePlugin.ViewModels
 
             // Calculate initial dimensions based on default scale
             RecalculateDimensionsFromScale();
+
+            // Load settings from project configuration
+            LoadSettings();
 
             // Load tracked files from configuration
             _fileWatcher.LoadTrackedFiles(_uidoc.Document);
@@ -189,9 +196,43 @@ namespace BoltFramePlugin.ViewModels
             get => _scaleFactor;
             set
             {
+                // Validate input: must be between 0.1 and 100
+                if (value < 0.1) value = 0.1;
+                if (value > 100) value = 100;
+
                 _scaleFactor = value;
                 OnPropertyChanged(nameof(ScaleFactor));
                 // Recalculate all dimensions when scale factor changes
+                RecalculateDimensionsFromScale();
+            }
+        }
+
+        public double WidthScaleFactor
+        {
+            get => _widthScaleFactor;
+            set
+            {
+                // Validate input: must be between 0.1 and 10
+                if (value < 0.1) value = 0.1;
+                if (value > 10) value = 10;
+
+                _widthScaleFactor = value;
+                OnPropertyChanged(nameof(WidthScaleFactor));
+                RecalculateDimensionsFromScale();
+            }
+        }
+
+        public double HeightScaleFactor
+        {
+            get => _heightScaleFactor;
+            set
+            {
+                // Validate input: must be between 0.1 and 10
+                if (value < 0.1) value = 0.1;
+                if (value > 10) value = 10;
+
+                _heightScaleFactor = value;
+                OnPropertyChanged(nameof(HeightScaleFactor));
                 RecalculateDimensionsFromScale();
             }
         }
@@ -485,6 +526,9 @@ namespace BoltFramePlugin.ViewModels
 
         private void Close(object parameter)
         {
+            // Save settings before closing
+            SaveSettings();
+
             DialogResult = true;
             OnRequestClose(EventArgs.Empty);
         }
@@ -502,10 +546,14 @@ namespace BoltFramePlugin.ViewModels
         /// </summary>
         private void RecalculateDimensionsFromScale()
         {
-            // Fixed cell dimensions in model space (feet) - not affected by ScaleFactor
-            _columnWidth = 1.5;      // 1.5 ft column width (fixed)
-            _rowHeight = 0.167;      // 0.167 ft (2") row height (fixed)
-            _borderOffset = 0.0208;  // 0.0208 ft (1/4") border offset (fixed)
+            // Base cell dimensions in model space (feet) - multiplied by their respective scale factors
+            const double baseColumnWidth = 1.5;      // 1.5 ft base column width
+            const double baseRowHeight = 0.167;      // 0.167 ft (2") base row height
+            const double baseBorderOffset = 0.0208;  // 0.0208 ft (1/4") base border offset
+
+            _columnWidth = baseColumnWidth * _widthScaleFactor;
+            _rowHeight = baseRowHeight * _heightScaleFactor;
+            _borderOffset = baseBorderOffset;  // Border offset stays fixed
 
             // Text size inversely proportional to ViewScale, then multiplied by ScaleFactor
             // Higher ScaleFactor = larger text
@@ -531,7 +579,150 @@ namespace BoltFramePlugin.ViewModels
             OnPropertyChanged(nameof(TextOffsetX));
             OnPropertyChanged(nameof(TextOffsetY));
 
-            _logger.LogInformation($"Fixed cells, scaled text for 1:{_viewScale} (factor: {_scaleFactor:F1}x) - Column: {_columnWidth:F3}ft, Row: {_rowHeight:F3}ft, Text: {_textHeight:F6}ft ({_textHeight * 12:F4}\"), TextOffset: ({_textOffsetX:F6}, {_textOffsetY:F6})");
+            _logger.LogInformation($"Dimensions for 1:{_viewScale} (Text: {_scaleFactor:F1}x, Width: {_widthScaleFactor:F1}x, Height: {_heightScaleFactor:F1}x) - Column: {_columnWidth:F3}ft, Row: {_rowHeight:F3}ft, Text: {_textHeight:F6}ft ({_textHeight * 12:F4}\"), TextOffset: ({_textOffsetX:F6}, {_textOffsetY:F6})");
+        }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                if (_uidoc.Document.ProjectInformation == null)
+                {
+                    _logger.LogWarning("Cannot load settings - no project information");
+                    return;
+                }
+
+                // Use ProjectInformation ElementId as a stable identifier
+                var projectIdString = _uidoc.Document.ProjectInformation.UniqueId;
+                Guid projectId;
+
+                // Try to parse as GUID, if fails create a deterministic GUID from the string
+                if (!Guid.TryParse(projectIdString, out projectId))
+                {
+                    // Create a deterministic GUID from the unique ID string
+                    using (var md5 = System.Security.Cryptography.MD5.Create())
+                    {
+                        byte[] hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(projectIdString));
+                        projectId = new Guid(hash);
+                    }
+                    _logger.LogInformation($"Created GUID from UniqueId: {projectId}");
+                }
+
+                var config = _projectConfig.LoadProjectConfiguration(projectId);
+
+                if (config.DataImportSettings == null)
+                {
+                    _logger.LogInformation("No saved data import settings found, using defaults");
+                    return;
+                }
+
+                var settings = config.DataImportSettings;
+
+                // Restore import configuration (use backing fields to avoid triggering events)
+                _hasHeaders = settings.HasHeaders;
+                _csvDelimiter = settings.CsvDelimiter;
+                _skipEmptyRows = settings.SkipEmptyRows;
+                _trimWhitespace = settings.TrimWhitespace;
+
+                // Restore view configuration (use backing fields)
+                _viewName = settings.ViewName;
+                _viewScale = settings.ViewScale;
+
+                // Restore scale factors (use backing fields)
+                _scaleFactor = settings.TextScaleFactor;
+                _widthScaleFactor = settings.WidthScaleFactor;
+                _heightScaleFactor = settings.HeightScaleFactor;
+
+                // Restore appearance (use backing fields)
+                _drawGridLines = settings.DrawGridLines;
+                _fillHeaderBackground = settings.FillHeaderBackground;
+                _autoSizeColumns = settings.AutoSizeColumns;
+                _textAlignment = (TextAlignment)settings.TextAlignment;
+
+                // Recalculate dimensions with loaded scale factors
+                RecalculateDimensionsFromScale();
+
+                // Notify all property changes
+                OnPropertyChanged(nameof(HasHeaders));
+                OnPropertyChanged(nameof(CsvDelimiter));
+                OnPropertyChanged(nameof(SkipEmptyRows));
+                OnPropertyChanged(nameof(TrimWhitespace));
+                OnPropertyChanged(nameof(ViewName));
+                OnPropertyChanged(nameof(ViewScale));
+                OnPropertyChanged(nameof(ScaleFactor));
+                OnPropertyChanged(nameof(WidthScaleFactor));
+                OnPropertyChanged(nameof(HeightScaleFactor));
+                OnPropertyChanged(nameof(DrawGridLines));
+                OnPropertyChanged(nameof(FillHeaderBackground));
+                OnPropertyChanged(nameof(AutoSizeColumns));
+                OnPropertyChanged(nameof(SelectedTextAlignment));
+
+                _logger.LogInformation("Loaded data import settings from project configuration");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading settings: {ex.Message}", ex);
+            }
+        }
+
+        private void SaveSettings()
+        {
+            try
+            {
+                if (_uidoc.Document.ProjectInformation == null)
+                {
+                    _logger.LogWarning("Cannot save settings - no project information");
+                    return;
+                }
+
+                // Use ProjectInformation ElementId as a stable identifier
+                var projectIdString = _uidoc.Document.ProjectInformation.UniqueId;
+                Guid projectId;
+
+                // Try to parse as GUID, if fails create a deterministic GUID from the string
+                if (!Guid.TryParse(projectIdString, out projectId))
+                {
+                    // Create a deterministic GUID from the unique ID string
+                    using (var md5 = System.Security.Cryptography.MD5.Create())
+                    {
+                        byte[] hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(projectIdString));
+                        projectId = new Guid(hash);
+                    }
+                }
+
+                var config = _projectConfig.LoadProjectConfiguration(projectId);
+
+                config.DataImportSettings = new Models.DataImportSettings
+                {
+                    // Import configuration
+                    HasHeaders = _hasHeaders,
+                    CsvDelimiter = _csvDelimiter,
+                    SkipEmptyRows = _skipEmptyRows,
+                    TrimWhitespace = _trimWhitespace,
+
+                    // View configuration
+                    ViewName = _viewName,
+                    ViewScale = (int)_viewScale,
+
+                    // Scale factors
+                    TextScaleFactor = _scaleFactor,
+                    WidthScaleFactor = _widthScaleFactor,
+                    HeightScaleFactor = _heightScaleFactor,
+
+                    // Appearance
+                    DrawGridLines = _drawGridLines,
+                    FillHeaderBackground = _fillHeaderBackground,
+                    AutoSizeColumns = _autoSizeColumns,
+                    TextAlignment = (int)_textAlignment
+                };
+
+                _projectConfig.SaveProjectConfiguration(config);
+                _logger.LogInformation("Saved data import settings to project configuration");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error saving settings: {ex.Message}", ex);
+            }
         }
 
         private void OnFileWatcherSyncRequested(object? sender, SyncRequestedEventArgs e)
