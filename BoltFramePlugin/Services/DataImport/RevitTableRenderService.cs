@@ -2,6 +2,7 @@ using Autodesk.Revit.DB;
 using BoltFramePlugin.Models.DataImport;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace BoltFramePlugin.Services.DataImport
@@ -280,6 +281,15 @@ namespace BoltFramePlugin.Services.DataImport
                 }
             }
 
+            // Check if cell contains an image
+            if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForImage) && formatForImage.ImageData != null && formatForImage.ImageData.Length > 0)
+            {
+                // Render image instead of text
+                _logger.LogInformation($"Cell at row {rowIndex}, col {colIndex} contains image data ({formatForImage.ImageData.Length} bytes), rendering image");
+                RenderCellImage(doc, view, formatForImage, x, y, cellWidth, cellHeight);
+                return; // Skip text rendering when image is present
+            }
+
             // Determine text alignment
             TextAlignment cellAlignment = options.TextAlign;
             if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForAlign) && !string.IsNullOrEmpty(formatForAlign.TextAlignment))
@@ -359,6 +369,15 @@ namespace BoltFramePlugin.Services.DataImport
                 {
                     DrawCellBackground(doc, view, x, startY, cellWidth, cellHeight, cellFormat.BackgroundColor);
                 }
+            }
+
+            // Check if cell contains an image
+            if (cellFormatLookup.TryGetValue((rowIndex, colIndex), out var formatForImage) && formatForImage.ImageData != null && formatForImage.ImageData.Length > 0)
+            {
+                // Render image instead of text
+                _logger.LogInformation($"Merged cell at row {rowIndex}, col {colIndex} contains image data ({formatForImage.ImageData.Length} bytes), rendering image");
+                RenderCellImage(doc, view, formatForImage, x, startY, cellWidth, cellHeight);
+                return; // Skip text rendering when image is present
             }
 
             // Determine text alignment
@@ -976,6 +995,139 @@ namespace BoltFramePlugin.Services.DataImport
             catch
             {
                 return null;
+            }
+        }
+
+        private void RenderCellImage(Document doc, Autodesk.Revit.DB.View view, CellFormat cellFormat, double x, double y, double cellWidth, double cellHeight)
+        {
+            try
+            {
+                if (cellFormat.ImageData == null || cellFormat.ImageData.Length == 0)
+                {
+                    _logger.LogWarning("No image data available to render");
+                    return;
+                }
+
+                _logger.LogInformation($"Starting RenderCellImage: image size {cellFormat.ImageData.Length} bytes, dimensions {cellFormat.ImageWidth}x{cellFormat.ImageHeight}px");
+
+                // Create a temporary file to save the image
+                string tempImagePath = Path.Combine(Path.GetTempPath(), $"RevitTableImage_{Guid.NewGuid()}.png");
+                _logger.LogInformation($"Temporary image path: {tempImagePath}");
+
+                try
+                {
+                    // Write image data to temporary file
+                    File.WriteAllBytes(tempImagePath, cellFormat.ImageData);
+                    _logger.LogInformation($"Wrote {cellFormat.ImageData.Length} bytes to temporary file");
+
+                    // Load the image into Revit
+                    // Note: Revit API for creating images varies by version. We'll use reflection to handle it.
+                    ImageType? imageType = null;
+
+                    try
+                    {
+                        // List all available Create methods for debugging
+                        var allCreateMethods = typeof(ImageType).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                            .Where(m => m.Name == "Create").ToList();
+
+                        _logger.LogInformation($"Found {allCreateMethods.Count} Create methods on ImageType");
+                        foreach (var method in allCreateMethods)
+                        {
+                            var parameters = method.GetParameters();
+                            _logger.LogInformation($"  Create({string.Join(", ", parameters.Select(p => p.ParameterType.Name))})");
+                        }
+
+                        // Try to use ImageType.Create with string path directly
+                        var createMethods = allCreateMethods.Where(m => m.GetParameters().Length == 2).ToList();
+
+                        foreach (var method in createMethods)
+                        {
+                            var parameters = method.GetParameters();
+                            if (parameters[0].ParameterType == typeof(Document) && parameters[1].ParameterType == typeof(string))
+                            {
+                                _logger.LogInformation($"Attempting to call ImageType.Create(Document, string)");
+                                imageType = method.Invoke(null, new object[] { doc, tempImagePath }) as ImageType;
+                                _logger.LogInformation($"ImageType created successfully: {imageType != null}");
+                                break;
+                            }
+                        }
+
+                        if (imageType == null)
+                        {
+                            _logger.LogWarning("Could not find or invoke suitable ImageType.Create method signature");
+                        }
+                    }
+                    catch (Exception createEx)
+                    {
+                        _logger.LogError($"Failed to create ImageType: {createEx.Message}\n{createEx.StackTrace}");
+                        if (createEx.InnerException != null)
+                        {
+                            _logger.LogError($"Inner exception: {createEx.InnerException.Message}\n{createEx.InnerException.StackTrace}");
+                        }
+                    }
+
+                    if (imageType == null)
+                    {
+                        _logger.LogWarning("Failed to create ImageType from file");
+                        return;
+                    }
+
+                    // Calculate scale to fit image within cell while maintaining aspect ratio
+                    // Convert pixels to feet (assuming 96 DPI: 1 inch = 96 pixels, 1 foot = 12 inches = 1152 pixels)
+                    const double pixelsPerFoot = 1152.0; // 96 DPI * 12 inches/foot
+
+                    double imageWidthFeet = cellFormat.ImageWidth / pixelsPerFoot;
+                    double imageHeightFeet = cellFormat.ImageHeight / pixelsPerFoot;
+
+                    // Calculate scaling to fit within cell
+                    double scaleX = cellWidth / imageWidthFeet;
+                    double scaleY = cellHeight / imageHeightFeet;
+                    double scale = Math.Min(scaleX, scaleY);
+
+                    // Calculate final dimensions
+                    double scaledWidth = imageWidthFeet * scale;
+                    double scaledHeight = imageHeightFeet * scale;
+
+                    // Center the image in the cell
+                    double imageX = x + (cellWidth - scaledWidth) / 2;
+                    double imageY = y - (cellHeight - scaledHeight) / 2; // Top of image
+
+                    // Create image instance at the calculated position
+                    XYZ imageLocation = new XYZ(imageX, imageY, 0);
+                    ImagePlacementOptions placementOptions = new ImagePlacementOptions(imageLocation, BoxPlacement.TopLeft);
+                    ImageInstance imageInstance = ImageInstance.Create(doc, view, imageType.Id, placementOptions);
+
+                    if (imageInstance != null)
+                    {
+                        // Set the image width (height scales proportionally)
+                        var widthParam = imageInstance.get_Parameter(BuiltInParameter.RASTER_SHEETWIDTH);
+                        if (widthParam != null && !widthParam.IsReadOnly)
+                        {
+                            widthParam.Set(scaledWidth);
+                        }
+
+                        _logger.LogInformation($"Created image instance at ({imageX:F3}, {imageY:F3}) with size {scaledWidth:F3}x{scaledHeight:F3} ft");
+                    }
+                }
+                finally
+                {
+                    // Clean up temporary file
+                    try
+                    {
+                        if (File.Exists(tempImagePath))
+                        {
+                            File.Delete(tempImagePath);
+                        }
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        _logger.LogWarning($"Could not delete temporary image file: {cleanupEx.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error rendering cell image: {ex.Message}", ex);
             }
         }
     }

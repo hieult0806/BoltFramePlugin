@@ -79,6 +79,21 @@ namespace BoltFramePlugin.Models.DataImport
         public bool IsItalic { get; set; }
 
         /// <summary>
+        /// Image data if cell contains an image
+        /// </summary>
+        public byte[]? ImageData { get; set; }
+
+        /// <summary>
+        /// Image width in pixels (original size)
+        /// </summary>
+        public double ImageWidth { get; set; }
+
+        /// <summary>
+        /// Image height in pixels (original size)
+        /// </summary>
+        public double ImageHeight { get; set; }
+
+        /// <summary>
         /// Whether text is underlined
         /// </summary>
         public bool IsUnderline { get; set; }

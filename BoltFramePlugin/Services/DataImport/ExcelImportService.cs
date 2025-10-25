@@ -2,6 +2,7 @@ using BoltFramePlugin.Models.DataImport;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace BoltFramePlugin.Services.DataImport
@@ -435,6 +436,123 @@ namespace BoltFramePlugin.Services.DataImport
             catch (Exception ex)
             {
                 _logger.LogWarning($"Failed to extract cell colors from ClosedXML: {ex.Message}");
+            }
+
+            // Extract images from worksheet
+            // Note: ClosedXML doesn't directly expose embedded images
+            _logger.LogWarning("⚠ ClosedXML library does not provide direct access to embedded images.");
+            _logger.LogInformation("Image import feature is NOT currently supported.");
+            _logger.LogInformation("Workaround: Images in Excel files cannot be imported to Revit at this time.");
+
+            try
+            {
+                // Keep the code structure for future implementation
+                var picturesProp = worksheet.GetType().GetProperty("Pictures");
+                if (picturesProp != null)
+                {
+                    var pictures = picturesProp.GetValue(worksheet) as System.Collections.IEnumerable;
+                    _logger.LogInformation($"Pictures collection retrieved: {pictures != null}");
+                    if (pictures != null)
+                    {
+                        // First count the pictures
+                        int totalCount = 0;
+                        foreach (var picture in pictures)
+                        {
+                            totalCount++;
+                            _logger.LogInformation($"Found picture #{totalCount}, type: {picture?.GetType().FullName}");
+                        }
+                        _logger.LogInformation($"Total pictures found in collection: {totalCount}");
+
+                        // Reset enumeration and process images
+                        pictures = picturesProp.GetValue(worksheet) as System.Collections.IEnumerable;
+                        int imageCount = 0;
+                        foreach (var picture in pictures)
+                        {
+                            try
+                            {
+                                // Get image placement - which cell it's anchored to
+                                var imagePlacementProp = picture.GetType().GetProperty("TopLeftCell");
+                                if (imagePlacementProp != null)
+                                {
+                                    var topLeftCell = imagePlacementProp.GetValue(picture);
+                                    if (topLeftCell != null)
+                                    {
+                                        var addressProp = topLeftCell.GetType().GetProperty("Address");
+                                        if (addressProp != null)
+                                        {
+                                            var address = addressProp.GetValue(topLeftCell);
+                                            var rowNum = (int)address.GetType().GetProperty("RowNumber").GetValue(address);
+                                            var colNum = (int)address.GetType().GetProperty("ColumnNumber").GetValue(address);
+
+                                            // Get image data
+                                            var imageStreamProp = picture.GetType().GetMethod("GetStream", Type.EmptyTypes);
+                                            if (imageStreamProp != null)
+                                            {
+                                                using (var imageStream = imageStreamProp.Invoke(picture, null) as Stream)
+                                                {
+                                                    if (imageStream != null)
+                                                    {
+                                                        byte[] imageData;
+                                                        using (var ms = new MemoryStream())
+                                                        {
+                                                            imageStream.CopyTo(ms);
+                                                            imageData = ms.ToArray();
+                                                        }
+
+                                                        // Get image dimensions
+                                                        var widthProp = picture.GetType().GetProperty("Width");
+                                                        var heightProp = picture.GetType().GetProperty("Height");
+                                                        double width = widthProp != null ? Convert.ToDouble(widthProp.GetValue(picture)) : 0;
+                                                        double height = heightProp != null ? Convert.ToDouble(heightProp.GetValue(picture)) : 0;
+
+                                                        // Find or create CellFormat for this cell
+                                                        var cellFormat = result.CellFormats.FirstOrDefault(cf =>
+                                                            cf.Row == rowNum - dataStartRow &&
+                                                            cf.Column == colNum - firstColNum);
+
+                                                        if (cellFormat == null)
+                                                        {
+                                                            cellFormat = new CellFormat
+                                                            {
+                                                                Row = rowNum - dataStartRow,
+                                                                Column = colNum - firstColNum
+                                                            };
+                                                            result.CellFormats.Add(cellFormat);
+                                                        }
+
+                                                        cellFormat.ImageData = imageData;
+                                                        cellFormat.ImageWidth = width;
+                                                        cellFormat.ImageHeight = height;
+
+                                                        imageCount++;
+                                                        _logger.LogInformation($"Found image at R{rowNum}C{colNum} -> data row {rowNum - dataStartRow}, col {colNum - firstColNum}: {width}x{height}px, {imageData.Length} bytes");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception picEx)
+                            {
+                                _logger.LogWarning($"Error extracting image: {picEx.Message}");
+                            }
+                        }
+                        _logger.LogInformation($"Extracted {imageCount} images from worksheet");
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Pictures collection is null - no images found");
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("Pictures property not found on worksheet type");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to extract images from worksheet: {ex.Message}\n{ex.StackTrace}");
             }
 
             _logger.LogInformation($"Successfully imported {result.RowCount} rows with {result.ColumnCount} columns, {result.MergedCells.Count} merged cells, {result.CellFormats.Count} formatted cells");
