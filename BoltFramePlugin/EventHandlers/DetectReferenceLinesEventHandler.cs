@@ -13,9 +13,11 @@ namespace BoltFramePlugin.EventHandlers
         private ObservableCollection<WallInfo> _perimeterWalls;
         private ObservableCollection<ReferenceLineInfo> _referenceLines;
         private double _rayLengthLimit;
+        private double _raycastInterval; // in meters
         private readonly ILoggingService _logger;
         private Action? _onComplete;
         private bool _shouldDrawArrows = false;
+        private bool _shouldDrawDebugRectangles = false;
 
         public DetectReferenceLinesEventHandler()
         {
@@ -23,9 +25,10 @@ namespace BoltFramePlugin.EventHandlers
             _perimeterWalls = new ObservableCollection<WallInfo>();
             _referenceLines = new ObservableCollection<ReferenceLineInfo>();
             _rayLengthLimit = 500.0;
+            _raycastInterval = 0.5; // Default: 50cm = 0.5 meters
         }
 
-        public void SetParameters(UIDocument uidoc, ObservableCollection<WallInfo> perimeterWalls, ObservableCollection<ReferenceLineInfo> referenceLines, double rayLengthLimit, bool shouldDrawArrows = false, Action? onComplete = null)
+        public void SetParameters(UIDocument uidoc, ObservableCollection<WallInfo> perimeterWalls, ObservableCollection<ReferenceLineInfo> referenceLines, double rayLengthLimit, bool shouldDrawArrows = false, Action? onComplete = null, double raycastIntervalMeters = 0.5, bool shouldDrawDebugRectangles = false)
         {
             _uidoc = uidoc;
             _perimeterWalls = perimeterWalls;
@@ -33,7 +36,9 @@ namespace BoltFramePlugin.EventHandlers
             _onComplete = onComplete;
             _rayLengthLimit = rayLengthLimit;
             _shouldDrawArrows = shouldDrawArrows;
-            _logger.LogInformation($"Parameters set - Walls: {perimeterWalls?.Count ?? 0}, Ray length: {rayLengthLimit}m, ShouldDrawArrows: {shouldDrawArrows}");
+            _raycastInterval = raycastIntervalMeters;
+            _shouldDrawDebugRectangles = shouldDrawDebugRectangles;
+            _logger.LogInformation($"Parameters set - Walls: {perimeterWalls?.Count ?? 0}, Ray length: {rayLengthLimit}m, Raycast interval: {raycastIntervalMeters}m, ShouldDrawArrows: {shouldDrawArrows}, ShouldDrawDebugRectangles: {shouldDrawDebugRectangles}");
         }
 
         public void Execute(UIApplication app)
@@ -56,7 +61,12 @@ namespace BoltFramePlugin.EventHandlers
                 var propertyLineCurves = CollectPropertyLineCurves(doc);
                 var allPerimeterWalls = _perimeterWalls.Select(w => w.Wall).ToList();
 
-                _logger.LogInformation($"Found {roadCenterlines.Count} Road CLs, {propertyLineCurves.Count} Property Line Segments, {allPerimeterWalls.Count} Perimeter Walls");
+                _logger.LogInformation($"=== COLLECTION SUMMARY ===");
+                _logger.LogInformation($"Road CLs: {roadCenterlines.Count}");
+                _logger.LogInformation($"Property Line Segments: {propertyLineCurves.Count}");
+                _logger.LogInformation($"Perimeter Walls (for intersection): {allPerimeterWalls.Count}");
+                _logger.LogInformation($"Walls to process (from _perimeterWalls): {_perimeterWalls.Count}");
+                _logger.LogInformation($"=========================");
 
                 // Process walls and collect ray intersection data
                 var (raysToDrawn, stats) = ProcessPerimeterWalls(allPerimeterWalls, propertyLineCurves, roadCenterlines);
@@ -159,7 +169,6 @@ namespace BoltFramePlugin.EventHandlers
             List<(Element element, Curve curve)> propertyLineCurves,
             List<FamilyInstance> roadCenterlines)
         {
-            var createdImaginaryLines = new HashSet<string>();
             var stats = new ReferenceLineStats();
             var raysToDrawn = new List<(Wall wall, XYZ start, XYZ end, ElementId levelId)>();
 
@@ -170,83 +179,454 @@ namespace BoltFramePlugin.EventHandlers
                 if (locationCurve == null)
                     continue;
 
-                var (rayStart, rayEnd) = CalculateRayPoints(wall, locationCurve);
+                var levelId = GetWallBaseLevelId(wall);
+                var wallCurve = locationCurve.Curve;
 
                 _logger.LogInformation($"Wall {wall.Id.Value}: Orientation ({wall.Orientation.X:F2}, {wall.Orientation.Y:F2}, {wall.Orientation.Z:F2})");
-                _logger.LogInformation($"Wall {wall.Id.Value}: Ray from ({rayStart.X:F2}, {rayStart.Y:F2}) to ({rayEnd.X:F2}, {rayEnd.Y:F2})");
 
-                var hitResult = CastRayAndFindIntersection(wall, rayStart, rayEnd, allPerimeterWalls, propertyLineCurves, roadCenterlines);
+                // Distribute raycast points along the wall at the specified interval
+                var raycastPoints = DistributeRaycastPoints(wallCurve);
+                _logger.LogInformation($"Wall {wall.Id.Value}: Distributed {raycastPoints.Count} raycast points at {_raycastInterval}m intervals");
 
-                if (hitResult != null)
+                // Checked reference line ids to avoid repeat processing
+                var referenceLineIdsChecked = new HashSet<ElementId>();
+
+                // Process each raycast point
+                for (int i = 0; i < raycastPoints.Count; i++)
                 {
-                    _logger.LogInformation($"Wall {wall.Id.Value}: Ray hit '{hitResult.Name}' (Type: {hitResult.LineType}, ElementId: {hitResult.ElementId.Value})");
+                    var point = raycastPoints[i];
+                    var (rayStart, rayEnd) = CalculateRayPointsFromPosition(wall, point);
+
+                    string rayLabel = i == 0 ? "Start" :
+                                     i == raycastPoints.Count - 1 ? "End" :
+                                     $"Point {i}";
+
+                    ProcessSingleRaycast(
+                        wallInfo, wall, rayStart, rayEnd,
+                        allPerimeterWalls, propertyLineCurves, roadCenterlines,
+                        referenceLineIdsChecked, stats, raysToDrawn, levelId,
+                        rayLabel);
                 }
-
-                var levelId = GetWallBaseLevelId(wall);
-                var actualEndPoint = ProcessHitResult(wallInfo, hitResult, rayEnd, createdImaginaryLines, stats);
-
-                raysToDrawn.Add((wall, rayStart, actualEndPoint, levelId));
             }
 
             return (raysToDrawn, stats);
         }
 
-        private (XYZ rayStart, XYZ rayEnd) CalculateRayPoints(Wall wall, LocationCurve locationCurve)
+        private List<XYZ> DistributeRaycastPoints(Curve wallCurve)
         {
-            var wallCurve = locationCurve.Curve;
-            var midpoint = wallCurve.Evaluate(0.5, true);
+            var points = new List<XYZ>();
 
+            // Get wall length in feet (Revit's internal unit)
+            double wallLengthFeet = wallCurve.Length;
+
+            // Convert interval from meters to feet
+            double intervalFeet = _raycastInterval * 3.28084;
+
+            // Always include the start point (endpoint 0)
+            points.Add(wallCurve.GetEndPoint(0));
+
+            // If the wall is shorter than or equal to the interval, only use the 2 endpoints
+            if (wallLengthFeet <= intervalFeet)
+            {
+                points.Add(wallCurve.GetEndPoint(1));
+                return points;
+            }
+
+            // Wall is longer than interval - add intermediate points
+            // Calculate number of intervals
+            int numIntervals = (int)Math.Floor(wallLengthFeet / intervalFeet);
+
+            // Add intermediate points
+            for (int i = 1; i < numIntervals; i++)
+            {
+                double normalizedParameter = i * intervalFeet / wallLengthFeet;
+                XYZ point = wallCurve.Evaluate(normalizedParameter, true);
+                points.Add(point);
+            }
+
+            // Always include the end point (endpoint 1)
+            // Only add if it's not too close to the last added point
+            XYZ endPoint = wallCurve.GetEndPoint(1);
+            if (points[^1].DistanceTo(endPoint) > 0.01) // 0.01 feet threshold
+            {
+                points.Add(endPoint);
+            }
+
+            return points;
+        }
+
+        private void ProcessSingleRaycast(
+            WallInfo wallInfo,
+            Wall wall,
+            XYZ rayStart,
+            XYZ rayEnd,
+            List<Wall> allPerimeterWalls,
+            List<(Element element, Curve curve)> propertyLineCurves,
+            List<FamilyInstance> roadCenterlines,
+            HashSet<ElementId> referenceLineIdsChecked,
+            ReferenceLineStats stats,
+            List<(Wall wall, XYZ start, XYZ end, ElementId levelId)> raysToDrawn,
+            ElementId levelId,
+            string rayLabel)
+        {
+
+            var hitResult = CastRayAndFindIntersection(wall, rayStart, rayEnd, allPerimeterWalls, propertyLineCurves, roadCenterlines);
+
+            raysToDrawn.Add((wall, rayStart, rayEnd, levelId));
+
+            if (hitResult == null)
+            {
+                return;
+            }
+
+            // Check if this is a new reference line (for stats tracking)
+            bool isNewReferenceLine = !referenceLineIdsChecked.Contains(hitResult.ElementId);
+            if (isNewReferenceLine)
+            {
+                referenceLineIdsChecked.Add(hitResult.ElementId);
+                // Process hit result and update wall info (pass isNewReferenceLine for stats)
+                ProcessHitResult(wallInfo, wall, hitResult, rayEnd, stats, isNewReferenceLine);
+            }
+        }
+
+        private (XYZ rayStart, XYZ rayEnd) CalculateRayPointsFromPosition(Wall wall, XYZ position)
+        {
             // Get the wall's orientation vector (points from interior to exterior)
             var wallOrientation = wall.Orientation;
 
             // Project to 2D (XY plane) and normalize
             var normal = new XYZ(wallOrientation.X, wallOrientation.Y, 0).Normalize();
 
-            var rayEndPoint = midpoint + (normal * (_rayLengthLimit * 3.28084)); // meters to feet
+            var rayEndPoint = position + (normal * (_rayLengthLimit * 3.28084)); // meters to feet
 
-            return (midpoint, rayEndPoint);
+            return (position, rayEndPoint);
         }
 
-        private XYZ ProcessHitResult(
+        private void ProcessHitResult(
             WallInfo wallInfo,
-            ReferenceLineInfo? hitResult,
+            Wall wall,
+            ReferenceLineInfo hitResult,
             XYZ rayEnd,
-            HashSet<string> createdImaginaryLines,
-            ReferenceLineStats stats)
+            ReferenceLineStats stats,
+            bool isNewReferenceLine)
         {
-            if (hitResult == null || hitResult.IntersectionPoint == null)
+            if (hitResult.IntersectionPoint == null)
             {
                 _logger.LogWarning($"Wall {wallInfo.Wall.Id.Value}: No reference line hit");
-                return rayEnd;
+                return;
             }
 
-            var actualEndPoint = hitResult.IntersectionPoint;
-            var key = $"{hitResult.LineType}_{hitResult.ElementId.Value}";
-            ReferenceLineInfo canonicalReferenceLine;
-
-            if (!createdImaginaryLines.Contains(key))
+            // Add to reference lines collection only if it's new
+            if (isNewReferenceLine)
             {
-                // First time seeing this reference line - add it
                 _referenceLines.Add(hitResult);
-                createdImaginaryLines.Add(key);
-                canonicalReferenceLine = hitResult;
-
                 stats.IncrementCount(hitResult.LineType);
             }
-            else
+
+            // Calculate limiting distance using rectangle-based trimming approach
+            var locationCurve = wall.Location as LocationCurve;
+            if (locationCurve != null && hitResult.Curve != null)
             {
-                // Reference line already exists - find the canonical instance
-                canonicalReferenceLine = _referenceLines.First(rl =>
-                    rl.LineType == hitResult.LineType &&
-                    rl.ElementId.Value == hitResult.ElementId.Value);
+                var limitingDistance = CalculateLimitingDistanceWithRectangle(wallInfo, wall, locationCurve.Curve, hitResult.Curve);
+
+                if (limitingDistance.HasValue && (limitingDistance.Value < wallInfo.LimitingDistance || !wallInfo.LimitingDistance.HasValue))
+                {
+                    wallInfo.LimitingDistance = limitingDistance.Value;
+                    wallInfo.ReferenceLine = hitResult;
+                    return;
+                }
             }
 
-            // Assign the canonical instance to the wall
+            // Fallback to simple distance calculation if rectangle approach fails
             wallInfo.LimitingDistance = hitResult.Distance;
-            wallInfo.ReferenceLine = canonicalReferenceLine;
-            _logger.LogInformation($"Wall {wallInfo.Wall.Id.Value}: Limiting distance = {hitResult.Distance:F2} ft to {hitResult.LineTypeFormatted}");
+            wallInfo.ReferenceLine = hitResult;
 
-            return actualEndPoint;
+            return;
+        }
+
+        private double? CalculateLimitingDistanceWithRectangle(WallInfo wallInfo, Wall wall, Curve wallCurve, Curve referenceLine)
+        {
+            try
+            {
+                // Create rectangle based on wall segment
+                var rectangleBounds = CreateWallRectangle(wall, wallCurve);
+                if (rectangleBounds == null)
+                    return null;
+
+                // Draw debug rectangle if enabled
+                DrawDebugRectangle(wall, rectangleBounds.Value);
+
+                // Trim the reference line to the rectangle bounds
+                var trimmedCurve = TrimCurveToRectangle(referenceLine, rectangleBounds.Value);
+                if (trimmedCurve == null || trimmedCurve.Length < 0.001)
+                {
+                    _logger.LogInformation($"Reference line does not intersect wall rectangle");
+                    return null;
+                }
+
+                // Draw debug trimmed curve if enabled
+                DrawDebugTrimmedCurve(wall, trimmedCurve);
+
+                // Find the closest point on the trimmed curve to the wall
+                var (closestDistance, closestPointOnRefLine, closestPointOnWall) = FindClosestDistanceToWall(wallCurve, trimmedCurve);
+
+                // Draw debug line showing the limiting distance if enabled
+                if ((closestDistance < wallInfo.LimitingDistance || !wallInfo.LimitingDistance.HasValue) && closestPointOnRefLine != null && closestPointOnWall != null)
+                {
+                    DrawDebugDistanceLine(wall, closestPointOnWall, closestPointOnRefLine);
+                }
+
+                return closestDistance;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error calculating limiting distance with rectangle: {ex.Message}");
+                return null;
+            }
+        }
+
+        private (XYZ corner1, XYZ corner2, XYZ corner3, XYZ corner4)? CreateWallRectangle(Wall wall, Curve wallCurve)
+        {
+            try
+            {
+                // Get wall endpoints
+                var wallStart = wallCurve.GetEndPoint(0);
+                var wallEnd = wallCurve.GetEndPoint(1);
+
+                // Get wall orientation (normal pointing exterior)
+                var wallOrientation = wall.Orientation;
+                var normal2D = new XYZ(wallOrientation.X, wallOrientation.Y, 0).Normalize();
+
+                // Extend the rectangle in the direction of the wall orientation (exterior side)
+                // Use the ray length limit as the rectangle depth
+                var rectangleDepth = _rayLengthLimit * 3.28084; // meters to feet
+
+                // Calculate the 4 corners of the rectangle
+                // Corner 1 and 2 are on the wall line
+                var corner1 = new XYZ(wallStart.X, wallStart.Y, 0);
+                var corner2 = new XYZ(wallEnd.X, wallEnd.Y, 0);
+
+                // Corner 3 and 4 are extended in the normal direction
+                var corner3 = new XYZ(wallEnd.X, wallEnd.Y, 0) + (normal2D * rectangleDepth);
+                var corner4 = new XYZ(wallStart.X, wallStart.Y, 0) + (normal2D * rectangleDepth);
+
+                return (corner1, corner2, corner3, corner4);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error creating wall rectangle: {ex.Message}");
+                return null;
+            }
+        }
+
+        private Curve? TrimCurveToRectangle(Curve curve, (XYZ corner1, XYZ corner2, XYZ corner3, XYZ corner4) rectangle)
+        {
+            try
+            {
+                // Convert curve to 2D
+                var curve2D = ConvertCurveTo2D(curve);
+                if (curve2D == null)
+                    return null;
+
+                // Create the 4 edges of the rectangle as lines
+                var edge1 = Line.CreateBound(rectangle.corner1, rectangle.corner2); // Wall edge
+                var edge2 = Line.CreateBound(rectangle.corner2, rectangle.corner3); // Right edge
+                var edge3 = Line.CreateBound(rectangle.corner3, rectangle.corner4); // Far edge
+                var edge4 = Line.CreateBound(rectangle.corner4, rectangle.corner1); // Left edge
+
+                var intersectionPoints = new List<XYZ>();
+
+                // Find all intersection points with rectangle edges
+                foreach (var edge in new[] { edge1, edge2, edge3, edge4 })
+                {
+#pragma warning disable CS0618 // Type or member is obsolete
+                    var result = curve2D.Intersect(edge, out IntersectionResultArray results);
+#pragma warning restore CS0618 // Type or member is obsolete
+                    if (result == SetComparisonResult.Overlap && results != null)
+                    {
+                        for (int i = 0; i < results.Size; i++)
+                        {
+                            intersectionPoints.Add(results.get_Item(i).XYZPoint);
+                        }
+                    }
+                }
+
+                // Get curve endpoints
+                var curveStart = curve2D.GetEndPoint(0);
+                var curveEnd = curve2D.GetEndPoint(1);
+
+                // Check which endpoints are inside the rectangle
+                bool startInside = IsPointInRectangle(curveStart, rectangle);
+                bool endInside = IsPointInRectangle(curveEnd, rectangle);
+
+                // Add endpoints to trimming points if they're inside
+                var trimPoints = new List<XYZ>(intersectionPoints);
+                if (startInside)
+                    trimPoints.Add(curveStart);
+                if (endInside)
+                    trimPoints.Add(curveEnd);
+
+                // Need at least 2 points to create a trimmed curve
+                if (trimPoints.Count < 2)
+                {
+                    // No intersection and no endpoints inside - curve doesn't intersect rectangle
+                    return null;
+                }
+
+                // Sort points along the curve parameter
+                var sortedPoints = trimPoints
+                    .Select(pt => new { Point = pt, Param = curve2D.Project(pt).Parameter })
+                    .OrderBy(x => x.Param)
+                    .Select(x => x.Point)
+                    .ToList();
+
+                // Create trimmed curve from first to last point
+                var trimmedStart = sortedPoints.First();
+                var trimmedEnd = sortedPoints.Last();
+
+                // Check if start and end are too close
+                if (trimmedStart.DistanceTo(trimmedEnd) < 0.001)
+                {
+                    return null;
+                }
+
+                return Line.CreateBound(trimmedStart, trimmedEnd);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error trimming curve to rectangle: {ex.Message}");
+                return null;
+            }
+        }
+
+        private bool IsPointInRectangle(XYZ point, (XYZ corner1, XYZ corner2, XYZ corner3, XYZ corner4) rectangle)
+        {
+            // Use cross product to check if point is inside the rectangle
+            var p = new XYZ(point.X, point.Y, 0);
+
+            // Vector from corner1 to point
+            var v1 = p - rectangle.corner1;
+            // Vector along wall edge
+            var v2 = rectangle.corner2 - rectangle.corner1;
+            // Vector perpendicular to wall
+            var v3 = rectangle.corner4 - rectangle.corner1;
+
+            // Project point onto the two edge vectors
+            var dot1 = v1.DotProduct(v2) / v2.GetLength();
+            var dot2 = v1.DotProduct(v3) / v3.GetLength();
+
+            // Check if projections are within bounds
+            return dot1 >= 0 && dot1 <= v2.GetLength() &&
+                   dot2 >= 0 && dot2 <= v3.GetLength();
+        }
+
+        private (double distance, XYZ? pointOnRefLine, XYZ? pointOnWall) FindClosestDistanceToWall(Curve wallCurve, Curve trimmedReferenceLine)
+        {
+            // Check both endpoints of the trimmed reference line
+            var refLineStart = trimmedReferenceLine.GetEndPoint(0);
+            var refLineEnd = trimmedReferenceLine.GetEndPoint(1);
+
+            double minDistance = double.MaxValue;
+            XYZ? closestPointOnRefLine = null;
+            XYZ? closestPointOnWall = null;
+
+            // Check distance from reference line start point
+            var projectionStart = wallCurve.Project(refLineStart);
+            if (projectionStart != null)
+            {
+                double distance = projectionStart.Distance;
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    closestPointOnRefLine = refLineStart;
+                    closestPointOnWall = projectionStart.XYZPoint;
+                }
+            }
+
+            // Check distance from reference line end point
+            var projectionEnd = wallCurve.Project(refLineEnd);
+            if (projectionEnd != null)
+            {
+                double distance = projectionEnd.Distance;
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    closestPointOnRefLine = refLineEnd;
+                    closestPointOnWall = projectionEnd.XYZPoint;
+                }
+            }
+
+            return (minDistance, closestPointOnRefLine, closestPointOnWall);
+        }
+
+        private void DrawDebugDistanceLine(Wall wall, XYZ pointOnWall, XYZ pointOnRefLine)
+        {
+            try
+            {
+                var doc = wall.Document;
+                var levelId = wall.LookupParameter("Base Constraint")?.AsElementId();
+
+                if (levelId == null || levelId == ElementId.InvalidElementId)
+                {
+                    _logger.LogWarning($"Wall {wall.Id.Value} has no base constraint level, skipping distance line drawing");
+                    return;
+                }
+
+                var level = doc.GetElement(levelId) as Level;
+                if (level == null)
+                    return;
+
+                var floorPlan = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewPlan))
+                    .Cast<ViewPlan>()
+                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
+
+                if (floorPlan == null)
+                {
+                    _logger.LogWarning($"No floor plan found for level {level.Name}, skipping distance line drawing for wall {wall.Id.Value}");
+                    return;
+                }
+
+                // Create a 2D line from the two closest points
+                var pointOnWall2D = new XYZ(pointOnWall.X, pointOnWall.Y, 0);
+                var pointOnRefLine2D = new XYZ(pointOnRefLine.X, pointOnRefLine.Y, 0);
+
+                // Check minimum distance to avoid creating too-short lines
+                const double minLength = 0.003; // ~1/32 inch in feet
+                if (pointOnWall2D.DistanceTo(pointOnRefLine2D) < minLength)
+                {
+                    return;
+                }
+
+                using (Transaction trans = new Transaction(doc, "Draw Debug Distance Line"))
+                {
+                    trans.Start();
+                    try
+                    {
+                        var distanceLine = Line.CreateBound(pointOnWall2D, pointOnRefLine2D);
+                        var detailCurve = doc.Create.NewDetailCurve(floorPlan, distanceLine);
+
+                        // Apply green color override
+                        var overrideSettings = new OverrideGraphicSettings();
+                        var green = new Autodesk.Revit.DB.Color(0, 255, 0);
+                        overrideSettings.SetProjectionLineColor(green);
+                        overrideSettings.SetProjectionLineWeight(5);
+                        floorPlan.SetElementOverrides(detailCurve.Id, overrideSettings);
+
+                        _logger.LogInformation($"Drew debug distance line for wall {wall.Id.Value} on {floorPlan.Name}");
+                        trans.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"Failed to draw debug distance line: {ex.Message}");
+                        trans.RollBack();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error in DrawDebugDistanceLine: {ex.Message}");
+            }
         }
 
         private void DrawReferenceLineArrows(Document doc, List<(Wall wall, XYZ start, XYZ end, ElementId levelId)> raysToDrawn)
@@ -423,6 +803,16 @@ namespace BoltFramePlugin.EventHandlers
             }
         }
 
+        /// <summary>
+        /// Casts a ray from rayStart to rayEnd and finds the closest intersection with walls, property lines, or road centerlines.
+        /// </summary>
+        /// <param name="sourceWall">The wall from which the ray is cast.</param>
+        /// <param name="rayStart">The starting point of the ray.</param>
+        /// <param name="rayEnd">The ending point of the ray.</param>
+        /// <param name="allWalls">All walls in the document.</param>
+        /// <param name="propertyLineCurves">All property line curves in the document.</param>
+        /// <param name="roadCenterlines">All road centerlines in the document.</param>
+        /// <returns>The closest intersection information, if found.</returns>
         private ReferenceLineInfo? CastRayAndFindIntersection(
             Wall sourceWall,
             XYZ rayStart,
@@ -441,13 +831,30 @@ namespace BoltFramePlugin.EventHandlers
 
                 var sourceLevelId = GetWallBaseLevelId(sourceWall);
 
+                _logger.LogInformation($"  Checking intersections for wall {sourceWall.Id.Value}: {allWalls.Count} walls, {propertyLineCurves.Count} property lines, {roadCenterlines.Count} road CLs");
+
                 // Collect all intersection hits
                 CheckWallIntersections(sourceWall, rayStart, ray2D, allWalls, sourceLevelId, allHits);
+                _logger.LogInformation($"    After wall check: {allHits.Count} hits");
+
                 CheckPropertyLineIntersections(rayStart, ray2D, propertyLineCurves, allHits);
+                _logger.LogInformation($"    After property line check: {allHits.Count} hits");
+
                 CheckRoadCenterlineIntersections(rayStart, ray2D, roadCenterlines, allHits);
+                _logger.LogInformation($"    After road CL check: {allHits.Count} hits");
 
                 // Select and return the best hit based on priority
-                return SelectBestHit(allHits);
+                var bestHit = SelectBestHit(allHits);
+                if (bestHit != null)
+                {
+                    _logger.LogInformation($"  Selected best hit: {bestHit.Name} at distance {bestHit.Distance:F2} ft");
+                }
+                else
+                {
+                    _logger.LogInformation($"  No hits found for wall {sourceWall.Id.Value}");
+                }
+
+                return bestHit;
             }
             catch (Exception ex)
             {
@@ -467,15 +874,13 @@ namespace BoltFramePlugin.EventHandlers
             string? targetFireCompartment = targetWall.LookupParameter("FireCompartment")?.AsString();
             string? sourceFireCompartment = sourceWall.LookupParameter("FireCompartment")?.AsString();
 
-            // If target wall doesn't have FireCompartment value, skip it (treat as same compartment)
-            if (string.IsNullOrEmpty(targetFireCompartment))
+            // If either wall doesn't have FireCompartment value, skip this wall (treat as same compartment)
+            if (string.IsNullOrEmpty(targetFireCompartment) || string.IsNullOrEmpty(sourceFireCompartment))
                 return false;
 
-            // If target has value but source doesn't, they're in different compartments
-            if (string.IsNullOrEmpty(sourceFireCompartment))
-                return true;
-
             // Both have values - compare them
+            // Return true if DIFFERENT compartments (should check)
+            // Return false if SAME compartments (skip - don't check)
             return targetFireCompartment != sourceFireCompartment;
         }
 
@@ -487,29 +892,59 @@ namespace BoltFramePlugin.EventHandlers
             ElementId sourceLevelId,
             List<ReferenceLineInfo> allHits)
         {
+            int sameWallSkipped = 0;
+            int sameFireCompartmentSkipped = 0;
+            int differentLevelSkipped = 0;
+            int noCurveSkipped = 0;
+            int noIntersectionSkipped = 0;
+            int tooCloseSkipped = 0;
+            int hitsAdded = 0;
+
             foreach (var wall in allWalls)
             {
-                // Skip if same wall or same fire compartment
-                if (wall.Id == sourceWall.Id || !ShouldCheckFireCompartment(sourceWall, wall))
+                // Skip if same wall
+                if (wall.Id == sourceWall.Id)
+                {
+                    sameWallSkipped++;
                     continue;
+                }
+
+                // Skip if same fire compartment
+                if (!ShouldCheckFireCompartment(sourceWall, wall))
+                {
+                    sameFireCompartmentSkipped++;
+                    continue;
+                }
 
                 // Only check walls on the same level
                 var wallLevelId = GetWallBaseLevelId(wall);
                 if (sourceLevelId != wallLevelId)
+                {
+                    differentLevelSkipped++;
                     continue;
+                }
 
                 // Get wall curve and check intersection
                 var wallCurve2D = GetWallCurve2D(wall);
                 if (wallCurve2D == null)
+                {
+                    noCurveSkipped++;
                     continue;
+                }
 
                 var intersection = FindIntersection(ray2D, wallCurve2D);
                 if (intersection == null)
+                {
+                    noIntersectionSkipped++;
                     continue;
+                }
 
                 var distance = Calculate2DDistance(rayStart, intersection);
                 if (distance <= 0.01) // Minimum distance check
+                {
+                    tooCloseSkipped++;
                     continue;
+                }
 
                 var imaginaryLine = Line.CreateBound(rayStart, intersection);
                 allHits.Add(new ReferenceLineInfo
@@ -523,7 +958,10 @@ namespace BoltFramePlugin.EventHandlers
                     IntersectionPoint = intersection,
                     Distance = distance
                 });
+                hitsAdded++;
             }
+
+            _logger.LogInformation($"      Wall intersection stats: Same={sameWallSkipped}, SameFireComp={sameFireCompartmentSkipped}, DiffLevel={differentLevelSkipped}, NoCurve={noCurveSkipped}, NoIntersect={noIntersectionSkipped}, TooClose={tooCloseSkipped}, HitsAdded={hitsAdded}");
         }
 
         private void CheckPropertyLineIntersections(
@@ -682,6 +1120,192 @@ namespace BoltFramePlugin.EventHandlers
 
             // Priority 2: Property lines (only if no other hits)
             return nonPropertyLineHit ?? sortedHits.First();
+        }
+
+        private void DrawDebugRectangle(Wall wall, (XYZ corner1, XYZ corner2, XYZ corner3, XYZ corner4) rectangle)
+        {
+            try
+            {
+                var doc = _uidoc.Document;
+                var levelId = GetWallBaseLevelId(wall);
+
+                if (levelId == ElementId.InvalidElementId)
+                    return;
+
+                // Find floor plan for this level
+                var floorPlan = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewPlan))
+                    .Cast<ViewPlan>()
+                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
+
+                if (floorPlan == null)
+                {
+                    _logger.LogWarning($"No floor plan found for wall {wall.Id.Value}, skipping debug rectangle");
+                    return;
+                }
+
+                using (Transaction trans = new Transaction(doc, "Draw Debug Rectangle"))
+                {
+                    trans.Start();
+                    try
+                    {
+                        // Draw the 4 edges of the rectangle in a different color/style
+                        var edge1 = Line.CreateBound(rectangle.corner1, rectangle.corner2);
+                        var edge2 = Line.CreateBound(rectangle.corner2, rectangle.corner3);
+                        var edge3 = Line.CreateBound(rectangle.corner3, rectangle.corner4);
+                        var edge4 = Line.CreateBound(rectangle.corner4, rectangle.corner1);
+
+                        doc.Create.NewDetailCurve(floorPlan, edge1);
+                        doc.Create.NewDetailCurve(floorPlan, edge2);
+                        doc.Create.NewDetailCurve(floorPlan, edge3);
+                        doc.Create.NewDetailCurve(floorPlan, edge4);
+
+                        _logger.LogInformation($"Drew debug rectangle for wall {wall.Id.Value} on {floorPlan.Name}");
+                        trans.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"Failed to draw debug rectangle: {ex.Message}");
+                        trans.RollBack();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error in DrawDebugRectangle: {ex.Message}");
+            }
+        }
+
+        private void DrawDebugTrimmedCurve(Wall wall, Curve trimmedCurve)
+        {
+            try
+            {
+                var doc = _uidoc.Document;
+                var levelId = GetWallBaseLevelId(wall);
+
+                if (levelId == ElementId.InvalidElementId)
+                    return;
+
+                // Find floor plan for this level
+                var floorPlan = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewPlan))
+                    .Cast<ViewPlan>()
+                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
+
+                if (floorPlan == null)
+                {
+                    _logger.LogWarning($"No floor plan found for wall {wall.Id.Value}, skipping debug trimmed curve");
+                    return;
+                }
+
+                using (Transaction trans = new Transaction(doc, "Draw Debug Trimmed Curve"))
+                {
+                    trans.Start();
+                    try
+                    {
+                        // Create the trimmed curve as a detail line
+                        var detailLine = doc.Create.NewDetailCurve(floorPlan, trimmedCurve);
+
+                        // Create red color override
+                        var overrideSettings = new OverrideGraphicSettings();
+                        var red = new Autodesk.Revit.DB.Color(255, 0, 0); // RGB: Red
+                        overrideSettings.SetProjectionLineColor(red);
+                        overrideSettings.SetProjectionLineWeight(5); // Make it thicker for visibility
+
+                        // Apply override to the detail line
+                        floorPlan.SetElementOverrides(detailLine.Id, overrideSettings);
+
+                        // Add markers at the endpoints
+                        var start = trimmedCurve.GetEndPoint(0);
+                        var end = trimmedCurve.GetEndPoint(1);
+
+                        // Draw small circles at endpoints (also in red)
+                        double markerRadius = 0.5; // feet
+                        var startMarkers = DrawCircleMarkerWithOverride(doc, floorPlan, start, markerRadius);
+                        var endMarkers = DrawCircleMarkerWithOverride(doc, floorPlan, end, markerRadius);
+
+                        // Apply red override to markers
+                        foreach (var marker in startMarkers.Concat(endMarkers))
+                        {
+                            floorPlan.SetElementOverrides(marker.Id, overrideSettings);
+                        }
+
+                        _logger.LogInformation($"Drew debug trimmed curve (RED) for wall {wall.Id.Value} on {floorPlan.Name}");
+                        trans.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning($"Failed to draw debug trimmed curve: {ex.Message}");
+                        trans.RollBack();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error in DrawDebugTrimmedCurve: {ex.Message}");
+            }
+        }
+
+        private void DrawCircleMarker(Document doc, ViewPlan view, XYZ center, double radius)
+        {
+            // Draw a small cross marker instead of a circle (simpler)
+            var center2D = new XYZ(center.X, center.Y, 0);
+
+            var line1 = Line.CreateBound(
+                center2D + new XYZ(radius, 0, 0),
+                center2D - new XYZ(radius, 0, 0));
+            var line2 = Line.CreateBound(
+                center2D + new XYZ(0, radius, 0),
+                center2D - new XYZ(0, radius, 0));
+
+            doc.Create.NewDetailCurve(view, line1);
+            doc.Create.NewDetailCurve(view, line2);
+        }
+
+        private List<DetailCurve> DrawCircleMarkerWithOverride(Document doc, ViewPlan view, XYZ center, double radius)
+        {
+            // Draw a circle using 4 arc segments
+            var center2D = new XYZ(center.X, center.Y, 0);
+            var detailCurves = new List<DetailCurve>();
+
+            try
+            {
+                // Create 4 quarter arcs to form a complete circle
+                // Top-right quarter (0° to 90°)
+                var p1 = center2D + new XYZ(radius, 0, 0);
+                var p2 = center2D + new XYZ(0, radius, 0);
+                var arc1 = Arc.Create(p1, p2, center2D + new XYZ(radius, radius, 0).Normalize() * radius);
+                detailCurves.Add(doc.Create.NewDetailCurve(view, arc1));
+
+                // Top-left quarter (90° to 180°)
+                var p3 = center2D + new XYZ(-radius, 0, 0);
+                var arc2 = Arc.Create(p2, p3, center2D + new XYZ(-radius, radius, 0).Normalize() * radius);
+                detailCurves.Add(doc.Create.NewDetailCurve(view, arc2));
+
+                // Bottom-left quarter (180° to 270°)
+                var p4 = center2D + new XYZ(0, -radius, 0);
+                var arc3 = Arc.Create(p3, p4, center2D + new XYZ(-radius, -radius, 0).Normalize() * radius);
+                detailCurves.Add(doc.Create.NewDetailCurve(view, arc3));
+
+                // Bottom-right quarter (270° to 360°)
+                var arc4 = Arc.Create(p4, p1, center2D + new XYZ(radius, -radius, 0).Normalize() * radius);
+                detailCurves.Add(doc.Create.NewDetailCurve(view, arc4));
+            }
+            catch (Exception)
+            {
+                // If arc creation fails, fall back to cross marker
+                var line1 = Line.CreateBound(
+                    center2D + new XYZ(radius, 0, 0),
+                    center2D - new XYZ(radius, 0, 0));
+                var line2 = Line.CreateBound(
+                    center2D + new XYZ(0, radius, 0),
+                    center2D - new XYZ(0, radius, 0));
+
+                detailCurves.Add(doc.Create.NewDetailCurve(view, line1));
+                detailCurves.Add(doc.Create.NewDetailCurve(view, line2));
+            }
+
+            return detailCurves;
         }
 
         public string GetName()

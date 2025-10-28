@@ -47,7 +47,7 @@ namespace BoltFramePlugin.Models.LimitingDistance
             {
                 if (_occupantGroup != value)
                 {
-                    _logger?.LogInformation($"WallInfo {ElementId?.Value}: OccupantGroup changing from '{_occupantGroup}' to '{value}'");
+                    // _logger?.LogInformation($"WallInfo {ElementId?.Value}: OccupantGroup changing from '{_occupantGroup}' to '{value}'");
                     _occupantGroup = value;
                     OnPropertyChanged(nameof(OccupantGroup));
 
@@ -106,16 +106,7 @@ namespace BoltFramePlugin.Models.LimitingDistance
 
         protected virtual void OnPropertyChanged(string propertyName)
         {
-            _logger?.LogInformation($"WallInfo.OnPropertyChanged: Property '{propertyName}' changed for wall {ElementId?.Value}");
-
-            if (PropertyChanged == null)
-            {
-                _logger?.LogWarning($"WallInfo.OnPropertyChanged: WARNING - No PropertyChanged subscribers for wall {ElementId?.Value}");
-            }
-
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-
-            _logger?.LogInformation($"WallInfo.OnPropertyChanged: PropertyChanged event invoked for '{propertyName}'");
         }
     }
 }

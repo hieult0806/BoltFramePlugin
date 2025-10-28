@@ -81,30 +81,18 @@ namespace BoltFramePlugin.EventHandlers
 
                 var doc = _uidoc.Document;
 
-                _logger.LogInformation("Starting limiting distance calculation");
-                CalculateLimitingDistances();
+                _logger.LogInformation("Starting grouping by orientation");
+                var orientationGroups = GroupWallsByOrientation(_perimeterWalls);
+                _logger.LogInformation($"Created {orientationGroups.Count} orientation groups");
 
-                _logger.LogInformation("Starting wall filtering");
-                var wallsToProject = FilterWallsByOrientation();
-
-                if (wallsToProject.Count == 0)
+                if (orientationGroups.Count == 0)
                 {
-                    _logger.LogWarning("No walls to project after filtering");
-                    return;
-                }
-
-                _logger.LogInformation("Starting grouping by reference lines");
-                var referenceLineGroups = GroupWallsByReferenceLine(wallsToProject);
-                _logger.LogInformation($"Created {referenceLineGroups.Count} reference line groups");
-
-                if (referenceLineGroups.Count == 0)
-                {
-                    TaskDialog.Show("Info", "No reference line groups created. Ensure reference lines have been detected.");
+                    TaskDialog.Show("Info", "No orientation groups created. Ensure walls have valid orientations.");
                     return;
                 }
 
                 _logger.LogInformation("Starting view and region creation");
-                CreateViewsAndRegions(doc, referenceLineGroups);
+                CreateViewsAndRegions(doc, orientationGroups);
 
                 _logger.LogInformation("Execute completed successfully");
             }
@@ -141,227 +129,129 @@ namespace BoltFramePlugin.EventHandlers
 
         #region Limiting Distance Calculation
 
-        /// <summary>
-        /// Calculates limiting distances for all perimeter walls
-        /// </summary>
-        private void CalculateLimitingDistances()
-        {
-            _logger.LogInformation("Calculating limiting distances for walls...");
-
-            // Skip recalculation if walls already have reference lines assigned from detection
-            bool allWallsHaveReferenceLines = _perimeterWalls.All(w => w.ReferenceLine != null);
-            if (allWallsHaveReferenceLines)
-            {
-                _logger.LogInformation("All walls already have reference lines assigned from detection - skipping recalculation");
-                return;
-            }
-
-            foreach (var wallInfo in _perimeterWalls)
-            {
-                CalculateWallLimitingDistance(wallInfo);
-            }
-        }
-
-        /// <summary>
-        /// Calculates the limiting distance for a single wall
-        /// </summary>
-        private void CalculateWallLimitingDistance(WallInfo wallInfo)
-        {
-            var wall = wallInfo.Wall;
-
-            // Set wall orientation
-            var wallOrientation = wall.Orientation;
-            wallInfo.Orientation = new XYZ(wallOrientation.X, wallOrientation.Y, 0).Normalize();
-
-            // Find reference line for this wall
-            var referenceLine = _referenceLines.FirstOrDefault(rl =>
-                rl.LineType != ReferenceLineType.ImaginaryLine);
-
-            if (referenceLine != null && referenceLine.IntersectionPoint != null)
-            {
-                var locationCurve = wall.Location as LocationCurve;
-                if (locationCurve != null)
-                {
-                    var wallCurve = locationCurve.Curve;
-                    var midpoint = wallCurve.Evaluate(0.5, true);
-                    var distance = midpoint.DistanceTo(referenceLine.IntersectionPoint);
-
-                    wallInfo.LimitingDistance = distance;
-                    wallInfo.ReferenceLine = referenceLine;
-
-                    _logger.LogInformation($"Wall {wall.Id.Value}: Limiting distance = {distance:F2} ft");
-                }
-            }
-        }
-
         #endregion
 
         #region Wall Filtering and Grouping
 
         /// <summary>
-        /// Filters walls by orientation based on the selected distance group
+        /// Groups walls by their orientation
+        /// Creates groups of walls with similar orientations (parallel/anti-parallel)
         /// </summary>
-        private List<WallInfo> FilterWallsByOrientation()
-        {
-            if (_distanceGroup != null)
-            {
-                var filtered = _perimeterWalls
-                    .Where(w => w.LimitingDistance.HasValue &&
-                               w.Orientation != null &&
-                               GetOrientationDescription(w.Orientation) == _distanceGroup.Orientation)
-                    .ToList();
-
-                _logger.LogInformation($"Filtered {filtered.Count} walls with orientation {_distanceGroup.Orientation}");
-
-                if (filtered.Count == 0)
-                {
-                    TaskDialog.Show("Info", $"No walls found with orientation {_distanceGroup.Orientation}");
-                }
-
-                return filtered;
-            }
-
-            return _perimeterWalls;
-        }
-
-        /// <summary>
-        /// Groups walls by their associated reference line
-        /// Creates one group per reference line for section views parallel to that line
-        /// </summary>
-        private List<WallGroup> GroupWallsByReferenceLine(List<WallInfo> walls)
+        private List<WallGroup> GroupWallsByOrientation(List<WallInfo> walls)
         {
             var groups = new List<WallGroup>();
 
-            _logger.LogInformation($"GroupWallsByReferenceLine: Processing {_referenceLines.Count} reference lines with {walls.Count} walls");
+            _logger.LogInformation($"GroupWallsByOrientation: Processing {walls.Count} walls");
 
-            // Log all walls and their assigned reference lines
-            _logger.LogInformation("=== Wall to Reference Line Assignments ===");
-            foreach (var wall in walls)
+            // Log all walls and their orientations
+            _logger.LogInformation("=== Wall Orientations ===");
+            foreach (var wallInfo in walls)
             {
-                if (wall.ReferenceLine != null)
-                {
-                    _logger.LogInformation($"  Wall {wall.Wall.Id.Value} -> {wall.ReferenceLine.Name}");
-                }
-                else
-                {
-                    _logger.LogWarning($"  Wall {wall.Wall.Id.Value} -> NO REFERENCE LINE");
-                }
+                _logger.LogInformation($"  Wall {wallInfo.Wall.Id.Value} -> Orientation: X={wallInfo.Orientation.X:F3}, Y={wallInfo.Orientation.Y:F3}");
             }
-            _logger.LogInformation("==========================================");
+            _logger.LogInformation("=========================");
 
-            // Group walls by reference line
-            foreach (var referenceLine in _referenceLines)
+            // Group walls by similar orientation
+            var ungroupedWalls = new List<WallInfo>(walls);
+            int groupIndex = 1;
+
+            while (ungroupedWalls.Count > 0)
             {
-                _logger.LogInformation($"Processing reference line: '{referenceLine.Name}'");
+                var seedWall = ungroupedWalls[0];
+                var seedOrientation = seedWall.Wall.Orientation;
 
-                // Get the reference line direction
-                var lineDirection = GetReferenceLineDirection(referenceLine);
-                if (lineDirection == null)
+                if (seedOrientation == null)
                 {
-                    _logger.LogWarning($"Skipping reference line '{referenceLine.Name}' - could not get direction");
+                    _logger.LogWarning($"Skipping wall {seedWall.Wall.Id.Value} - could not get orientation");
+                    ungroupedWalls.RemoveAt(0);
                     continue;
                 }
 
-                _logger.LogInformation($"Reference line '{referenceLine.Name}' direction: X={lineDirection.X:F3}, Y={lineDirection.Y:F3}");
+                _logger.LogInformation($"Creating group {groupIndex} with seed wall {seedWall.Wall.Id.Value}, orientation: X={seedOrientation.X:F3}, Y={seedOrientation.Y:F3}");
 
-                // Find all walls that detected (hit) this specific reference line
-                // wallInfo.ReferenceLine is set when the wall's ray hits the reference line during detection
-                // Use reference equality since we now ensure all walls share the same canonical instance
-                var wallsForThisLine = walls.Where(w =>
-                    w.ReferenceLine != null &&
-                    ReferenceEquals(w.ReferenceLine, referenceLine))
-                    .ToList();
+                // Find all walls with similar orientation
+                var groupWalls = new List<WallInfo>();
+                var wallsToRemove = new List<WallInfo>();
 
-                _logger.LogInformation($"Reference line '{referenceLine.Name}': Found {wallsForThisLine.Count} walls that detected this reference line");
-
-                if (wallsForThisLine.Count > 0)
+                foreach (var wallInfo in ungroupedWalls)
                 {
-                    var wallIds = string.Join(", ", wallsForThisLine.Select(w => w.Wall.Id.Value));
-                    _logger.LogInformation($"  Walls: {wallIds}");
+                    var wallOrientation = wallInfo.Wall.Orientation;
+
+                    // Check if orientations are similar (within tolerance)
+                    if (AreOrientationsSimilar(seedOrientation, wallOrientation))
+                    {
+                        groupWalls.Add(wallInfo);
+                        wallsToRemove.Add(wallInfo);
+                        _logger.LogInformation($"  Added wall {wallInfo.Wall.Id.Value} to group {groupIndex}");
+                    }
                 }
 
-                if (wallsForThisLine.Count > 0)
+                // Remove grouped walls from ungrouped list
+                foreach (var wall in wallsToRemove)
                 {
-                    // For imaginary lines, the line direction is perpendicular to the walls
-                    // We need to rotate 90 degrees to get the direction parallel to the walls
-                    XYZ groupOrientation;
-                    if (referenceLine.LineType == ReferenceLineType.ImaginaryLine)
-                    {
-                        // Rotate 90 degrees: (x, y) -> (-y, x)
-                        groupOrientation = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
-                        _logger.LogInformation($"Imaginary line detected - rotated orientation to: X={groupOrientation.X:F3}, Y={groupOrientation.Y:F3}");
-                    }
-                    else
-                    {
-                        // For property lines and road centerlines, use direction as-is
-                        groupOrientation = lineDirection;
-                    }
+                    ungroupedWalls.Remove(wall);
+                }
+
+                if (groupWalls.Count > 0)
+                {
+                    // Calculate average orientation for the group
+                    var avgOrientation = CalculateAverageOrientation(groupWalls.Select(w => w.Wall.Orientation).ToList());
+
+                    // Calculate average limiting distance
+                    var avgLimitingDistance = groupWalls.Average(w => w.LimitingDistance ?? 0);
 
                     var newGroup = new WallGroup
                     {
-                        LimitingDistance = wallsForThisLine.Average(w => w.LimitingDistance ?? 0),
-                        Orientation = groupOrientation,
-                        ReferenceLine = referenceLine
+                        LimitingDistance = avgLimitingDistance,
+                        Orientation = avgOrientation,
+                        ReferenceLine = groupWalls.FirstOrDefault()?.ReferenceLine, // Use reference line from first wall
+                        GroupName = $"Orientation Group {groupIndex} ({groupWalls.Count} walls)"
                     };
 
-                    foreach (var wallInfo in wallsForThisLine)
+                    foreach (var wallInfo in groupWalls)
                     {
                         newGroup.Walls.Add(wallInfo);
                     }
 
-                    newGroup.GroupName = $"Reference Line - {referenceLine.Name}";
                     groups.Add(newGroup);
-
-                    _logger.LogInformation($"Created group for reference line '{referenceLine.Name}' with {wallsForThisLine.Count} walls");
-                }
-                else
-                {
-                    _logger.LogWarning($"Skipping reference line '{referenceLine.Name}' - no parallel walls found within {ORIENTATION_TOLERANCE_DEGREES}° tolerance");
+                    _logger.LogInformation($"Created orientation group {groupIndex} with {groupWalls.Count} walls, avg LD: {avgLimitingDistance:F2} ft");
+                    groupIndex++;
                 }
             }
 
-            _logger.LogInformation($"GroupWallsByReferenceLine: Created {groups.Count} groups total");
+            _logger.LogInformation($"GroupWallsByOrientation: Created {groups.Count} groups total");
 
             return groups;
         }
 
-        /// <summary>
-        /// Gets the direction vector of a reference line
-        /// </summary>
-        private XYZ? GetReferenceLineDirection(ReferenceLineInfo referenceLine)
+        private bool AreOrientationsSimilar(XYZ orientation1, XYZ orientation2)
         {
-            try
-            {
-                if (referenceLine?.Curve == null)
-                    return null;
+            // Calculate angle between orientations
+            var dotProduct = Math.Abs(orientation1.DotProduct(orientation2));
+            var angle = Math.Acos(Math.Min(1.0, dotProduct)) * (180.0 / Math.PI);
 
-                // Get the curve direction and project to XY plane
-                var direction = (referenceLine.Curve.GetEndPoint(1) - referenceLine.Curve.GetEndPoint(0)).Normalize();
-                return new XYZ(direction.X, direction.Y, 0).Normalize();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error getting reference line direction: {ex.Message}", ex);
-                return null;
-            }
+            // Check if angle is within tolerance (walls are parallel or anti-parallel)
+            return angle <= ORIENTATION_TOLERANCE_DEGREES || angle >= (180.0 - ORIENTATION_TOLERANCE_DEGREES);
         }
 
-        /// <summary>
-        /// Gets a cardinal direction description for an orientation vector
-        /// </summary>
-        private static string GetOrientationDescription(XYZ? orientation)
+        private XYZ CalculateAverageOrientation(List<XYZ> orientations)
         {
-            if (orientation == null)
-                return "Unknown";
+            if (orientations.Count == 0)
+                return XYZ.BasisX;
 
-            var normal = new XYZ(orientation.X, orientation.Y, 0).Normalize();
-            var absX = Math.Abs(normal.X);
-            var absY = Math.Abs(normal.Y);
+            // Normalize all orientations to point in similar direction (avoid averaging opposite vectors)
+            var reference = orientations[0];
+            var normalizedOrientations = orientations.Select(o =>
+            {
+                // If dot product is negative, flip the orientation
+                return o.DotProduct(reference) < 0 ? o.Negate() : o;
+            }).ToList();
 
-            if (absY > absX)
-                return normal.Y > 0 ? "North" : "South";
-            else
-                return normal.X > 0 ? "East" : "West";
+            // Calculate average
+            var sumX = normalizedOrientations.Sum(o => o.X);
+            var sumY = normalizedOrientations.Sum(o => o.Y);
+
+            return new XYZ(sumX, sumY, 0).Normalize();
         }
 
         #endregion
