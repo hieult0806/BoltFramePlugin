@@ -603,8 +603,12 @@ namespace BoltFramePlugin.EventHandlers
                     trans.Start();
                     try
                     {
-                        var distanceLine = Line.CreateBound(pointOnWall2D, pointOnRefLine2D);
+                        var wallCurve = (wall.Location as LocationCurve);
+                        XYZ wallPos = wallCurve.Curve.Evaluate(0.5, true);
+                        Line distanceLine = Line.CreateBound(pointOnRefLine2D, pointOnRefLine2D + RotatePoint(wall.Orientation.Normalize()) * wallCurve.Curve.Length);
                         var detailCurve = doc.Create.NewDetailCurve(floorPlan, distanceLine);
+
+                        // CreateWallToLineAlignedDim(doc, floorPlan, wall, distanceLine);
 
                         // Apply green color override
                         var overrideSettings = new OverrideGraphicSettings();
@@ -627,6 +631,45 @@ namespace BoltFramePlugin.EventHandlers
             {
                 _logger.LogWarning($"Error in DrawDebugDistanceLine: {ex.Message}");
             }
+        }
+
+        // Rotate a XYZ point 90 degrees around Z axis
+        private XYZ RotatePoint(XYZ point)
+        {
+            return new XYZ(-point.Y, point.X, point.Z);
+        }
+
+        public static Dimension CreateWallToLineAlignedDim(
+    Document doc, ViewPlan view, Wall w1, Line dLine)
+        {
+            // 1) Lấy reference mặt ngoài của mỗi tường
+            Reference r1 = HostObjectUtils.GetSideFaces(w1, ShellLayerType.Exterior).First();
+            Reference r2 = dLine.Reference;
+
+            // 2) Xác định hướng đo & đường dim:
+            //    - Hướng đo là "pháp tuyến phẳng" của tường (Orientation)
+            //    - Chọn midpoint giữa 2 đường tim để vẽ line đủ dài theo hướng đo
+            var lc1 = (w1.Location as LocationCurve)!.Curve;
+
+            XYZ mid = 0.5 * (lc1.Evaluate(0.5, true) + dLine.Evaluate(0.5, true));
+            XYZ measureDir = w1.Orientation;             // vuông góc mặt tường (hướng ra exterior)
+            double L = 100;                               // chiều dài đường dim (feet) đủ lớn
+            Line dimLine = Line.CreateBound(mid - measureDir * L, mid + measureDir * L);
+
+            // 3) Tạo Dimension
+            var refs = new ReferenceArray();
+            refs.Append(r1);
+            refs.Append(r2);
+
+            return doc.Create.NewDimension(view, dimLine, refs);
+
+            // using (var t = new Transaction(doc, "Dim Wall↔Wall"))
+            // {
+            //     t.Start();
+            //     Dimension dim = doc.Create.NewDimension(view, dimLine, refs);
+            //     t.Commit();
+            //     return dim;
+            // }
         }
 
         private void DrawReferenceLineArrows(Document doc, List<(Wall wall, XYZ start, XYZ end, ElementId levelId)> raysToDrawn)
@@ -834,14 +877,11 @@ namespace BoltFramePlugin.EventHandlers
                 _logger.LogInformation($"  Checking intersections for wall {sourceWall.Id.Value}: {allWalls.Count} walls, {propertyLineCurves.Count} property lines, {roadCenterlines.Count} road CLs");
 
                 // Collect all intersection hits
-                CheckWallIntersections(sourceWall, rayStart, ray2D, allWalls, sourceLevelId, allHits);
-                _logger.LogInformation($"    After wall check: {allHits.Count} hits");
-
-                CheckPropertyLineIntersections(rayStart, ray2D, propertyLineCurves, allHits);
-                _logger.LogInformation($"    After property line check: {allHits.Count} hits");
-
-                CheckRoadCenterlineIntersections(rayStart, ray2D, roadCenterlines, allHits);
-                _logger.LogInformation($"    After road CL check: {allHits.Count} hits");
+                if (CheckWallIntersections(sourceWall, rayStart, ray2D, allWalls, sourceLevelId, allHits))
+                {
+                    CheckPropertyLineIntersections(rayStart, ray2D, propertyLineCurves, allHits);
+                    CheckRoadCenterlineIntersections(rayStart, ray2D, roadCenterlines, allHits);
+                }
 
                 // Select and return the best hit based on priority
                 var bestHit = SelectBestHit(allHits);
@@ -884,84 +924,73 @@ namespace BoltFramePlugin.EventHandlers
             return targetFireCompartment != sourceFireCompartment;
         }
 
-        private void CheckWallIntersections(
-            Wall sourceWall,
-            XYZ rayStart,
-            Line ray2D,
-            List<Wall> allWalls,
-            ElementId sourceLevelId,
-            List<ReferenceLineInfo> allHits)
+        private bool CheckWallIntersections(
+    Wall sourceWall,
+    XYZ rayStart,
+    Line ray2D,
+    IReadOnlyList<Wall> allWalls,
+    ElementId sourceLevelId,
+    List<ReferenceLineInfo> allHits)
         {
-            int sameWallSkipped = 0;
-            int sameFireCompartmentSkipped = 0;
-            int differentLevelSkipped = 0;
-            int noCurveSkipped = 0;
-            int noIntersectionSkipped = 0;
-            int tooCloseSkipped = 0;
-            int hitsAdded = 0;
+            const double MinDist = 0.01; // ~3 mm (feet)
+            int sameWallSkipped = 0, sameFireCompartmentSkipped = 0, differentLevelSkipped = 0,
+                noCurveSkipped = 0, noIntersectionSkipped = 0, tooCloseSkipped = 0, hitsAdded = 0;
 
             foreach (var wall in allWalls)
             {
-                // Skip if same wall
-                if (wall.Id == sourceWall.Id)
-                {
-                    sameWallSkipped++;
-                    continue;
-                }
+                // 1) Bỏ qua chính nó
+                if (wall.Id == sourceWall.Id) { sameWallSkipped++; continue; }
 
-                // Skip if same fire compartment
+                // 2) Khác level
+                if (GetWallBaseLevelId(wall) != sourceLevelId) { differentLevelSkipped++; continue; }
+
+                // 3) Lấy curve 2D của tường
+                var wallCurve2D = GetWallCurve2D(wall);
+                if (wallCurve2D == null) { noCurveSkipped++; continue; }
+
+                // 4) Tính giao với tia 2D
+                var ip = FindIntersection(ray2D, wallCurve2D);
+                if (ip == null) { noIntersectionSkipped++; continue; }
+
+                // 5) Nếu cùng fire compartment → chặn và kết thúc sớm
                 if (!ShouldCheckFireCompartment(sourceWall, wall))
                 {
                     sameFireCompartmentSkipped++;
-                    continue;
+                    _logger.LogInformation(
+                        $"      Wall intersection stats: Same={sameWallSkipped}, " +
+                        $"SameFireComp={sameFireCompartmentSkipped}, DiffLevel={differentLevelSkipped}, " +
+                        $"NoCurve={noCurveSkipped}, NoIntersect={noIntersectionSkipped}, " +
+                        $"TooClose={tooCloseSkipped}, HitsAdded={hitsAdded}");
+                    return false;
                 }
 
-                // Only check walls on the same level
-                var wallLevelId = GetWallBaseLevelId(wall);
-                if (sourceLevelId != wallLevelId)
-                {
-                    differentLevelSkipped++;
-                    continue;
-                }
+                // 6) Quá gần điểm bắn (nhiễu)
+                double dist = Calculate2DDistance(rayStart, ip);
+                if (dist <= MinDist) { tooCloseSkipped++; continue; }
 
-                // Get wall curve and check intersection
-                var wallCurve2D = GetWallCurve2D(wall);
-                if (wallCurve2D == null)
-                {
-                    noCurveSkipped++;
-                    continue;
-                }
-
-                var intersection = FindIntersection(ray2D, wallCurve2D);
-                if (intersection == null)
-                {
-                    noIntersectionSkipped++;
-                    continue;
-                }
-
-                var distance = Calculate2DDistance(rayStart, intersection);
-                if (distance <= 0.01) // Minimum distance check
-                {
-                    tooCloseSkipped++;
-                    continue;
-                }
-
-                var imaginaryLine = Line.CreateBound(rayStart, intersection);
+                // 7) Ghi nhận hit hợp lệ
                 allHits.Add(new ReferenceLineInfo
                 {
                     Element = wall,
                     ElementId = wall.Id,
                     LineType = ReferenceLineType.ImaginaryLine,
-                    Curve = imaginaryLine,
+                    Curve = Line.CreateBound(rayStart, ip),
                     Name = $"Imaginary Line (Wall {sourceWall.Id.Value} ↔ Wall {wall.Id.Value})",
                     IsStreetEdge = false,
-                    IntersectionPoint = intersection,
-                    Distance = distance
+                    IntersectionPoint = ip,
+                    Distance = dist
                 });
                 hitsAdded++;
             }
 
-            _logger.LogInformation($"      Wall intersection stats: Same={sameWallSkipped}, SameFireComp={sameFireCompartmentSkipped}, DiffLevel={differentLevelSkipped}, NoCurve={noCurveSkipped}, NoIntersect={noIntersectionSkipped}, TooClose={tooCloseSkipped}, HitsAdded={hitsAdded}");
+            _logger.LogInformation(
+                $"      Wall intersection stats: Same={sameWallSkipped}, " +
+                $"SameFireComp={sameFireCompartmentSkipped}, DiffLevel={differentLevelSkipped}, " +
+                $"NoCurve={noCurveSkipped}, NoIntersect={noIntersectionSkipped}, " +
+                $"TooClose={tooCloseSkipped}, HitsAdded={hitsAdded}");
+
+            // Không bị chặn bởi cùng fire compartment
+            return true;
         }
 
         private void CheckPropertyLineIntersections(
@@ -1244,22 +1273,6 @@ namespace BoltFramePlugin.EventHandlers
             {
                 _logger.LogWarning($"Error in DrawDebugTrimmedCurve: {ex.Message}");
             }
-        }
-
-        private void DrawCircleMarker(Document doc, ViewPlan view, XYZ center, double radius)
-        {
-            // Draw a small cross marker instead of a circle (simpler)
-            var center2D = new XYZ(center.X, center.Y, 0);
-
-            var line1 = Line.CreateBound(
-                center2D + new XYZ(radius, 0, 0),
-                center2D - new XYZ(radius, 0, 0));
-            var line2 = Line.CreateBound(
-                center2D + new XYZ(0, radius, 0),
-                center2D - new XYZ(0, radius, 0));
-
-            doc.Create.NewDetailCurve(view, line1);
-            doc.Create.NewDetailCurve(view, line2);
         }
 
         private List<DetailCurve> DrawCircleMarkerWithOverride(Document doc, ViewPlan view, XYZ center, double radius)

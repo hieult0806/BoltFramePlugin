@@ -224,14 +224,18 @@ namespace BoltFramePlugin.EventHandlers
             return groups;
         }
 
-        private bool AreOrientationsSimilar(XYZ orientation1, XYZ orientation2)
+        private bool AreOrientationsSimilar(XYZ a, XYZ b, double relColTol = 1e-6, double lenTol = 1e-9)
         {
-            // Calculate angle between orientations
-            var dotProduct = Math.Abs(orientation1.DotProduct(orientation2));
-            var angle = Math.Acos(Math.Min(1.0, dotProduct)) * (180.0 / Math.PI);
 
-            // Check if angle is within tolerance (walls are parallel or anti-parallel)
-            return angle <= ORIENTATION_TOLERANCE_DEGREES || angle >= (180.0 - ORIENTATION_TOLERANCE_DEGREES);
+            double la = a.GetLength(), lb = b.GetLength();
+            if (la < lenTol || lb < lenTol) return false;
+
+            double dot = a.DotProduct(b);
+            double crossLen = a.CrossProduct(b).GetLength();
+
+            bool colinear = crossLen <= relColTol * la * lb; // thẳng hàng theo ngưỡng tương đối
+            bool sameSign = dot > 0;                          // cùng chiều
+            return colinear && sameSign;
         }
 
         private XYZ CalculateAverageOrientation(List<XYZ> orientations)
@@ -292,13 +296,6 @@ namespace BoltFramePlugin.EventHandlers
                     // Invoke callback to update ViewModel with walls that have regions
                     _onProjectionsCompleted?.Invoke(wallsWithRegions);
 
-                    // TaskDialog.Show("Success",
-                    //     $"Created {viewsCreated} elevation views with wall projections.\n\n" +
-                    //     $"Orientation groups: {orientationGroups.Count}\n" +
-                    //     $"Total walls: {_perimeterWalls.Count}\n" +
-                    //     $"Walls with regions: {wallsWithRegions.Count}\n\n" +
-                    //     $"{distanceGroupsSummary}");
-
                     _logger.LogInformation($"Successfully created {viewsCreated} elevation views");
                 }
                 catch (Exception ex)
@@ -324,22 +321,7 @@ namespace BoltFramePlugin.EventHandlers
                 var boundingBox = CalculateBoundingBoxForWalls(group.Walls);
 
                 // Use the reference line's XY position, but use the walls' average Z position
-                XYZ centerPoint;
-                if (group.ReferenceLine?.Curve != null)
-                {
-                    var refLineMidpoint = group.ReferenceLine.Curve.Evaluate(0.5, true);
-                    var wallsCenterZ = (boundingBox.Min.Z + boundingBox.Max.Z) / 2.0;
-
-                    // Use reference line XY, but walls' center Z
-                    centerPoint = new XYZ(refLineMidpoint.X, refLineMidpoint.Y, wallsCenterZ);
-                    _logger.LogInformation($"Using reference line XY position: ({refLineMidpoint.X:F2}, {refLineMidpoint.Y:F2}), Walls center Z: {wallsCenterZ:F2}");
-                }
-                else
-                {
-                    // Fallback to walls' bounding box center
-                    centerPoint = (boundingBox.Min + boundingBox.Max) / 2.0;
-                    _logger.LogWarning($"No reference line curve found, using walls bounding box center");
-                }
+                XYZ centerPoint = group.WallsMidPoint() + group.Orientation.Normalize() * VIEW_DEPTH / 2;
 
                 var (viewDirection, rightDirection, upDirection, sectionOrigin) =
                     CalculateViewCoordinateSystem(group.Orientation, centerPoint);
@@ -394,13 +376,10 @@ namespace BoltFramePlugin.EventHandlers
             CalculateViewCoordinateSystem(XYZ groupOrientation, XYZ centerPoint)
         {
             // groupOrientation is the reference line direction (parallel to walls)
-            var lineDirection = new XYZ(groupOrientation.X, groupOrientation.Y, 0).Normalize();
-
-            // Get the perpendicular to the line (this is the wall normal direction)
-            var wallNormal = new XYZ(-lineDirection.Y, lineDirection.X, 0).Normalize();
+            var lineDirection = new XYZ(groupOrientation.Y, -groupOrientation.X, 0).Normalize();
 
             // View looks opposite to wall normal to see the walls
-            var viewDirection = -wallNormal;
+            var viewDirection = groupOrientation.Normalize().Negate();
 
             // Right direction is parallel to the reference line (parallel to walls)
             var rightDirection = lineDirection;
@@ -409,7 +388,7 @@ namespace BoltFramePlugin.EventHandlers
             var upDirection = XYZ.BasisZ;
 
             // Position view origin away from walls
-            var sectionOrigin = centerPoint + (wallNormal * VIEW_DISTANCE_FROM_WALLS);
+            var sectionOrigin = centerPoint + (viewDirection * VIEW_DISTANCE_FROM_WALLS);
 
             return (viewDirection, rightDirection, upDirection, sectionOrigin);
         }

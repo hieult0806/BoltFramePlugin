@@ -20,5 +20,30 @@ namespace BoltFramePlugin.Models.LimitingDistance
             Orientation = XYZ.Zero;
             GroupName = string.Empty;
         }
+
+        public XYZ WallsMidPoint()
+        {
+            if (Walls.Count == 0)
+                return XYZ.Zero;
+
+            double sumX = 0;
+            double sumY = 0;
+            double sumZ = 0;
+
+            foreach (var wallInfo in Walls)
+            {
+                var locationCurve = wallInfo.Wall.Location as LocationCurve;
+                if (locationCurve != null)
+                {
+                    var midPoint = (locationCurve.Curve.GetEndPoint(0) + locationCurve.Curve.GetEndPoint(1)) / 2;
+                    sumX += midPoint.X;
+                    sumY += midPoint.Y;
+                    sumZ += midPoint.Z;
+                }
+            }
+
+            int count = Walls.Count;
+            return new XYZ(sumX / count, sumY / count, sumZ / count);
+        }
     }
 }
