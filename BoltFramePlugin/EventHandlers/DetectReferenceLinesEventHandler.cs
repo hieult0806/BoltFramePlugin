@@ -2,9 +2,9 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using BoltFramePlugin.Services;
 using BoltFramePlugin.Models.LimitingDistance;
+using BoltFramePlugin.Helpers;
 using System.Collections.ObjectModel;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
-
 namespace BoltFramePlugin.EventHandlers
 {
     internal class DetectReferenceLinesEventHandler : IExternalEventHandler
@@ -74,7 +74,7 @@ namespace BoltFramePlugin.EventHandlers
                 // Draw visualization arrows if enabled
                 if (_shouldDrawArrows)
                 {
-                    DrawReferenceLineArrows(doc, raysToDrawn);
+                    RevitDebugVisualizationHelper.DrawReferenceLineArrows(doc, raysToDrawn, _logger);
                 }
                 else
                 {
@@ -271,9 +271,7 @@ namespace BoltFramePlugin.EventHandlers
         {
 
             var hitResult = CastRayAndFindIntersection(wall, rayStart, rayEnd, allPerimeterWalls, propertyLineCurves, roadCenterlines);
-
             raysToDrawn.Add((wall, rayStart, rayEnd, levelId));
-
             if (hitResult == null)
             {
                 return;
@@ -336,9 +334,6 @@ namespace BoltFramePlugin.EventHandlers
                     return;
                 }
             }
-
-            // Fallback to simple distance calculation if rectangle approach fails
-            wallInfo.LimitingDistance = hitResult.Distance;
             wallInfo.ReferenceLine = hitResult;
 
             return;
@@ -354,7 +349,7 @@ namespace BoltFramePlugin.EventHandlers
                     return null;
 
                 // Draw debug rectangle if enabled
-                DrawDebugRectangle(wall, rectangleBounds.Value);
+                // RevitDebugVisualizationHelper.DrawDebugRectangle(_uidoc.Document, wall, rectangleBounds.Value, _logger);
 
                 // Trim the reference line to the rectangle bounds
                 var trimmedCurve = TrimCurveToRectangle(referenceLine, rectangleBounds.Value);
@@ -365,7 +360,7 @@ namespace BoltFramePlugin.EventHandlers
                 }
 
                 // Draw debug trimmed curve if enabled
-                DrawDebugTrimmedCurve(wall, trimmedCurve);
+                // RevitDebugVisualizationHelper.DrawDebugTrimmedCurve(_uidoc.Document, wall, trimmedCurve, _logger);
 
                 // Find the closest point on the trimmed curve to the wall
                 var (closestDistance, closestPointOnRefLine, closestPointOnWall) = FindClosestDistanceToWall(wallCurve, trimmedCurve);
@@ -373,7 +368,7 @@ namespace BoltFramePlugin.EventHandlers
                 // Draw debug line showing the limiting distance if enabled
                 if ((closestDistance < wallInfo.LimitingDistance || !wallInfo.LimitingDistance.HasValue) && closestPointOnRefLine != null && closestPointOnWall != null)
                 {
-                    DrawDebugDistanceLine(wall, closestPointOnWall, closestPointOnRefLine);
+                    RevitDebugVisualizationHelper.DrawDebugDistanceLine(wall, closestPointOnWall, closestPointOnRefLine, _logger);
                 }
 
                 return closestDistance;
@@ -530,117 +525,39 @@ namespace BoltFramePlugin.EventHandlers
             XYZ? closestPointOnRefLine = null;
             XYZ? closestPointOnWall = null;
 
-            // Check distance from reference line start point
-            var projectionStart = wallCurve.Project(refLineStart);
-            if (projectionStart != null)
-            {
-                double distance = projectionStart.Distance;
-                if (distance < minDistance)
-                {
-                    minDistance = distance;
-                    closestPointOnRefLine = refLineStart;
-                    closestPointOnWall = projectionStart.XYZPoint;
-                }
-            }
+            (minDistance, closestPointOnRefLine, closestPointOnWall) =
+                Geom2D.FindClosestDistance2D(wallCurve, trimmedReferenceLine);
 
-            // Check distance from reference line end point
-            var projectionEnd = wallCurve.Project(refLineEnd);
-            if (projectionEnd != null)
-            {
-                double distance = projectionEnd.Distance;
-                if (distance < minDistance)
-                {
-                    minDistance = distance;
-                    closestPointOnRefLine = refLineEnd;
-                    closestPointOnWall = projectionEnd.XYZPoint;
-                }
-            }
+            // // Check distance from reference line start point
+            // var projectionStart = wallCurve.Project(refLineStart);
+            // if (projectionStart != null)
+            // {
+            //     double distance = projectionStart.Distance;
+            //     if (distance < minDistance)
+            //     {
+            //         minDistance = distance;
+            //         closestPointOnRefLine = refLineStart;
+            //         closestPointOnWall = projectionStart.XYZPoint;
+            //     }
+            // }
 
+            // // Check distance from reference line end point
+            // var projectionEnd = wallCurve.Project(refLineEnd);
+            // if (projectionEnd != null)
+            // {
+            //     double distance = projectionEnd.Distance;
+            //     if (distance < minDistance)
+            //     {
+            //         minDistance = distance;
+            //         closestPointOnRefLine = refLineEnd;
+            //         closestPointOnWall = projectionEnd.XYZPoint;
+            //     }
+            // }
             return (minDistance, closestPointOnRefLine, closestPointOnWall);
         }
 
-        private void DrawDebugDistanceLine(Wall wall, XYZ pointOnWall, XYZ pointOnRefLine)
-        {
-            try
-            {
-                var doc = wall.Document;
-                var levelId = wall.LookupParameter("Base Constraint")?.AsElementId();
 
-                if (levelId == null || levelId == ElementId.InvalidElementId)
-                {
-                    _logger.LogWarning($"Wall {wall.Id.Value} has no base constraint level, skipping distance line drawing");
-                    return;
-                }
-
-                var level = doc.GetElement(levelId) as Level;
-                if (level == null)
-                    return;
-
-                var floorPlan = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ViewPlan))
-                    .Cast<ViewPlan>()
-                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
-
-                if (floorPlan == null)
-                {
-                    _logger.LogWarning($"No floor plan found for level {level.Name}, skipping distance line drawing for wall {wall.Id.Value}");
-                    return;
-                }
-
-                // Create a 2D line from the two closest points
-                var pointOnWall2D = new XYZ(pointOnWall.X, pointOnWall.Y, 0);
-                var pointOnRefLine2D = new XYZ(pointOnRefLine.X, pointOnRefLine.Y, 0);
-
-                // Check minimum distance to avoid creating too-short lines
-                const double minLength = 0.003; // ~1/32 inch in feet
-                if (pointOnWall2D.DistanceTo(pointOnRefLine2D) < minLength)
-                {
-                    return;
-                }
-
-                using (Transaction trans = new Transaction(doc, "Draw Debug Distance Line"))
-                {
-                    trans.Start();
-                    try
-                    {
-                        var wallCurve = (wall.Location as LocationCurve);
-                        XYZ wallPos = wallCurve.Curve.Evaluate(0.5, true);
-                        Line distanceLine = Line.CreateBound(pointOnRefLine2D, pointOnRefLine2D + RotatePoint(wall.Orientation.Normalize()) * wallCurve.Curve.Length);
-                        var detailCurve = doc.Create.NewDetailCurve(floorPlan, distanceLine);
-
-                        // CreateWallToLineAlignedDim(doc, floorPlan, wall, distanceLine);
-
-                        // Apply green color override
-                        var overrideSettings = new OverrideGraphicSettings();
-                        var green = new Autodesk.Revit.DB.Color(0, 255, 0);
-                        overrideSettings.SetProjectionLineColor(green);
-                        overrideSettings.SetProjectionLineWeight(5);
-                        floorPlan.SetElementOverrides(detailCurve.Id, overrideSettings);
-
-                        _logger.LogInformation($"Drew debug distance line for wall {wall.Id.Value} on {floorPlan.Name}");
-                        trans.Commit();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning($"Failed to draw debug distance line: {ex.Message}");
-                        trans.RollBack();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Error in DrawDebugDistanceLine: {ex.Message}");
-            }
-        }
-
-        // Rotate a XYZ point 90 degrees around Z axis
-        private XYZ RotatePoint(XYZ point)
-        {
-            return new XYZ(-point.Y, point.X, point.Z);
-        }
-
-        public static Dimension CreateWallToLineAlignedDim(
-    Document doc, ViewPlan view, Wall w1, Line dLine)
+        public static Dimension CreateWallToLineAlignedDim(Document doc, ViewPlan view, Wall w1, Line dLine)
         {
             // 1) Lấy reference mặt ngoài của mỗi tường
             Reference r1 = HostObjectUtils.GetSideFaces(w1, ShellLayerType.Exterior).First();
@@ -672,149 +589,6 @@ namespace BoltFramePlugin.EventHandlers
             // }
         }
 
-        private void DrawReferenceLineArrows(Document doc, List<(Wall wall, XYZ start, XYZ end, ElementId levelId)> raysToDrawn)
-        {
-            _logger.LogInformation("Drawing distance measurement arrows (shouldDrawArrows=true)");
-
-            using (Transaction trans = new Transaction(doc, "Draw Reference Line Rays"))
-            {
-                trans.Start();
-                try
-                {
-                    var raysByView = GroupRaysByFloorPlan(doc, raysToDrawn);
-                    int rayCount = DrawRaysOnFloorPlans(doc, raysByView);
-
-                    _logger.LogInformation($"Created {rayCount} total detail lines for rays across {raysByView.Count} floor plans");
-                    trans.Commit();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError($"Error creating detail lines: {ex.Message}", ex);
-                    trans.RollBack();
-                }
-            }
-        }
-
-        private Dictionary<ElementId, List<(XYZ start, XYZ end)>> GroupRaysByFloorPlan(
-            Document doc,
-            List<(Wall wall, XYZ start, XYZ end, ElementId levelId)> raysToDrawn)
-        {
-            var raysByView = new Dictionary<ElementId, List<(XYZ start, XYZ end)>>();
-
-            foreach (var (wall, start, end, levelId) in raysToDrawn)
-            {
-                if (levelId == ElementId.InvalidElementId)
-                {
-                    _logger.LogWarning($"Wall {wall.Id.Value} has no base constraint level, skipping ray drawing");
-                    continue;
-                }
-
-                var level = doc.GetElement(levelId) as Level;
-                if (level == null)
-                    continue;
-
-                var floorPlan = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ViewPlan))
-                    .Cast<ViewPlan>()
-                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
-
-                if (floorPlan == null)
-                {
-                    _logger.LogWarning($"No floor plan found for level {level.Name}, skipping wall {wall.Id.Value}");
-                    continue;
-                }
-
-                if (!raysByView.ContainsKey(floorPlan.Id))
-                {
-                    raysByView[floorPlan.Id] = new List<(XYZ, XYZ)>();
-                }
-
-                raysByView[floorPlan.Id].Add((start, end));
-            }
-
-            return raysByView;
-        }
-
-        private int DrawRaysOnFloorPlans(Document doc, Dictionary<ElementId, List<(XYZ start, XYZ end)>> raysByView)
-        {
-            int totalRayCount = 0;
-
-            foreach (var kvp in raysByView)
-            {
-                var viewId = kvp.Key;
-                var rays = kvp.Value;
-                var view = doc.GetElement(viewId) as ViewPlan;
-
-                if (view == null)
-                    continue;
-
-                int viewRayCount = DrawRaysInView(doc, view, rays);
-                totalRayCount += viewRayCount;
-
-                _logger.LogInformation($"Created {rays.Count} rays on floor plan {view.Name}");
-            }
-
-            return totalRayCount;
-        }
-
-        private int DrawRaysInView(Document doc, ViewPlan view, List<(XYZ start, XYZ end)> rays)
-        {
-            int rayCount = 0;
-            const double minLength = 0.003; // ~1/32 inch in feet
-
-            foreach (var (start, end) in rays)
-            {
-                var start2D = new XYZ(start.X, start.Y, 0);
-                var end2D = new XYZ(end.X, end.Y, 0);
-
-                var distance = start2D.DistanceTo(end2D);
-                if (distance < minLength)
-                {
-                    _logger.LogWarning($"Skipping ray that is too short ({distance:F6} ft) - below minimum curve length");
-                    continue;
-                }
-
-                try
-                {
-                    // Draw the main ray line
-                    var line = Line.CreateBound(start2D, end2D);
-                    doc.Create.NewDetailCurve(view, line);
-                    rayCount++;
-
-                    // Draw arrow head
-                    DrawArrowHead(doc, view, start2D, end2D);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning($"Failed to create ray from ({start2D.X:F2}, {start2D.Y:F2}) to ({end2D.X:F2}, {end2D.Y:F2}): {ex.Message}");
-                }
-            }
-
-            return rayCount;
-        }
-
-        private void DrawArrowHead(Document doc, ViewPlan view, XYZ start2D, XYZ end2D)
-        {
-            var direction = (end2D - start2D).Normalize();
-            var arrowSize = 0.5; // feet (~6 inches)
-
-            // Calculate perpendicular vector for arrow wings
-            var perpendicular = new XYZ(-direction.Y, direction.X, 0);
-
-            // Arrow head base point (slightly back from the end)
-            var arrowBase = end2D - (direction * arrowSize);
-
-            // Arrow wing points
-            var arrowWing1 = arrowBase + (perpendicular * arrowSize * 0.3);
-            var arrowWing2 = arrowBase - (perpendicular * arrowSize * 0.3);
-
-            // Draw two lines forming the arrow head
-            var arrowLine1 = Line.CreateBound(end2D, arrowWing1);
-            var arrowLine2 = Line.CreateBound(end2D, arrowWing2);
-
-            doc.Create.NewDetailCurve(view, arrowLine1);
-            doc.Create.NewDetailCurve(view, arrowLine2);
-        }
 
         private void LogDetectionSummary(ReferenceLineStats stats)
         {
@@ -924,12 +698,8 @@ namespace BoltFramePlugin.EventHandlers
             return targetFireCompartment != sourceFireCompartment;
         }
 
-        private bool CheckWallIntersections(
-    Wall sourceWall,
-    XYZ rayStart,
-    Line ray2D,
-    IReadOnlyList<Wall> allWalls,
-    ElementId sourceLevelId,
+        private bool CheckWallIntersections(Wall sourceWall, XYZ rayStart,
+    Line ray2D, IReadOnlyList<Wall> allWalls, ElementId sourceLevelId,
     List<ReferenceLineInfo> allHits)
         {
             const double MinDist = 0.01; // ~3 mm (feet)
@@ -1151,175 +921,6 @@ namespace BoltFramePlugin.EventHandlers
             return nonPropertyLineHit ?? sortedHits.First();
         }
 
-        private void DrawDebugRectangle(Wall wall, (XYZ corner1, XYZ corner2, XYZ corner3, XYZ corner4) rectangle)
-        {
-            try
-            {
-                var doc = _uidoc.Document;
-                var levelId = GetWallBaseLevelId(wall);
-
-                if (levelId == ElementId.InvalidElementId)
-                    return;
-
-                // Find floor plan for this level
-                var floorPlan = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ViewPlan))
-                    .Cast<ViewPlan>()
-                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
-
-                if (floorPlan == null)
-                {
-                    _logger.LogWarning($"No floor plan found for wall {wall.Id.Value}, skipping debug rectangle");
-                    return;
-                }
-
-                using (Transaction trans = new Transaction(doc, "Draw Debug Rectangle"))
-                {
-                    trans.Start();
-                    try
-                    {
-                        // Draw the 4 edges of the rectangle in a different color/style
-                        var edge1 = Line.CreateBound(rectangle.corner1, rectangle.corner2);
-                        var edge2 = Line.CreateBound(rectangle.corner2, rectangle.corner3);
-                        var edge3 = Line.CreateBound(rectangle.corner3, rectangle.corner4);
-                        var edge4 = Line.CreateBound(rectangle.corner4, rectangle.corner1);
-
-                        doc.Create.NewDetailCurve(floorPlan, edge1);
-                        doc.Create.NewDetailCurve(floorPlan, edge2);
-                        doc.Create.NewDetailCurve(floorPlan, edge3);
-                        doc.Create.NewDetailCurve(floorPlan, edge4);
-
-                        _logger.LogInformation($"Drew debug rectangle for wall {wall.Id.Value} on {floorPlan.Name}");
-                        trans.Commit();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning($"Failed to draw debug rectangle: {ex.Message}");
-                        trans.RollBack();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Error in DrawDebugRectangle: {ex.Message}");
-            }
-        }
-
-        private void DrawDebugTrimmedCurve(Wall wall, Curve trimmedCurve)
-        {
-            try
-            {
-                var doc = _uidoc.Document;
-                var levelId = GetWallBaseLevelId(wall);
-
-                if (levelId == ElementId.InvalidElementId)
-                    return;
-
-                // Find floor plan for this level
-                var floorPlan = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ViewPlan))
-                    .Cast<ViewPlan>()
-                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
-
-                if (floorPlan == null)
-                {
-                    _logger.LogWarning($"No floor plan found for wall {wall.Id.Value}, skipping debug trimmed curve");
-                    return;
-                }
-
-                using (Transaction trans = new Transaction(doc, "Draw Debug Trimmed Curve"))
-                {
-                    trans.Start();
-                    try
-                    {
-                        // Create the trimmed curve as a detail line
-                        var detailLine = doc.Create.NewDetailCurve(floorPlan, trimmedCurve);
-
-                        // Create red color override
-                        var overrideSettings = new OverrideGraphicSettings();
-                        var red = new Autodesk.Revit.DB.Color(255, 0, 0); // RGB: Red
-                        overrideSettings.SetProjectionLineColor(red);
-                        overrideSettings.SetProjectionLineWeight(5); // Make it thicker for visibility
-
-                        // Apply override to the detail line
-                        floorPlan.SetElementOverrides(detailLine.Id, overrideSettings);
-
-                        // Add markers at the endpoints
-                        var start = trimmedCurve.GetEndPoint(0);
-                        var end = trimmedCurve.GetEndPoint(1);
-
-                        // Draw small circles at endpoints (also in red)
-                        double markerRadius = 0.5; // feet
-                        var startMarkers = DrawCircleMarkerWithOverride(doc, floorPlan, start, markerRadius);
-                        var endMarkers = DrawCircleMarkerWithOverride(doc, floorPlan, end, markerRadius);
-
-                        // Apply red override to markers
-                        foreach (var marker in startMarkers.Concat(endMarkers))
-                        {
-                            floorPlan.SetElementOverrides(marker.Id, overrideSettings);
-                        }
-
-                        _logger.LogInformation($"Drew debug trimmed curve (RED) for wall {wall.Id.Value} on {floorPlan.Name}");
-                        trans.Commit();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning($"Failed to draw debug trimmed curve: {ex.Message}");
-                        trans.RollBack();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Error in DrawDebugTrimmedCurve: {ex.Message}");
-            }
-        }
-
-        private List<DetailCurve> DrawCircleMarkerWithOverride(Document doc, ViewPlan view, XYZ center, double radius)
-        {
-            // Draw a circle using 4 arc segments
-            var center2D = new XYZ(center.X, center.Y, 0);
-            var detailCurves = new List<DetailCurve>();
-
-            try
-            {
-                // Create 4 quarter arcs to form a complete circle
-                // Top-right quarter (0° to 90°)
-                var p1 = center2D + new XYZ(radius, 0, 0);
-                var p2 = center2D + new XYZ(0, radius, 0);
-                var arc1 = Arc.Create(p1, p2, center2D + new XYZ(radius, radius, 0).Normalize() * radius);
-                detailCurves.Add(doc.Create.NewDetailCurve(view, arc1));
-
-                // Top-left quarter (90° to 180°)
-                var p3 = center2D + new XYZ(-radius, 0, 0);
-                var arc2 = Arc.Create(p2, p3, center2D + new XYZ(-radius, radius, 0).Normalize() * radius);
-                detailCurves.Add(doc.Create.NewDetailCurve(view, arc2));
-
-                // Bottom-left quarter (180° to 270°)
-                var p4 = center2D + new XYZ(0, -radius, 0);
-                var arc3 = Arc.Create(p3, p4, center2D + new XYZ(-radius, -radius, 0).Normalize() * radius);
-                detailCurves.Add(doc.Create.NewDetailCurve(view, arc3));
-
-                // Bottom-right quarter (270° to 360°)
-                var arc4 = Arc.Create(p4, p1, center2D + new XYZ(radius, -radius, 0).Normalize() * radius);
-                detailCurves.Add(doc.Create.NewDetailCurve(view, arc4));
-            }
-            catch (Exception)
-            {
-                // If arc creation fails, fall back to cross marker
-                var line1 = Line.CreateBound(
-                    center2D + new XYZ(radius, 0, 0),
-                    center2D - new XYZ(radius, 0, 0));
-                var line2 = Line.CreateBound(
-                    center2D + new XYZ(0, radius, 0),
-                    center2D - new XYZ(0, radius, 0));
-
-                detailCurves.Add(doc.Create.NewDetailCurve(view, line1));
-                detailCurves.Add(doc.Create.NewDetailCurve(view, line2));
-            }
-
-            return detailCurves;
-        }
 
         public string GetName()
         {
