@@ -5,28 +5,40 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         xmlns:views="clr-namespace:BoltFramePlugin.Views"
+        xmlns:ld="clr-namespace:BoltFramePlugin.Views.UserControls.LimitingDistance"
         mc:Ignorable="d"
         Title="Limiting Distance Calculator"
         WindowStartupLocation="Manual"
         Loaded="Window_Loaded">
     <Window.Resources>
         <!-- Style for selected DataGrid row -->
-        <Style x:Key="HighlightedRowStyle" TargetType="DataGridRow">
-            <Setter Property="Background" Value="Transparent"/>
+        <Style x:Key="HighlightedRowStyle"
+               TargetType="DataGridRow">
+            <Setter Property="Background"
+                    Value="Transparent"/>
             <Style.Triggers>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#FF4CAF50"/>
-                    <Setter Property="Foreground" Value="White"/>
-                    <Setter Property="FontWeight" Value="Bold"/>
+                <Trigger Property="IsSelected"
+                         Value="True">
+                    <Setter Property="Background"
+                            Value="#FF4CAF50"/>
+                    <Setter Property="Foreground"
+                            Value="White"/>
+                    <Setter Property="FontWeight"
+                            Value="Bold"/>
                 </Trigger>
                 <MultiTrigger>
                     <MultiTrigger.Conditions>
-                        <Condition Property="IsSelected" Value="True"/>
-                        <Condition Property="IsMouseOver" Value="True"/>
+                        <Condition Property="IsSelected"
+                                   Value="True"/>
+                        <Condition Property="IsMouseOver"
+                                   Value="True"/>
                     </MultiTrigger.Conditions>
-                    <Setter Property="Background" Value="#FF2196F3"/>
-                    <Setter Property="Foreground" Value="White"/>
-                    <Setter Property="FontWeight" Value="Bold"/>
+                    <Setter Property="Background"
+                            Value="#FF2196F3"/>
+                    <Setter Property="Foreground"
+                            Value="White"/>
+                    <Setter Property="FontWeight"
+                            Value="Bold"/>
                 </MultiTrigger>
             </Style.Triggers>
         </Style>
@@ -39,7 +51,9 @@
         </Grid.RowDefinitions>
 
         <!-- Header Section -->
-        <Border Grid.Row="0" Background="#FF2C3E50" Padding="15">
+        <Border Grid.Row="0"
+                Background="#FF2C3E50"
+                Padding="15">
             <StackPanel>
                 <TextBlock Text="Limiting Distance Calculator"
                            FontSize="18"
@@ -53,247 +67,173 @@
         </Border>
 
         <!-- Tab Control for Main Content -->
-        <TabControl Grid.Row="1" Margin="10">
+        <TabControl Grid.Row="1"
+                    Margin="10">
             <TabItem Header="Wall Analysis">
                 <!-- Main Content - Split Left/Right -->
-        <Grid Margin="5">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="150"/>
-                <ColumnDefinition Width="5"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="5"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+                <Grid Margin="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-            <!-- Left Section - Controls -->
-            <ScrollViewer Grid.Column="0" Grid.Row="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel>
-                    <!-- Property Line Selection -->
-                    <GroupBox Header="Property Line Selection" Margin="0,0,0,10" Padding="10">
+                    <!-- Left Section - Controls -->
+                    <ScrollViewer Grid.Column="0"
+                                  Grid.Row="0"
+                                  VerticalScrollBarVisibility="Auto">
                         <StackPanel>
-                            <Button Content="Select Property Line"
-                                    Command="{Binding SelectPropertyLineCommand}"
-                                    Height="32"
-                                    Margin="0,0,0,10"/>
-                            <TextBlock Text="{Binding PropertyLineInfo}"
-                                       FontStyle="Italic"
-                                       Foreground="#FF555555"
-                                       TextWrapping="Wrap"/>
+                            <!-- Property Line Selection -->
+                            <GroupBox Header="Property Line Selection"
+                                      Margin="0,0,0,10"
+                                      Padding="10">
+                                <StackPanel>
+                                    <Button Content="Select Property Line"
+                                            Command="{Binding SelectPropertyLineCommand}"
+                                            Height="32"
+                                            Margin="0,0,0,10"/>
+                                    <TextBlock Text="{Binding PropertyLineInfo}"
+                                               FontStyle="Italic"
+                                               Foreground="#FF555555"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <!-- Reference Lines Detection -->
+                            <GroupBox Header="Reference Lines"
+                                      Margin="0,0,0,10"
+                                      Padding="10">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding ReferenceLineCount}"
+                                               FontStyle="Italic"
+                                               Foreground="#FF555555"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <!-- Actions -->
+                            <GroupBox Header="Actions"
+                                      Margin="0,0,0,10"
+                                      Padding="10">
+                                <StackPanel>
+                                    <Button Content="Highlight in 3D View"
+                                            Command="{Binding HighlightWallsCommand}"
+                                            Height="32"
+                                            Background="#FF3498DB"
+                                            Foreground="White"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <!-- Statistics Section -->
+                            <GroupBox Header="Statistics"
+                                      Margin="0,0,0,10"
+                                      Padding="10">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding WallCount}"
+                                               FontSize="14"
+                                               FontWeight="Bold"
+                                               Foreground="#FF2C3E50"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </GroupBox>
                         </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Splitter -->
+                    <GridSplitter Grid.Column="1"
+                                  Grid.Row="0"
+                                  Width="5"
+                                  HorizontalAlignment="Stretch"
+                                  Background="#FFBDC3C7"/>
+
+                    <!-- Right Section - Walls List -->
+                    <ld:PerimeterWallsControl Grid.Column="2"
+                                               Grid.Row="0"/>
+
+                    <!-- Horizontal Splitter -->
+                    <GridSplitter Grid.Row="1"
+                                  Grid.ColumnSpan="3"
+                                  Height="5"
+                                  HorizontalAlignment="Stretch"
+                                  Background="#FFBDC3C7"/>
+
+                    <!-- Bottom Section - Distance Groups Summary -->
+                    <GroupBox Grid.Row="2"
+                              Grid.ColumnSpan="3"
+                              Header="Distance Groups Summary (Double-click to highlight group)"
+                              Padding="5">
+                        <DataGrid ItemsSource="{Binding DistanceGroups}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  SelectionMode="Single"
+                                  GridLinesVisibility="Horizontal"
+                                  AlternatingRowBackground="#FFF5F5F5"
+                                  HeadersVisibility="Column"
+                                  MouseDoubleClick="DistanceGroupsDataGrid_MouseDoubleClick">
+
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Orientation"
+                                                    Binding="{Binding Orientation}"
+                                                    Width="100"/>
+                                <DataGridTextColumn Header="Distance Range"
+                                                    Binding="{Binding DistanceRange}"
+                                                    Width="150"/>
+                                <DataGridTextColumn Header="Wall Count"
+                                                    Binding="{Binding WallCount}"
+                                                    Width="100"/>
+                                <DataGridTextColumn Header="Total Gross Area"
+                                                    Binding="{Binding TotalGrossAreaFormatted}"
+                                                    Width="130"/>
+                                <DataGridTextColumn Header="Total Openings"
+                                                    Binding="{Binding TotalOpeningsAreaFormatted}"
+                                                    Width="130"/>
+                                <DataGridTextColumn Header="Avg Opening %"
+                                                    Binding="{Binding AverageOpeningPercentageFormatted}"
+                                                    Width="120"/>
+                                <DataGridTextColumn Header="Total Net Area"
+                                                    Binding="{Binding TotalNetAreaFormatted}"
+                                                    Width="130"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </GroupBox>
 
-                    <!-- Reference Lines Detection -->
-                    <GroupBox Header="Reference Lines" Margin="0,0,0,10" Padding="10">
-                        <StackPanel>
-                            <TextBlock Text="{Binding ReferenceLineCount}"
-                                       FontStyle="Italic"
-                                       Foreground="#FF555555"
-                                       TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </GroupBox>
+                </Grid>
+            </TabItem>
 
-                    <!-- Actions -->
-                    <GroupBox Header="Actions" Margin="0,0,0,10" Padding="10">
-                        <StackPanel>
-                            <Button Content="Highlight in 3D View"
-                                    Command="{Binding HighlightWallsCommand}"
-                                    Height="32"
-                                    Background="#FF3498DB"
-                                    Foreground="White"/>
-                        </StackPanel>
-                    </GroupBox>
-
-                    <!-- Statistics Section -->
-                    <GroupBox Header="Statistics" Margin="0,0,0,10" Padding="10">
-                        <StackPanel>
-                            <TextBlock Text="{Binding WallCount}"
-                                       FontSize="14"
-                                       FontWeight="Bold"
-                                       Foreground="#FF2C3E50"
-                                       TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </GroupBox>
-                </StackPanel>
-            </ScrollViewer>
-
-            <!-- Splitter -->
-            <GridSplitter Grid.Column="1" Grid.Row="0"
-                          Width="5"
-                          HorizontalAlignment="Stretch"
-                          Background="#FFBDC3C7"/>
-
-            <!-- Right Section - Walls List -->
-            <GroupBox Grid.Column="2" Grid.Row="0" Header="Perimeter Walls (LD_IsPerimeter = True)" Padding="5">
-                <DataGrid ItemsSource="{Binding PerimeterWalls}"
-                          SelectedItem="{Binding SelectedWall, Mode=TwoWay}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="False"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          SelectionMode="Extended"
-                          GridLinesVisibility="Horizontal"
-                          AlternatingRowBackground="#FFF5F5F5"
-                          HeadersVisibility="Column"
-                          RowStyle="{StaticResource HighlightedRowStyle}"
-                          BeginningEdit="DataGrid_BeginningEdit"
-                          CellEditEnding="DataGrid_CellEditEnding"
-                          MouseLeftButtonUp="DataGrid_MouseLeftButtonUp"
-                          MouseDoubleClick="DataGrid_MouseDoubleClick">
-
-                    <!-- Context Menu for right-click -->
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Highlight in 3D View"
-                                      Command="{Binding HighlightWallIn3DCommand}"
-                                      CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                            <MenuItem Header="Highlight in Floor Plan"
-                                      Command="{Binding HighlightWallInFloorPlanCommand}"
-                                      CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Element ID"
-                                            Binding="{Binding ElementId.Value}"
-                                            Width="100"
-                                            IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Wall Name"
-                                            Binding="{Binding Name}"
-                                            Width="*"
-                                            IsReadOnly="True"/>
-                        <DataGridComboBoxColumn Header="Occupant Group"
-                                                Width="120"
-                                                SelectedItemBinding="{Binding OccupantGroup, UpdateSourceTrigger=PropertyChanged}">
-                            <DataGridComboBoxColumn.ElementStyle>
-                                <Style TargetType="ComboBox">
-                                    <Setter Property="ItemsSource">
-                                        <Setter.Value>
-                                            <x:Array Type="sys:String" xmlns:sys="clr-namespace:System;assembly=mscorlib">
-                                                <sys:String>Group A</sys:String>
-                                                <sys:String>Group B</sys:String>
-                                                <sys:String>Group C</sys:String>
-                                                <sys:String>Group D</sys:String>
-                                                <sys:String>Group E</sys:String>
-                                                <sys:String>Group F</sys:String>
-                                            </x:Array>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </DataGridComboBoxColumn.ElementStyle>
-                            <DataGridComboBoxColumn.EditingElementStyle>
-                                <Style TargetType="ComboBox">
-                                    <Setter Property="ItemsSource">
-                                        <Setter.Value>
-                                            <x:Array Type="sys:String" xmlns:sys="clr-namespace:System;assembly=mscorlib">
-                                                <sys:String>Group A</sys:String>
-                                                <sys:String>Group B</sys:String>
-                                                <sys:String>Group C</sys:String>
-                                                <sys:String>Group D</sys:String>
-                                                <sys:String>Group E</sys:String>
-                                                <sys:String>Group F</sys:String>
-                                            </x:Array>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </DataGridComboBoxColumn.EditingElementStyle>
-                        </DataGridComboBoxColumn>
-                        <DataGridTextColumn Header="Length"
-                                            Binding="{Binding LengthFormatted}"
-                                            Width="100"
-                                            IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Gross Area"
-                                            Binding="{Binding GrossAreaFormatted}"
-                                            Width="100"
-                                            IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Openings"
-                                            Binding="{Binding OpeningsAreaFormatted}"
-                                            Width="100"
-                                            IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Opening %"
-                                            Binding="{Binding OpeningPercentageFormatted}"
-                                            Width="80"
-                                            IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Net Area"
-                                            Binding="{Binding NetAreaFormatted}"
-                                            Width="100"
-                                            IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Limiting Distance"
-                                            Binding="{Binding LimitingDistanceFormatted}"
-                                            Width="120"
-                                            IsReadOnly="True"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </GroupBox>
-
-            <!-- Horizontal Splitter -->
-            <GridSplitter Grid.Row="1" Grid.ColumnSpan="3"
-                          Height="5"
-                          HorizontalAlignment="Stretch"
-                          Background="#FFBDC3C7"/>
-
-            <!-- Bottom Section - Distance Groups Summary -->
-            <GroupBox Grid.Row="2" Grid.ColumnSpan="3" Header="Distance Groups Summary (Double-click to highlight group)" Padding="5">
-                <DataGrid ItemsSource="{Binding DistanceGroups}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          SelectionMode="Single"
-                          GridLinesVisibility="Horizontal"
-                          AlternatingRowBackground="#FFF5F5F5"
-                          HeadersVisibility="Column"
-                          MouseDoubleClick="DistanceGroupsDataGrid_MouseDoubleClick">
-
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Orientation"
-                                            Binding="{Binding Orientation}"
-                                            Width="100"/>
-                        <DataGridTextColumn Header="Distance Range"
-                                            Binding="{Binding DistanceRange}"
-                                            Width="150"/>
-                        <DataGridTextColumn Header="Wall Count"
-                                            Binding="{Binding WallCount}"
-                                            Width="100"/>
-                        <DataGridTextColumn Header="Total Gross Area"
-                                            Binding="{Binding TotalGrossAreaFormatted}"
-                                            Width="130"/>
-                        <DataGridTextColumn Header="Total Openings"
-                                            Binding="{Binding TotalOpeningsAreaFormatted}"
-                                            Width="130"/>
-                        <DataGridTextColumn Header="Avg Opening %"
-                                            Binding="{Binding AverageOpeningPercentageFormatted}"
-                                            Width="120"/>
-                        <DataGridTextColumn Header="Total Net Area"
-                                            Binding="{Binding TotalNetAreaFormatted}"
-                                            Width="130"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </GroupBox>
-        </Grid>
+            <!-- Building Code Compliance Tab -->
+            <TabItem Header="Code Compliance">
+                <ld:BuildingCodeComplianceControl/>
             </TabItem>
 
             <!-- Configuration Tab -->
             <TabItem Header="Configuration">
-                <views:ConfigurationControl/>
+                <ld:ConfigurationControl/>
             </TabItem>
 
             <!-- View Tracker Tab -->
             <TabItem Header="View Tracker">
-                <views:ViewTrackerControl/>
+                <ld:ViewTrackerControl/>
             </TabItem>
 
             <!-- Dev Tab -->
             <TabItem Header="Dev">
-                <views:DevTabControl/>
+                <ld:DevTabControl/>
             </TabItem>
         </TabControl>
 
         <!-- Footer Section -->
-        <Border Grid.Row="2" Background="#FFE5E5E5" Padding="15">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+        <Border Grid.Row="2"
+                Background="#FFE5E5E5"
+                Padding="15">
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center">
                 <Button Content="Create Wall Projections"
                         Command="{Binding CreateWallProjectionsCommand}"
                         Width="180"

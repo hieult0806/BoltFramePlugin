@@ -527,32 +527,6 @@ namespace BoltFramePlugin.EventHandlers
 
             (minDistance, closestPointOnRefLine, closestPointOnWall) =
                 Geom2D.FindClosestDistance2D(wallCurve, trimmedReferenceLine);
-
-            // // Check distance from reference line start point
-            // var projectionStart = wallCurve.Project(refLineStart);
-            // if (projectionStart != null)
-            // {
-            //     double distance = projectionStart.Distance;
-            //     if (distance < minDistance)
-            //     {
-            //         minDistance = distance;
-            //         closestPointOnRefLine = refLineStart;
-            //         closestPointOnWall = projectionStart.XYZPoint;
-            //     }
-            // }
-
-            // // Check distance from reference line end point
-            // var projectionEnd = wallCurve.Project(refLineEnd);
-            // if (projectionEnd != null)
-            // {
-            //     double distance = projectionEnd.Distance;
-            //     if (distance < minDistance)
-            //     {
-            //         minDistance = distance;
-            //         closestPointOnRefLine = refLineEnd;
-            //         closestPointOnWall = projectionEnd.XYZPoint;
-            //     }
-            // }
             return (minDistance, closestPointOnRefLine, closestPointOnWall);
         }
 

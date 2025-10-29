@@ -578,7 +578,7 @@ namespace BoltFramePlugin.EventHandlers
         /// <summary>
         /// Creates a filled region for a single wall using Revit's geometry projection
         /// Applies ceiling trimming if top-most ceilings are detected
-        /// Returns true if region was successfully created
+        /// Returns true if region was successfully created and links the region to the wall
         /// </summary>
         private bool CreateRegionForWall(Document doc, ViewSection elevationView, WallInfo wallInfo,
             XYZ viewOrigin, XYZ viewRightDirection, XYZ viewUpDirection)
@@ -672,6 +672,13 @@ namespace BoltFramePlugin.EventHandlers
                     // Create a single filled region with all loops (outer boundary + openings)
                     var region = FilledRegion.Create(doc, filledRegionType.Id, elevationView.Id, finalLoops);
                     _logger.LogInformation($"Successfully created region for wall {wall.Id.Value} with openings cut out");
+
+                    // Link the created region to the wall for area calculation
+                    wallInfo.LinkedRegion = region;
+                    _logger.LogInformation($"Linked region {region.Id.Value} to wall {wall.Id.Value}");
+
+                    // Calculate and update the Gross Area from the region's area
+                    UpdateWallGrossAreaFromRegion(wallInfo, region);
 
                     return true;
                 }
@@ -1025,6 +1032,42 @@ namespace BoltFramePlugin.EventHandlers
             _logger.LogInformation($"View Direction: ({viewDirection.X:F2}, {viewDirection.Y:F2}, {viewDirection.Z:F2})");
             _logger.LogInformation($"View Right: ({viewRightDirection.X:F2}, {viewRightDirection.Y:F2}, {viewRightDirection.Z:F2})");
             _logger.LogInformation($"View Up: ({viewUpDirection.X:F2}, {viewUpDirection.Y:F2}, {viewUpDirection.Z:F2})");
+        }
+
+        /// <summary>
+        /// Updates the wall's Gross Area based on the created region's area
+        /// The region area represents the actual visible wall area in the section view
+        /// Updates are dispatched to the UI thread to ensure DataGrid refreshes
+        /// </summary>
+        private void UpdateWallGrossAreaFromRegion(WallInfo wallInfo, FilledRegion region)
+        {
+            try
+            {
+                // Get the area parameter from the region
+                var areaParam = region.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
+                if (areaParam != null && areaParam.HasValue)
+                {
+                    var regionArea = areaParam.AsDouble();
+                    var oldGrossArea = wallInfo.GrossArea;
+
+                    // Update the property on the UI thread to ensure DataGrid binding updates
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        wallInfo.GrossArea = regionArea;
+                    });
+
+                    _logger.LogInformation($"Wall {wallInfo.Wall.Id.Value}: Updated Gross Area from {oldGrossArea:F2} ft² to {regionArea:F2} ft² (based on region area)");
+                    _logger.LogInformation($"  Region ID: {region.Id.Value}, Net Area: {wallInfo.NetArea:F2} ft²");
+                }
+                else
+                {
+                    _logger.LogWarning($"Wall {wallInfo.Wall.Id.Value}: Could not read area from region {region.Id.Value}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error updating wall gross area from region: {ex.Message}", ex);
+            }
         }
 
         #endregion

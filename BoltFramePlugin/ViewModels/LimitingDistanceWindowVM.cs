@@ -201,6 +201,17 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
+        private ObservableCollection<BuildingCodeComplianceSummary> _buildingCodeCompliance;
+        public ObservableCollection<BuildingCodeComplianceSummary> BuildingCodeCompliance
+        {
+            get => _buildingCodeCompliance;
+            set
+            {
+                _buildingCodeCompliance = value;
+                OnPropertyChanged(nameof(BuildingCodeCompliance));
+            }
+        }
+
         // Created Views Tracking
         private ObservableCollection<ViewInfo> _createdViews;
         public ObservableCollection<ViewInfo> CreatedViews
@@ -243,6 +254,7 @@ namespace BoltFramePlugin.ViewModels
             _perimeterWalls = new ObservableCollection<WallInfo>();
             _referenceLines = new ObservableCollection<ReferenceLineInfo>();
             _distanceGroups = new ObservableCollection<DistanceGroupSummary>();
+            _buildingCodeCompliance = new ObservableCollection<BuildingCodeComplianceSummary>();
             _createdViews = new ObservableCollection<ViewInfo>();
 
             // Initialize ExternalEvent for arrow creation
@@ -323,7 +335,7 @@ namespace BoltFramePlugin.ViewModels
                 }
 
                 // Check current selection
-                var selectedIds = _document?.Selection?.GetElementIds();
+                var selectedIds = _document.Selection?.GetElementIds();
                 if (selectedIds == null)
                     return;
 
@@ -1042,10 +1054,12 @@ namespace BoltFramePlugin.ViewModels
                     ReferenceLines,
                     RayLengthLimit,
                     shouldDrawDistanceArrows,
-                    () => {
+                    () =>
+                    {
                         // This callback runs after the external event completes
                         System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
-                            new Action(() => {
+                            new Action(() =>
+                            {
                                 // Distance Groups are calculated AFTER wall projections are created, not after detection
 
                                 // Auto-create WALL ORIENTATION arrows if enabled AND if this detection should trigger auto-creation
@@ -1168,58 +1182,134 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
-        private string GetOrientationDescription(XYZ? orientation)
-        {
-            if (orientation == null) return "Unknown";
-
-            var normal = new XYZ(orientation.X, orientation.Y, 0).Normalize();
-            var absX = Math.Abs(normal.X);
-            var absY = Math.Abs(normal.Y);
-
-            if (absY > absX)
-            {
-                return normal.Y > 0 ? "North" : "South";
-            }
-            else
-            {
-                return normal.X > 0 ? "East" : "West";
-            }
-        }
-
         /// <summary>
-        /// Gets the direction vector of a reference line
+        /// Calculates building code compliance based on distance groups and building classification
+        /// Determines maximum allowed openings percentage and compares with actual openings
         /// </summary>
-        private XYZ? GetReferenceLineDirection(ReferenceLineInfo referenceLine)
+        public void CalculateBuildingCodeCompliance()
         {
             try
             {
-                if (referenceLine?.Curve == null)
-                    return null;
+                _logger.LogInformation("Calculating building code compliance...");
+                BuildingCodeCompliance.Clear();
 
-                // Get the curve direction and project to XY plane
-                var direction = (referenceLine.Curve.GetEndPoint(1) - referenceLine.Curve.GetEndPoint(0)).Normalize();
-                return new XYZ(direction.X, direction.Y, 0).Normalize();
+                if (DistanceGroups == null || DistanceGroups.Count == 0)
+                {
+                    _logger.LogWarning("No distance groups available for compliance calculation");
+                    return;
+                }
+
+                // Group by orientation (elevation)
+                var groupedByOrientation = DistanceGroups
+                    .GroupBy(g => g.Orientation)
+                    .OrderBy(g => g.Key);
+
+                foreach (var orientationGroup in groupedByOrientation)
+                {
+                    var elevation = orientationGroup.Key;
+
+                    // Calculate total area for this elevation
+                    var totalGrossArea = orientationGroup.Sum(g => g.TotalGrossArea);
+                    var totalOpeningsArea = orientationGroup.Sum(g => g.TotalOpeningsArea);
+
+                    // Get the minimum limiting distance for this elevation (most restrictive)
+                    var minLimitingDistance = orientationGroup.Min(g => g.MinDistance);
+
+                    // Calculate proposed unprotected openings percentage
+                    var proposedOpeningsPercent = totalGrossArea > 0
+                        ? (totalOpeningsArea / totalGrossArea * 100)
+                        : 0;
+
+                    // Determine maximum allowed openings based on limiting distance and building classification
+                    var maxAllowedPercent = GetMaxAllowedOpeningsPercent(minLimitingDistance, BuildingClassification);
+                    var frr = GetFireResistanceRating(minLimitingDistance, BuildingClassification);
+                    var constructionType = GetConstructionTypeRequired(minLimitingDistance, BuildingClassification);
+                    var claddingType = GetCladdingTypeRequired(minLimitingDistance, BuildingClassification);
+
+                    // Convert from ft² to m² (1 ft² = 0.092903 m²)
+                    var totalGrossAreaM2 = totalGrossArea * 0.092903;
+                    var limitingDistanceM = minLimitingDistance * 0.3048; // ft to m
+
+                    var compliance = new BuildingCodeComplianceSummary
+                    {
+                        OccupancyClassification = BuildingClassification,
+                        Elevation = elevation,
+                        ExposingBuildingFaceArea = totalGrossAreaM2,
+                        LimitingDistance = limitingDistanceM,
+                        MaxUnprotectedOpeningsPercent = maxAllowedPercent,
+                        ProposedUnprotectedOpeningsPercent = proposedOpeningsPercent,
+                        FireResistanceRating = frr,
+                        ConstructionTypeRequired = constructionType,
+                        CladdingTypeRequired = claddingType
+                    };
+
+                    BuildingCodeCompliance.Add(compliance);
+
+                    _logger.LogInformation($"  {elevation}: Area={totalGrossAreaM2:F1}m², LD={limitingDistanceM:F1}m, Max={maxAllowedPercent}%, Proposed={proposedOpeningsPercent:F1}%, Status={compliance.ComplianceStatus}");
+                }
+
+                _logger.LogInformation($"Building code compliance calculated: {BuildingCodeCompliance.Count} elevations");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error getting reference line direction: {ex.Message}", ex);
-                return null;
+                _logger.LogError("Error calculating building code compliance", ex);
             }
         }
 
         /// <summary>
-        /// Determines if two orientations are similar within tolerance
+        /// Determines maximum allowed unprotected openings percentage based on limiting distance
+        /// Based on NBC (National Building Code) Table 3.2.3.1.D
         /// </summary>
-        private bool AreOrientationsSimilar(XYZ orientation1, XYZ orientation2, double toleranceDegrees)
+        private double GetMaxAllowedOpeningsPercent(double limitingDistanceFt, string buildingClassification)
         {
-            var angle1 = Math.Atan2(orientation1.Y, orientation1.X) * 180 / Math.PI;
-            var angle2 = Math.Atan2(orientation2.Y, orientation2.X) * 180 / Math.PI;
+            var limitingDistanceM = limitingDistanceFt * 0.3048; // Convert ft to m
 
-            var angleDiff = Math.Abs(angle1 - angle2);
-            if (angleDiff > 180)
-                angleDiff = 360 - angleDiff;
+            // Simplified NBC Table 3.2.3.1.D logic
+            // These values should be adjusted based on actual building code requirements
+            if (limitingDistanceM <= 1.2) return 10;
+            if (limitingDistanceM <= 1.5) return 15;
+            if (limitingDistanceM <= 2.0) return 25;
+            if (limitingDistanceM <= 2.5) return 40;
+            if (limitingDistanceM <= 3.0) return 60;
+            if (limitingDistanceM <= 4.0) return 80;
+            if (limitingDistanceM <= 5.0) return 100;
+            return 100; // No restriction for > 5m
+        }
 
-            return angleDiff < toleranceDegrees;
+        /// <summary>
+        /// Determines required fire resistance rating based on limiting distance
+        /// </summary>
+        private string GetFireResistanceRating(double limitingDistanceFt, string buildingClassification)
+        {
+            var limitingDistanceM = limitingDistanceFt * 0.3048;
+
+            if (limitingDistanceM <= 2.0) return "1 h";
+            if (limitingDistanceM <= 3.0) return "2 h";
+            if (limitingDistanceM <= 5.0) return "1 h";
+            return "45 min";
+        }
+
+        /// <summary>
+        /// Determines required construction type based on limiting distance
+        /// </summary>
+        private string GetConstructionTypeRequired(double limitingDistanceFt, string buildingClassification)
+        {
+            var limitingDistanceM = limitingDistanceFt * 0.3048;
+
+            if (limitingDistanceM <= 2.0) return "Combustible / Noncombustible";
+            return "Noncombustible";
+        }
+
+        /// <summary>
+        /// Determines required cladding type based on limiting distance
+        /// </summary>
+        private string GetCladdingTypeRequired(double limitingDistanceFt, string buildingClassification)
+        {
+            var limitingDistanceM = limitingDistanceFt * 0.3048;
+
+            if (limitingDistanceM <= 2.0) return "Combustible / Noncombustible";
+            if (limitingDistanceM <= 5.0) return "Noncombustible";
+            return "Noncombustible";
         }
 
         private void CreateWallProjections(object parameter)
@@ -1247,12 +1337,15 @@ namespace BoltFramePlugin.ViewModels
                     ReferenceLines.ToList(),
                     null,
                     AddCreatedView,
-                    (wallsWithRegions) => {
+                    (wallsWithRegions) =>
+                    {
                         // This callback runs after projections are created
                         // Update Distance Groups based on walls that actually got regions
                         System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
-                            new Action(() => {
+                            new Action(() =>
+                            {
                                 CalculateDistanceGroupsFromRegions(wallsWithRegions);
+                                CalculateBuildingCodeCompliance();
                             }));
                     });
 
@@ -1265,185 +1358,6 @@ namespace BoltFramePlugin.ViewModels
                 TaskDialog.Show("Error", $"Error creating wall projections: {ex.Message}");
             }
         }
-
-        private ReferenceLineInfo? CastRayAndFindIntersection(
-            Wall sourceWall,
-            XYZ rayStart,
-            XYZ rayEnd,
-            List<Wall> allWalls,
-            List<(Element element, Curve curve)> propertyLineCurves,
-            List<FamilyInstance> roadCenterlines)
-        {
-            try
-            {
-                var rayLine = Line.CreateBound(rayStart, rayEnd);
-                var ray2D = Line.CreateBound(new XYZ(rayStart.X, rayStart.Y, 0), new XYZ(rayEnd.X, rayEnd.Y, 0));
-
-                double closestDistance = double.MaxValue;
-                ReferenceLineInfo? closestHit = null;
-
-                // 1. Check intersection with other walls first (highest priority)
-                foreach (var wall in allWalls)
-                {
-                    if (wall.Id == sourceWall.Id) continue; // Skip self
-
-                    var wallLocationCurve = wall.Location as LocationCurve;
-                    if (wallLocationCurve == null) continue;
-
-                    var wallCurve = wallLocationCurve.Curve;
-                    var wallCurve2D = Line.CreateBound(
-                        new XYZ(wallCurve.GetEndPoint(0).X, wallCurve.GetEndPoint(0).Y, 0),
-                        new XYZ(wallCurve.GetEndPoint(1).X, wallCurve.GetEndPoint(1).Y, 0));
-
-                    var result = ray2D.Intersect(wallCurve2D, out IntersectionResultArray results);
-                    if (result == SetComparisonResult.Overlap && results != null && results.Size > 0)
-                    {
-                        var intersection = results.get_Item(0);
-                        var distance = rayStart.DistanceTo(intersection.XYZPoint);
-
-                        if (distance < closestDistance && distance > 0.01) // Ignore very small distances
-                        {
-                            closestDistance = distance;
-
-                            // Create imaginary line at midpoint between the two walls
-                            var midpointBetweenWalls = (rayStart + intersection.XYZPoint) / 2.0;
-                            var imaginaryLine = Line.CreateBound(rayStart, intersection.XYZPoint);
-
-                            closestHit = new ReferenceLineInfo
-                            {
-                                Element = wall,
-                                ElementId = wall.Id,
-                                LineType = ReferenceLineType.ImaginaryLine,
-                                Curve = imaginaryLine,
-                                Name = $"Imaginary Line (Wall {sourceWall.Id.Value} ↔ Wall {wall.Id.Value})",
-                                IsStreetEdge = false
-                            };
-                        }
-                    }
-                }
-
-                // If we hit a wall, return immediately (highest priority)
-                if (closestHit != null)
-                    return closestHit;
-
-                // 2. Check intersection with property lines
-                foreach (var (propLine, curve) in propertyLineCurves)
-                {
-                    // Curve is already extracted from the tuple
-                    if (curve == null) continue;
-
-                    // Project curve to 2D (XY plane at Z=0)
-                    Curve curve2D = null;
-                    if (curve is Line line)
-                    {
-                        curve2D = Line.CreateBound(
-                            new XYZ(line.GetEndPoint(0).X, line.GetEndPoint(0).Y, 0),
-                            new XYZ(line.GetEndPoint(1).X, line.GetEndPoint(1).Y, 0));
-                    }
-                    else if (curve is Arc arc)
-                    {
-                        // Project arc to 2D
-                        var start2D = new XYZ(arc.GetEndPoint(0).X, arc.GetEndPoint(0).Y, 0);
-                        var end2D = new XYZ(arc.GetEndPoint(1).X, arc.GetEndPoint(1).Y, 0);
-                        var mid = arc.Evaluate(0.5, true);
-                        var mid2D = new XYZ(mid.X, mid.Y, 0);
-
-                        try
-                        {
-                            curve2D = Arc.Create(start2D, end2D, mid2D);
-                        }
-                        catch
-                        {
-                            // If arc creation fails, use line approximation
-                            curve2D = Line.CreateBound(start2D, end2D);
-                        }
-                    }
-                    else
-                    {
-                        // For other curve types, approximate with line from start to end
-                        curve2D = Line.CreateBound(
-                            new XYZ(curve.GetEndPoint(0).X, curve.GetEndPoint(0).Y, 0),
-                            new XYZ(curve.GetEndPoint(1).X, curve.GetEndPoint(1).Y, 0));
-                    }
-
-                    if (curve2D == null) continue;
-
-                    var result = ray2D.Intersect(curve2D, out IntersectionResultArray results);
-                    if (result == SetComparisonResult.Overlap && results != null && results.Size > 0)
-                    {
-                        var intersection = results.get_Item(0);
-                        var distance = rayStart.DistanceTo(intersection.XYZPoint);
-
-                        _logger.LogInformation($"Property line {propLine.Id.Value} hit at distance {distance} ft");
-
-                        if (distance < closestDistance && distance > 0.01)
-                        {
-                            closestDistance = distance;
-                            closestHit = new ReferenceLineInfo
-                            {
-                                Element = propLine,
-                                ElementId = propLine.Id,
-                                LineType = ReferenceLineType.PropertyLine_NonStreetEdge,
-                                Curve = curve,
-                                Name = $"Property Line - {propLine.Id.Value}",
-                                IsStreetEdge = false
-                            };
-                        }
-                    }
-                }
-
-                // 3. Check intersection with road centerlines (check after property lines to determine if street edge)
-                var roadHit = false;
-                foreach (var road in roadCenterlines)
-                {
-                    var roadLocationCurve = road.Location as LocationCurve;
-                    if (roadLocationCurve == null) continue;
-
-                    var roadCurve = roadLocationCurve.Curve;
-                    var roadCurve2D = Line.CreateBound(
-                        new XYZ(roadCurve.GetEndPoint(0).X, roadCurve.GetEndPoint(0).Y, 0),
-                        new XYZ(roadCurve.GetEndPoint(1).X, roadCurve.GetEndPoint(1).Y, 0));
-
-                    var result = ray2D.Intersect(roadCurve2D, out IntersectionResultArray results);
-                    if (result == SetComparisonResult.Overlap && results != null && results.Size > 0)
-                    {
-                        var intersection = results.get_Item(0);
-                        var distance = rayStart.DistanceTo(intersection.XYZPoint);
-
-                        // If we hit a property line first, then road → use Road CL as governing line
-                        if (closestHit != null && closestHit.LineType == ReferenceLineType.PropertyLine_NonStreetEdge)
-                        {
-                            // Mark property line as street edge
-                            closestHit.LineType = ReferenceLineType.PropertyLine_StreetEdge;
-                            closestHit.IsStreetEdge = true;
-                            roadHit = true;
-                        }
-                        // If road is closest → use road
-                        else if (distance < closestDistance && distance > 0.01)
-                        {
-                            closestDistance = distance;
-                            closestHit = new ReferenceLineInfo
-                            {
-                                Element = road,
-                                ElementId = road.Id,
-                                LineType = ReferenceLineType.RoadCenterline,
-                                Curve = roadCurve,
-                                Name = $"Road CL - {road.Id.Value}",
-                                IsStreetEdge = false
-                            };
-                        }
-                    }
-                }
-
-                return closestHit;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error in ray casting for wall {sourceWall.Id.Value}", ex);
-                return null;
-            }
-        }
-
         private void ShowLogs(object parameter)
         {
             var logWindowVM = new LogWindowVM();

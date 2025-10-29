@@ -1,4 +1,4 @@
-namespace BoltFramePlugin.Views
+namespace BoltFramePlugin.Views.UserControls.LimitingDistance
 {
     /// <summary>
     /// Interaction logic for DevTabControl.xaml

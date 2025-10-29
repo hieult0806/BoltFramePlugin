@@ -4,7 +4,7 @@ using System.Windows;
 using BoltFramePlugin.Models.LimitingDistance;
 using BoltFramePlugin.Services;
 
-namespace BoltFramePlugin.Views
+namespace BoltFramePlugin.Views.UserControls.LimitingDistance
 {
     public partial class OpeningLimitsControl : System.Windows.Controls.UserControl
     {

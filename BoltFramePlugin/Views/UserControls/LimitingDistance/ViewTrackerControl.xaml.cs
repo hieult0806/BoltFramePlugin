@@ -1,7 +1,7 @@
 using System.Windows.Input;
 using BoltFramePlugin.ViewModels;
 
-namespace BoltFramePlugin.Views
+namespace BoltFramePlugin.Views.UserControls.LimitingDistance
 {
     public partial class ViewTrackerControl : System.Windows.Controls.UserControl
     {

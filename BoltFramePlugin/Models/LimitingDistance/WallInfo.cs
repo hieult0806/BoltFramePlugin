@@ -30,6 +30,9 @@ namespace BoltFramePlugin.Models.LimitingDistance
         public double Length { get; set; }
         public string LengthFormatted => $"{Length:F2} ft";
 
+        // Linked FilledRegion created for this wall (used for area calculation)
+        public FilledRegion? LinkedRegion { get; set; }
+
         // Event fired when a parameter needs to be updated in Revit
         public event EventHandler<ParameterUpdateEventArgs>? ParameterUpdateRequested;
 
@@ -58,8 +61,44 @@ namespace BoltFramePlugin.Models.LimitingDistance
         }
 
         // Area properties
-        public double GrossArea { get; set; }
-        public double OpeningsArea { get; set; }
+        private double _grossArea;
+        public double GrossArea
+        {
+            get => _grossArea;
+            set
+            {
+                if (Math.Abs(_grossArea - value) > 0.0001) // Use small tolerance for floating point comparison
+                {
+                    _grossArea = value;
+                    OnPropertyChanged(nameof(GrossArea));
+                    OnPropertyChanged(nameof(GrossAreaFormatted));
+                    OnPropertyChanged(nameof(NetArea));
+                    OnPropertyChanged(nameof(NetAreaFormatted));
+                    OnPropertyChanged(nameof(OpeningPercentage));
+                    OnPropertyChanged(nameof(OpeningPercentageFormatted));
+                }
+            }
+        }
+
+        private double _openingsArea;
+        public double OpeningsArea
+        {
+            get => _openingsArea;
+            set
+            {
+                if (Math.Abs(_openingsArea - value) > 0.0001)
+                {
+                    _openingsArea = value;
+                    OnPropertyChanged(nameof(OpeningsArea));
+                    OnPropertyChanged(nameof(OpeningsAreaFormatted));
+                    OnPropertyChanged(nameof(NetArea));
+                    OnPropertyChanged(nameof(NetAreaFormatted));
+                    OnPropertyChanged(nameof(OpeningPercentage));
+                    OnPropertyChanged(nameof(OpeningPercentageFormatted));
+                }
+            }
+        }
+
         public double NetArea => GrossArea - OpeningsArea;
 
         public string GrossAreaFormatted => $"{GrossArea:F2} ft²";
