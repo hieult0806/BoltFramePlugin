@@ -26,12 +26,12 @@ namespace BoltFramePlugin.Services
             container.RegisterSingleton<IExtensibleStorageService, ExtensibleStorageService>();
 
             // Data Import Services
-            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.CsvImportService>();
-            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.ExcelImportService>();
-            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.ITableRenderService, BoltFramePlugin.Services.DataImport.RevitTableRenderService>();
-            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.DataImportManager>();
-            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.FileWatcherService>();
-            container.RegisterSingleton<BoltFramePlugin.Services.DataImport.AutoSyncEventHandler>();
+            container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.Import.CsvImportService>();
+            container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.Import.ExcelImportService>();
+            container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.Render.ITableRenderService, BoltFramePlugin.Features.DataImport.Services.Render.RevitTableRenderService>();
+            container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.DataImportManager>();
+            container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.FileWatcherService>();
+            container.RegisterSingleton<BoltFramePlugin.Features.DataImport.EventHandlers.AutoSyncEventHandler>();
 
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());

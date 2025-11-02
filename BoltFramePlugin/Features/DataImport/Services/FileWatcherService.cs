@@ -1,13 +1,14 @@
 using Autodesk.Revit.DB;
+using BoltFramePlugin.Features.DataImport.Models;
 using BoltFramePlugin.Models;
-using BoltFramePlugin.Models.DataImport;
+using BoltFramePlugin.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using TextAlignment = BoltFramePlugin.Models.DataImport.TextAlignment;
+using TextAlignment = BoltFramePlugin.Features.DataImport.Models.TextAlignment;
 
-namespace BoltFramePlugin.Services.DataImport
+namespace BoltFramePlugin.Features.DataImport.Services
 {
     /// <summary>
     /// Service for tracking imported files and manually syncing changes to Revit views

@@ -1,13 +1,16 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using BoltFramePlugin.Models.DataImport;
+using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Features.DataImport.Services.Import;
+using BoltFramePlugin.Features.DataImport.Services.Render;
+using BoltFramePlugin.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace BoltFramePlugin.Services.DataImport
+namespace BoltFramePlugin.Features.DataImport.Services
 {
     /// <summary>
     /// Manager for coordinating data import and rendering operations

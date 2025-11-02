@@ -1,11 +1,11 @@
 using Autodesk.Revit.UI;
-using BoltFramePlugin.ViewModels;
+using BoltFramePlugin.Features.DataImport.ViewModels;
 using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 
-namespace BoltFramePlugin.Views
+namespace BoltFramePlugin.Features.DataImport.Views
 {
     public partial class DataImportWindow : Window
     {

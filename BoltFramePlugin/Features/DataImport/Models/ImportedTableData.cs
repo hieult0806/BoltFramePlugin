@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace BoltFramePlugin.Models.DataImport
+namespace BoltFramePlugin.Features.DataImport.Models
 {
     /// <summary>
     /// Represents a merged cell range in the table

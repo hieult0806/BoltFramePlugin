@@ -1,7 +1,7 @@
 using Autodesk.Revit.DB;
-using BoltFramePlugin.Models.DataImport;
+using BoltFramePlugin.Features.DataImport.Models;
 
-namespace BoltFramePlugin.Services.DataImport
+namespace BoltFramePlugin.Features.DataImport.Services.Render
 {
     /// <summary>
     /// Interface for rendering table data to Revit views

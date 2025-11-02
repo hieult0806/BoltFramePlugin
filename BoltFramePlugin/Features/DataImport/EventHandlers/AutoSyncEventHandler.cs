@@ -1,10 +1,12 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using BoltFramePlugin.Models.DataImport;
+using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Features.DataImport.Services;
+using BoltFramePlugin.Services;
 using System;
 using System.Threading.Tasks;
 
-namespace BoltFramePlugin.Services.DataImport
+namespace BoltFramePlugin.Features.DataImport.EventHandlers
 {
     /// <summary>
     /// External event handler for auto-syncing file changes to Revit views

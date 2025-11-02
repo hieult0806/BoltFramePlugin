@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using BoltFramePlugin.Models.DataImport;
+using BoltFramePlugin.Features.DataImport.Models;
 
 namespace BoltFramePlugin.Models
 {

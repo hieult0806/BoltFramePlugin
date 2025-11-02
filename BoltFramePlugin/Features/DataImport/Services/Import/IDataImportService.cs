@@ -1,7 +1,7 @@
-using BoltFramePlugin.Models.DataImport;
+using BoltFramePlugin.Features.DataImport.Models;
 using System.Threading.Tasks;
 
-namespace BoltFramePlugin.Services.DataImport
+namespace BoltFramePlugin.Features.DataImport.Services.Import
 {
     /// <summary>
     /// Interface for importing data from external sources

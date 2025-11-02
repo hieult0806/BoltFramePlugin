@@ -1,11 +1,12 @@
-using BoltFramePlugin.Models.DataImport;
+using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace BoltFramePlugin.Services.DataImport
+namespace BoltFramePlugin.Features.DataImport.Services.Import
 {
     /// <summary>
     /// Service for importing data from Excel files using ClosedXML library

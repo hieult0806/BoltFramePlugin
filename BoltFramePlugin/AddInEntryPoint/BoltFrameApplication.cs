@@ -9,6 +9,7 @@ using BoltFramePlugin.Helpers;
 using BoltFramePlugin.Factories;
 using BoltFramePlugin.Constants;
 using BoltFramePlugin.Views;
+using BoltFramePlugin.Features.DataImport.Commands;
 using Serilog;
 
 namespace BoltFramePlugin.AddInEntryPoint
@@ -95,7 +96,7 @@ namespace BoltFramePlugin.AddInEntryPoint
             // Stop all file watchers for this document
             try
             {
-                var fileWatcher = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.FileWatcherService>();
+                var fileWatcher = DIContainerService.Container.GetInstance<BoltFramePlugin.Features.DataImport.Services.FileWatcherService>();
                 fileWatcher.StopAll();
                 _logger.LogInformation("All file watchers stopped due to document closing.");
             }
@@ -218,7 +219,7 @@ namespace BoltFramePlugin.AddInEntryPoint
                 panel,
                 name: "DataImportButton",
                 text: "Import Table",
-                className: nameof(DataImportCommand),
+                className: "BoltFramePlugin.Features.DataImport.Commands.DataImportCommand",
                 tooltip: "Import CSV/Excel to Drafting View",
                 longDescription: "Import tabular data from CSV or Excel files and render as tables in Revit drafting views using detail items (text, lines, regions).",
                 iconName: "excel"
@@ -246,11 +247,14 @@ namespace BoltFramePlugin.AddInEntryPoint
         {
             try
             {
+                // If className contains a period, treat it as a full namespace path, otherwise prepend AddInEntryPoint namespace
+                string fullClassName = className.Contains(".") ? className : $"BoltFramePlugin.AddInEntryPoint.{className}";
+
                 PushButtonData buttonData = new PushButtonData(
                     name: name,
                     text: text,
                     assemblyName: System.Reflection.Assembly.GetExecutingAssembly().Location,
-                    className: $"BoltFramePlugin.AddInEntryPoint.{className}"
+                    className: fullClassName
                 );
 
                 PushButton button = panel.AddItem(buttonData) as PushButton;

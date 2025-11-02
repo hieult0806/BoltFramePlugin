@@ -2,10 +2,10 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using BoltFramePlugin.Services;
-using BoltFramePlugin.Views;
+using BoltFramePlugin.Features.DataImport.Views;
 using System;
 
-namespace BoltFramePlugin.AddInEntryPoint
+namespace BoltFramePlugin.Features.DataImport.Commands
 {
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]

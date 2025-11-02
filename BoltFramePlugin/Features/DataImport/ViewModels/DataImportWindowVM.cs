@@ -1,7 +1,9 @@
 using Autodesk.Revit.UI;
-using BoltFramePlugin.Models.DataImport;
+using BoltFramePlugin.Features.DataImport.EventHandlers;
+using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Features.DataImport.Services;
+using BoltFramePlugin.Models;
 using BoltFramePlugin.Services;
-using BoltFramePlugin.Services.DataImport;
 using BoltFramePlugin.ViewModels;
 using Microsoft.Win32;
 using System;
@@ -12,7 +14,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace BoltFramePlugin.ViewModels
+namespace BoltFramePlugin.Features.DataImport.ViewModels
 {
     public class DataImportWindowVM : BaseViewModel
     {
@@ -58,9 +60,9 @@ namespace BoltFramePlugin.ViewModels
             _logger = DIContainerService.Container.GetInstance<ILoggingService>();
 
             // Get services from DI container (singletons that persist after window closes)
-            _importManager = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.DataImportManager>();
-            _fileWatcher = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.FileWatcherService>();
-            _autoSyncHandler = DIContainerService.Container.GetInstance<BoltFramePlugin.Services.DataImport.AutoSyncEventHandler>();
+            _importManager = DIContainerService.Container.GetInstance<DataImportManager>();
+            _fileWatcher = DIContainerService.Container.GetInstance<FileWatcherService>();
+            _autoSyncHandler = DIContainerService.Container.GetInstance<AutoSyncEventHandler>();
             _autoSyncEvent = ExternalEvent.Create(_autoSyncHandler);
             _projectConfig = DIContainerService.Container.GetInstance<IProjectConfigurationManager>();
 
@@ -692,7 +694,7 @@ namespace BoltFramePlugin.ViewModels
 
                 var config = _projectConfig.LoadProjectConfiguration(projectId);
 
-                config.DataImportSettings = new Models.DataImportSettings
+                config.DataImportSettings = new DataImportSettings
                 {
                     // Import configuration
                     HasHeaders = _hasHeaders,
