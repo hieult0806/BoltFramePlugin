@@ -27,6 +27,17 @@ namespace BoltFramePlugin.ViewModels
         private UpdateWallParameterEventHandler _updateWallParameterHandler;
         private ExternalEvent _deleteViewEvent;
         private DeleteViewEventHandler _deleteViewHandler;
+        private ExternalEvent _initializeProjectParametersEvent;
+        private InitializeProjectParametersEventHandler _initializeProjectParametersHandler;
+        private ExternalEvent _loadFamiliesEvent;
+        private LoadFamiliesEventHandler _loadFamiliesHandler;
+        private ExternalEvent _initializeFilledRegionTypesEvent;
+        private InitializeFilledRegionTypesEventHandler _initializeFilledRegionTypesHandler;
+        private ExternalEvent _cleanupDuplicateFilledRegionTypesEvent;
+        private CleanupDuplicateFilledRegionTypesEventHandler _cleanupDuplicateFilledRegionTypesHandler;
+
+        // Configuration cache
+        private List<FilledRegionTypeDefinition> _filledRegionTypeRanges = new List<FilledRegionTypeDefinition>();
 
         // Commands
         public ICommand SelectPropertyLineCommand { get; }
@@ -46,6 +57,12 @@ namespace BoltFramePlugin.ViewModels
         public ICommand OpenViewCommand { get; }
         public ICommand DeleteViewCommand { get; }
         public ICommand DeleteAllViewsCommand { get; }
+        public ICommand InitializeProjectParametersCommand { get; }
+        public ICommand LoadRequiredFamiliesCommand { get; }
+        public ICommand BrowseCustomFamilyCommand { get; }
+        public ICommand InitializeFilledRegionTypesCommand { get; }
+        public ICommand CleanupDuplicateFilledRegionTypesCommand { get; }
+        public ICommand InitializeAllCommand { get; }
 
         // Properties
         private Element? _selectedPropertyLine;
@@ -212,6 +229,40 @@ namespace BoltFramePlugin.ViewModels
             }
         }
 
+        // Project Setup Collections
+        private ObservableCollection<ProjectParameterInfo> _requiredProjectParameters;
+        public ObservableCollection<ProjectParameterInfo> RequiredProjectParameters
+        {
+            get => _requiredProjectParameters;
+            set
+            {
+                _requiredProjectParameters = value;
+                OnPropertyChanged(nameof(RequiredProjectParameters));
+            }
+        }
+
+        private ObservableCollection<RequiredFamilyInfo> _requiredFamilies;
+        public ObservableCollection<RequiredFamilyInfo> RequiredFamilies
+        {
+            get => _requiredFamilies;
+            set
+            {
+                _requiredFamilies = value;
+                OnPropertyChanged(nameof(RequiredFamilies));
+            }
+        }
+
+        private ObservableCollection<FilledRegionTypeInfo> _requiredFilledRegionTypes;
+        public ObservableCollection<FilledRegionTypeInfo> RequiredFilledRegionTypes
+        {
+            get => _requiredFilledRegionTypes;
+            set
+            {
+                _requiredFilledRegionTypes = value;
+                OnPropertyChanged(nameof(RequiredFilledRegionTypes));
+            }
+        }
+
         // Created Views Tracking
         private ObservableCollection<ViewInfo> _createdViews;
         public ObservableCollection<ViewInfo> CreatedViews
@@ -256,6 +307,12 @@ namespace BoltFramePlugin.ViewModels
             _distanceGroups = new ObservableCollection<DistanceGroupSummary>();
             _buildingCodeCompliance = new ObservableCollection<BuildingCodeComplianceSummary>();
             _createdViews = new ObservableCollection<ViewInfo>();
+            _requiredProjectParameters = new ObservableCollection<ProjectParameterInfo>();
+            _requiredFamilies = new ObservableCollection<RequiredFamilyInfo>();
+            _requiredFilledRegionTypes = new ObservableCollection<FilledRegionTypeInfo>();
+
+            // Initialize project setup data
+            InitializeProjectSetupData();
 
             // Initialize ExternalEvent for arrow creation
             _createArrowsHandler = new CreateArrowsEventHandler();
@@ -277,6 +334,22 @@ namespace BoltFramePlugin.ViewModels
             _deleteViewHandler = new DeleteViewEventHandler();
             _deleteViewEvent = ExternalEvent.Create(_deleteViewHandler);
 
+            // Initialize ExternalEvent for initializing project parameters
+            _initializeProjectParametersHandler = new InitializeProjectParametersEventHandler(_logger);
+            _initializeProjectParametersEvent = ExternalEvent.Create(_initializeProjectParametersHandler);
+
+            // Initialize ExternalEvent for loading families
+            _loadFamiliesHandler = new LoadFamiliesEventHandler(_logger);
+            _loadFamiliesEvent = ExternalEvent.Create(_loadFamiliesHandler);
+
+            // Initialize ExternalEvent for initializing filled region types
+            _initializeFilledRegionTypesHandler = new InitializeFilledRegionTypesEventHandler(_logger);
+            _initializeFilledRegionTypesEvent = ExternalEvent.Create(_initializeFilledRegionTypesHandler);
+
+            // Initialize ExternalEvent for cleaning up duplicate filled region types
+            _cleanupDuplicateFilledRegionTypesHandler = new CleanupDuplicateFilledRegionTypesEventHandler(_logger);
+            _cleanupDuplicateFilledRegionTypesEvent = ExternalEvent.Create(_cleanupDuplicateFilledRegionTypesHandler);
+
             // Initialize commands
             SelectPropertyLineCommand = new RelayCommand(SelectPropertyLine);
             HighlightWallsCommand = new RelayCommand(HighlightWalls, CanHighlightWalls);
@@ -295,6 +368,12 @@ namespace BoltFramePlugin.ViewModels
             OpenViewCommand = new RelayCommand(OpenView, CanOpenView);
             DeleteViewCommand = new RelayCommand(DeleteView, CanDeleteView);
             DeleteAllViewsCommand = new RelayCommand(DeleteAllViews, CanDeleteAllViews);
+            InitializeProjectParametersCommand = new RelayCommand(InitializeProjectParameters);
+            LoadRequiredFamiliesCommand = new RelayCommand(LoadRequiredFamilies);
+            BrowseCustomFamilyCommand = new RelayCommand(BrowseCustomFamily);
+            InitializeFilledRegionTypesCommand = new RelayCommand(InitializeFilledRegionTypes);
+            CleanupDuplicateFilledRegionTypesCommand = new RelayCommand(CleanupDuplicateFilledRegionTypes);
+            InitializeAllCommand = new RelayCommand(InitializeAll);
 
             _logger.LogInformation("LimitingDistanceWindowVM initialized.");
 
@@ -1110,68 +1189,98 @@ namespace BoltFramePlugin.ViewModels
                 }
 
                 // Group walls by their assigned reference line
-                var wallsByReferenceLine = wallsWithRegions
+                var wallsByOrientation = wallsWithRegions
                     .Where(w => w.LimitingDistance.HasValue && w.ReferenceLine != null)
-                    .GroupBy(w => w.ReferenceLine)
-                    .OrderBy(g => g.Key.LineTypeFormatted)
-                    .ThenBy(g => g.Key.Name)
+                    .GroupBy(w => w.Orientation)
                     .ToList();
 
-                _logger.LogInformation($"Grouped into {wallsByReferenceLine.Count} reference line groups");
+                _logger.LogInformation($"Grouped into {wallsByOrientation.Count} orientation groups");
 
-                // Distance ranges based on building code tables (converted to feet from meters)
-                var ranges = new[]
+                // Load distance ranges from JSON configuration
+                // If no ranges loaded, use fallback defaults
+                if (_filledRegionTypeRanges == null || _filledRegionTypeRanges.Count == 0)
                 {
-                    new { Min = 0.0, Max = 3.937, Label = "0-1.2m (0-3.9ft)" },
-                    new { Min = 3.937, Max = 4.921, Label = "1.2-1.5m (3.9-4.9ft)" },
-                    new { Min = 4.921, Max = 6.562, Label = "1.5-2m (4.9-6.6ft)" },
-                    new { Min = 6.562, Max = 8.202, Label = "2-2.5m (6.6-8.2ft)" },
-                    new { Min = 8.202, Max = 9.843, Label = "2.5-3m (8.2-9.8ft)" },
-                    new { Min = 9.843, Max = 13.123, Label = "3-4m (9.8-13.1ft)" },
-                    new { Min = 13.123, Max = 16.404, Label = "4-5m (13.1-16.4ft)" },
-                    new { Min = 16.404, Max = 19.685, Label = "5-6m (16.4-19.7ft)" },
-                    new { Min = 19.685, Max = 22.966, Label = "6-7m (19.7-23.0ft)" },
-                    new { Min = 22.966, Max = 26.247, Label = "7-8m (23.0-26.2ft)" },
-                    new { Min = 26.247, Max = 29.528, Label = "8-9m (26.2-29.5ft)" },
-                    new { Min = 29.528, Max = double.MaxValue, Label = "9m+ (29.5ft+)" }
-                };
-
-                foreach (var refLineGroup in wallsByReferenceLine)
-                {
-                    var refLineName = refLineGroup.Key.Name;
-
-                    foreach (var range in ranges)
+                    _logger.LogWarning("No filled region type ranges loaded from JSON, using fallback defaults");
+                    // Fallback to hardcoded ranges
+                    var fallbackRanges = new[]
                     {
-                        // For the last range (9m+), handle infinity properly
-                        var wallsInRange = refLineGroup
-                            .Where(w => w.LimitingDistance.Value >= range.Min &&
-                                       (w.LimitingDistance.Value < range.Max || range.Max == double.MaxValue))
-                            .ToList();
+                        new { Min = 0.0, Max = 3.937, Label = "0-1.2m (0-3.9ft)" },
+                        new { Min = 3.937, Max = 4.921, Label = "1.2-1.5m (3.9-4.9ft)" },
+                        new { Min = 4.921, Max = 6.562, Label = "1.5-2m (4.9-6.6ft)" },
+                        new { Min = 6.562, Max = 8.202, Label = "2-2.5m (6.6-8.2ft)" },
+                        new { Min = 8.202, Max = 9.843, Label = "2.5-3m (8.2-9.8ft)" },
+                        new { Min = 9.843, Max = 13.123, Label = "3-4m (9.8-13.1ft)" },
+                        new { Min = 13.123, Max = 16.404, Label = "4-5m (13.1-16.4ft)" },
+                        new { Min = 16.404, Max = 19.685, Label = "5-6m (16.4-19.7ft)" },
+                        new { Min = 19.685, Max = 22.966, Label = "6-7m (19.7-23.0ft)" },
+                        new { Min = 22.966, Max = 26.247, Label = "7-8m (23.0-26.2ft)" },
+                        new { Min = 26.247, Max = 29.528, Label = "8-9m (26.2-29.5ft)" },
+                        new { Min = 29.528, Max = double.MaxValue, Label = "9m+ (29.5ft+)" }
+                    };
 
-                        if (wallsInRange.Any())
+                    foreach (var orientationGroup in wallsByOrientation)
+                    {
+                        var orientationName = orientationGroup.Key.ToString();
+
+                        foreach (var range in fallbackRanges)
                         {
-                            var group = new DistanceGroupSummary
-                            {
-                                Orientation = refLineName,
-                                DistanceRange = range.Label,
-                                MinDistance = range.Min,
-                                MaxDistance = range.Max,
-                                WallCount = wallsInRange.Count,
-                                TotalGrossArea = wallsInRange.Sum(w => w.GrossArea),
-                                TotalOpeningsArea = wallsInRange.Sum(w => w.OpeningsArea)
-                            };
+                            var wallsInRange = orientationGroup
+                                .Where(w => w.LimitingDistance.Value >= range.Min &&
+                                           (w.LimitingDistance.Value < range.Max || range.Max == double.MaxValue))
+                                .ToList();
 
-                            groups.Add(group);
-                            _logger.LogInformation($"  {refLineName} - {range.Label}: {group.WallCount} walls, Gross: {group.TotalGrossArea:F2} ft²");
+                            if (wallsInRange.Any())
+                            {
+                                var group = new DistanceGroupSummary
+                                {
+                                    Orientation = orientationName,
+                                    DistanceRange = range.Label,
+                                    MinDistance = range.Min,
+                                    MaxDistance = range.Max,
+                                    TotalGrossArea = wallsInRange.Sum(w => w.GrossArea),
+                                    TotalOpeningsArea = wallsInRange.Sum(w => w.OpeningsArea)
+                                };
+
+                                DistanceGroups.Add(group);
+                                _logger.LogInformation($"Added group: {orientationName} - {range.Label}");
+                            }
                         }
                     }
                 }
-
-                // Update the observable collection
-                DistanceGroups.Clear();
-                foreach (var group in groups.OrderBy(g => g.Orientation).ThenBy(g => g.MinDistance))
+                else
                 {
-                    DistanceGroups.Add(group);
+                    // Use ranges from JSON configuration
+                    _logger.LogInformation($"Using {_filledRegionTypeRanges.Count} distance ranges from JSON configuration");
+
+                    foreach (var orientationGroup in wallsByOrientation)
+                    {
+                        var orientationName = orientationGroup.Key.ToString();
+
+                        foreach (var range in _filledRegionTypeRanges)
+                        {
+                            // For the last range, handle very large max values properly
+                            var wallsInRange = orientationGroup
+                                .Where(w => w.LimitingDistance.Value >= range.MinDistanceFeet &&
+                                           (w.LimitingDistance.Value < range.MaxDistanceFeet || range.MaxDistanceFeet > 900000))
+                                .ToList();
+
+                            if (wallsInRange.Any())
+                            {
+                                var group = new DistanceGroupSummary
+                                {
+                                    Orientation = orientationName,
+                                    DistanceRange = range.Label,
+                                    MinDistance = range.MinDistanceFeet,
+                                    MaxDistance = range.MaxDistanceFeet,
+                                    TotalGrossArea = wallsInRange.Sum(w => w.GrossArea),
+                                    TotalOpeningsArea = wallsInRange.Sum(w => w.OpeningsArea)
+                                };
+
+                                DistanceGroups.Add(group);
+                                _logger.LogInformation($"Added group: {orientationName} - {range.Label}");
+                            }
+                        }
+                    }
                 }
 
                 _logger.LogInformation($"Distance groups calculated: {DistanceGroups.Count} groups");
@@ -1199,20 +1308,19 @@ namespace BoltFramePlugin.ViewModels
                     return;
                 }
 
-                // Group by orientation (elevation)
                 var groupedByOrientation = DistanceGroups
                     .GroupBy(g => g.Orientation)
                     .OrderBy(g => g.Key);
 
                 foreach (var orientationGroup in groupedByOrientation)
                 {
-                    var elevation = orientationGroup.Key;
+                    var orientation = orientationGroup.Key;
 
-                    // Calculate total area for this elevation
+                    // Calculate total area for this orientation
                     var totalGrossArea = orientationGroup.Sum(g => g.TotalGrossArea);
                     var totalOpeningsArea = orientationGroup.Sum(g => g.TotalOpeningsArea);
 
-                    // Get the minimum limiting distance for this elevation (most restrictive)
+                    // Get the minimum limiting distance for this orientation (most restrictive)
                     var minLimitingDistance = orientationGroup.Min(g => g.MinDistance);
 
                     // Calculate proposed unprotected openings percentage
@@ -1233,7 +1341,7 @@ namespace BoltFramePlugin.ViewModels
                     var compliance = new BuildingCodeComplianceSummary
                     {
                         OccupancyClassification = BuildingClassification,
-                        Elevation = elevation,
+                        Orientation = orientation,
                         ExposingBuildingFaceArea = totalGrossAreaM2,
                         LimitingDistance = limitingDistanceM,
                         MaxUnprotectedOpeningsPercent = maxAllowedPercent,
@@ -1245,10 +1353,10 @@ namespace BoltFramePlugin.ViewModels
 
                     BuildingCodeCompliance.Add(compliance);
 
-                    _logger.LogInformation($"  {elevation}: Area={totalGrossAreaM2:F1}m², LD={limitingDistanceM:F1}m, Max={maxAllowedPercent}%, Proposed={proposedOpeningsPercent:F1}%, Status={compliance.ComplianceStatus}");
+                    _logger.LogInformation($"  {orientation}: Area={totalGrossAreaM2:F1}m², LD={limitingDistanceM:F1}m, Max={maxAllowedPercent}%, Proposed={proposedOpeningsPercent:F1}%, Status={compliance.ComplianceStatus}");
                 }
 
-                _logger.LogInformation($"Building code compliance calculated: {BuildingCodeCompliance.Count} elevations");
+                _logger.LogInformation($"Building code compliance calculated: {BuildingCodeCompliance.Count} orientations");
             }
             catch (Exception ex)
             {
@@ -1994,6 +2102,517 @@ namespace BoltFramePlugin.ViewModels
             catch (Exception ex)
             {
                 _logger.LogError($"Error saving AutoCreateArrows setting: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
+
+        #region Project Setup Methods
+
+        /// <summary>
+        /// Initializes the project setup data with required parameters, families, and filled region types
+        /// </summary>
+        private void InitializeProjectSetupData()
+        {
+            // Load required project parameters from JSON configuration
+            LoadProjectParametersFromJson();
+
+            // Scan and load required families from Resources/Families folder
+            LoadFamilyListFromFolder();
+
+            // Load required filled region types from JSON configuration
+            LoadFilledRegionTypesFromJson();
+        }
+
+        /// <summary>
+        /// Load project parameter definitions from JSON configuration file and populate the DataGrid
+        /// </summary>
+        private void LoadProjectParametersFromJson()
+        {
+            try
+            {
+                // Get the configuration file path
+                var assemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var assemblyDir = System.IO.Path.GetDirectoryName(assemblyPath);
+                var configPath = System.IO.Path.Combine(assemblyDir!, "Resources", "Config", "ProjectParameters.json");
+
+                if (!System.IO.File.Exists(configPath))
+                {
+                    _logger.LogWarning($"Configuration file not found: {configPath}. Using default parameters.");
+
+                    // Fallback to default parameters
+                    RequiredProjectParameters.Add(new ProjectParameterInfo
+                    {
+                        Name = "LD_IsPerimeter",
+                        ParameterType = "Yes/No",
+                        GroupName = "Identity Data",
+                        Status = "Not Checked"
+                    });
+                    return;
+                }
+
+                // Read and parse JSON configuration
+                var jsonContent = System.IO.File.ReadAllText(configPath);
+                var config = System.Text.Json.JsonSerializer.Deserialize<ProjectParameterConfiguration>(jsonContent, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (config == null || config.ProjectParameters == null || config.ProjectParameters.Count == 0)
+                {
+                    _logger.LogWarning("Failed to parse configuration or no parameters defined.");
+                    return;
+                }
+
+                // Get existing parameters from the Revit document
+                var doc = GetUIDocument()?.Document;
+                var existingParameters = new HashSet<string>();
+
+                if (doc != null)
+                {
+                    var paramElements = new FilteredElementCollector(doc)
+                        .OfClass(typeof(ParameterElement))
+                        .Cast<ParameterElement>()
+                        .ToList();
+
+                    foreach (var paramElem in paramElements)
+                    {
+                        existingParameters.Add(paramElem.Name);
+                    }
+
+                    _logger.LogInformation($"Found {existingParameters.Count} parameters already in document");
+                }
+
+                // Populate the RequiredProjectParameters collection from JSON
+                int alreadyExistsCount = 0;
+                foreach (var paramDef in config.ProjectParameters)
+                {
+                    bool exists = existingParameters.Contains(paramDef.Name);
+                    if (exists) alreadyExistsCount++;
+
+                    RequiredProjectParameters.Add(new ProjectParameterInfo
+                    {
+                        Name = paramDef.Name,
+                        ParameterType = paramDef.ParameterType,
+                        GroupName = paramDef.GroupName,
+                        Status = exists ? "Already Exists" : "Not Checked"
+                    });
+                }
+
+                _logger.LogInformation($"Loaded {RequiredProjectParameters.Count} parameter definitions from JSON configuration. {alreadyExistsCount} already exist in document.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading project parameters from JSON: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Scan the Families folder and populate the RequiredFamilies collection
+        /// </summary>
+        private void LoadFamilyListFromFolder()
+        {
+            try
+            {
+                // Get the families folder path
+                var assemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var assemblyDir = System.IO.Path.GetDirectoryName(assemblyPath);
+                var familiesPath = System.IO.Path.Combine(assemblyDir!, "Resources", "Families");
+
+                if (!System.IO.Directory.Exists(familiesPath))
+                {
+                    _logger.LogWarning($"Families folder not found: {familiesPath}. No families to display.");
+                    return;
+                }
+
+                // Get all .rfa files in the directory, excluding Revit backup files (.0001.rfa, .0002.rfa, etc.)
+                var allFamilyFiles = System.IO.Directory.GetFiles(familiesPath, "*.rfa");
+                var familyFiles = allFamilyFiles.Where(f => !System.Text.RegularExpressions.Regex.IsMatch(
+                    System.IO.Path.GetFileName(f),
+                    @"\.\d{4}\.rfa$")).ToArray();
+
+                if (familyFiles.Length == 0)
+                {
+                    _logger.LogWarning($"No family files found in: {familiesPath}");
+                    return;
+                }
+
+                _logger.LogInformation($"Filtered {allFamilyFiles.Length - familyFiles.Length} backup files.");
+
+                // Get currently loaded families from the Revit document
+                var doc = GetUIDocument()?.Document;
+                var loadedFamilies = new System.Collections.Generic.HashSet<string>();
+
+                if (doc != null)
+                {
+                    var families = new Autodesk.Revit.DB.FilteredElementCollector(doc)
+                        .OfClass(typeof(Autodesk.Revit.DB.Family))
+                        .Cast<Autodesk.Revit.DB.Family>()
+                        .ToList();
+
+                    foreach (var family in families)
+                    {
+                        loadedFamilies.Add(family.Name);
+                    }
+
+                    _logger.LogInformation($"Found {loadedFamilies.Count} families already loaded in document");
+                }
+
+                // Populate the RequiredFamilies collection
+                foreach (var familyPath in familyFiles)
+                {
+                    var familyName = System.IO.Path.GetFileNameWithoutExtension(familyPath);
+
+                    // Check if family is already loaded
+                    bool isLoaded = loadedFamilies.Contains(familyName);
+                    string status = isLoaded ? "Already Loaded" : "Not Loaded";
+                    string category = "To Be Determined";
+
+                    // If loaded, try to get the actual category
+                    if (isLoaded && doc != null)
+                    {
+                        var family = new Autodesk.Revit.DB.FilteredElementCollector(doc)
+                            .OfClass(typeof(Autodesk.Revit.DB.Family))
+                            .Cast<Autodesk.Revit.DB.Family>()
+                            .FirstOrDefault(f => f.Name == familyName);
+
+                        if (family != null && family.FamilyCategory != null)
+                        {
+                            category = family.FamilyCategory.Name;
+                        }
+                    }
+
+                    RequiredFamilies.Add(new RequiredFamilyInfo
+                    {
+                        Name = familyName,
+                        Category = category,
+                        Purpose = "Loaded from Resources/Families",
+                        FilePath = familyPath,
+                        Status = status
+                    });
+                }
+
+                _logger.LogInformation($"Found {RequiredFamilies.Count} family files in Resources/Families folder. {loadedFamilies.Count} already loaded.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading family list from folder: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Load filled region type definitions from JSON configuration file and populate the DataGrid
+        /// </summary>
+        private void LoadFilledRegionTypesFromJson()
+        {
+            try
+            {
+                // Get the configuration file path
+                var assemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var assemblyDir = System.IO.Path.GetDirectoryName(assemblyPath);
+                var configPath = System.IO.Path.Combine(assemblyDir!, "Resources", "Config", "FilledRegionTypes.json");
+
+                if (!System.IO.File.Exists(configPath))
+                {
+                    _logger.LogWarning($"Configuration file not found: {configPath}. Using default filled region types.");
+
+                    // Fallback to default filled region types
+                    RequiredFilledRegionTypes.Add(new FilledRegionTypeInfo
+                    {
+                        Name = "LD_0-1m",
+                        PatternName = "Solid fill",
+                        ColorDescription = "Red (255, 0, 0)",
+                        ColorR = 255,
+                        ColorG = 0,
+                        ColorB = 0,
+                        Status = "Not Checked"
+                    });
+                    return;
+                }
+
+                // Read and parse JSON configuration
+                var jsonContent = System.IO.File.ReadAllText(configPath);
+                var config = System.Text.Json.JsonSerializer.Deserialize<FilledRegionTypeConfiguration>(jsonContent, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (config == null || config.FilledRegionTypes == null || config.FilledRegionTypes.Count == 0)
+                {
+                    _logger.LogWarning("Failed to parse configuration or no filled region types defined.");
+                    return;
+                }
+
+                // Store the configuration for use in distance group calculations
+                _filledRegionTypeRanges = config.FilledRegionTypes;
+
+                // Get existing filled region types from the Revit document
+                var doc = GetUIDocument()?.Document;
+                var existingFilledRegionTypes = new HashSet<string>();
+
+                if (doc != null)
+                {
+                    var filledRegionTypes = new FilteredElementCollector(doc)
+                        .OfClass(typeof(FilledRegionType))
+                        .Cast<FilledRegionType>()
+                        .ToList();
+
+                    foreach (var frt in filledRegionTypes)
+                    {
+                        existingFilledRegionTypes.Add(frt.Name);
+                    }
+
+                    _logger.LogInformation($"Found {existingFilledRegionTypes.Count} filled region types already in document");
+                }
+
+                // Populate the RequiredFilledRegionTypes collection from JSON
+                int alreadyExistsCount = 0;
+                foreach (var regionDef in config.FilledRegionTypes)
+                {
+                    bool exists = existingFilledRegionTypes.Contains(regionDef.Name);
+                    if (exists) alreadyExistsCount++;
+
+                    RequiredFilledRegionTypes.Add(new FilledRegionTypeInfo
+                    {
+                        Name = regionDef.Name,
+                        PatternName = regionDef.PatternName,
+                        ColorDescription = regionDef.ColorDescription,
+                        ColorR = regionDef.ColorR,
+                        ColorG = regionDef.ColorG,
+                        ColorB = regionDef.ColorB,
+                        Status = exists ? "Already Exists" : "Not Checked"
+                    });
+                }
+
+                _logger.LogInformation($"Loaded {RequiredFilledRegionTypes.Count} filled region type definitions from JSON configuration. {alreadyExistsCount} already exist in document.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading filled region types from JSON: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Initialize project parameters from JSON configuration
+        /// </summary>
+        private void InitializeProjectParameters(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("Initializing project parameters from JSON configuration...");
+
+                // Get the configuration file path
+                var assemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var assemblyDir = System.IO.Path.GetDirectoryName(assemblyPath);
+                var configPath = System.IO.Path.Combine(assemblyDir!, "Resources", "Config", "ProjectParameters.json");
+
+                if (!System.IO.File.Exists(configPath))
+                {
+                    TaskDialog.Show("Error", $"Configuration file not found:\n{configPath}\n\nPlease ensure the ProjectParameters.json file exists in the Resources/Config folder.");
+                    _logger.LogError($"Configuration file not found: {configPath}");
+                    return;
+                }
+
+                // Set parameters for the event handler
+                _initializeProjectParametersHandler.SetParameters(
+                    GetUIDocument(),
+                    configPath,
+                    (results) =>
+                    {
+                        // Update the RequiredProjectParameters collection with results
+                        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                        {
+                            RequiredProjectParameters.Clear();
+                            foreach (var result in results)
+                            {
+                                RequiredProjectParameters.Add(result);
+                            }
+                        });
+                    });
+
+                // Raise the external event
+                _initializeProjectParametersEvent.Raise();
+
+                _logger.LogInformation("Project parameters initialization event raised.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error initializing project parameters: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to initialize project parameters:\n{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Load required families from Resources/Families folder
+        /// </summary>
+        private void LoadRequiredFamilies(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("Loading required families from Resources/Families folder...");
+
+                // Get the families folder path
+                var assemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var assemblyDir = System.IO.Path.GetDirectoryName(assemblyPath);
+                var familiesPath = System.IO.Path.Combine(assemblyDir!, "Resources", "Families");
+
+                if (!System.IO.Directory.Exists(familiesPath))
+                {
+                    TaskDialog.Show("Error", $"Families folder not found:\n{familiesPath}\n\nPlease ensure family files (.rfa) are in the Resources/Families folder.");
+                    _logger.LogError($"Families folder not found: {familiesPath}");
+                    return;
+                }
+
+                // Set parameters for the event handler
+                _loadFamiliesHandler.SetParameters(
+                    GetUIDocument(),
+                    familiesPath,
+                    (results) =>
+                    {
+                        // Update the RequiredFamilies collection with results
+                        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                        {
+                            RequiredFamilies.Clear();
+                            foreach (var result in results)
+                            {
+                                RequiredFamilies.Add(result);
+                            }
+                        });
+                    });
+
+                // Raise the external event
+                _loadFamiliesEvent.Raise();
+
+                _logger.LogInformation("Family loading event raised.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading required families: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to load required families:\n{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Browse and load a custom family
+        /// </summary>
+        private void BrowseCustomFamily(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("Browsing for custom family...");
+
+                // TODO: Implement custom family browser
+                TaskDialog.Show("Browse Family", "Custom family browser is not yet implemented.\n\nThis feature will allow you to browse and load custom families from your file system.");
+
+                _logger.LogInformation("Custom family browser opened.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error browsing custom family: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to browse custom family:\n{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Initialize filled region types for distance groups from configuration
+        /// </summary>
+        private void InitializeFilledRegionTypes(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("Initializing filled region types from configuration...");
+
+                // Check if we have loaded the configuration
+                if (_filledRegionTypeRanges == null || _filledRegionTypeRanges.Count == 0)
+                {
+                    TaskDialog.Show("Error", "No filled region type configuration loaded.\n\nPlease ensure the FilledRegionTypes.json file exists in the Resources/Config folder.");
+                    _logger.LogError("No filled region type configuration loaded.");
+                    return;
+                }
+
+                // Set parameters for the event handler
+                _initializeFilledRegionTypesHandler.SetParameters(
+                    GetUIDocument(),
+                    _filledRegionTypeRanges,
+                    (results) =>
+                    {
+                        // Update the RequiredFilledRegionTypes collection with results
+                        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                        {
+                            RequiredFilledRegionTypes.Clear();
+                            foreach (var result in results)
+                            {
+                                RequiredFilledRegionTypes.Add(result);
+                            }
+                        });
+                    });
+
+                // Raise the external event
+                _initializeFilledRegionTypesEvent.Raise();
+
+                _logger.LogInformation("Filled region types initialization event raised.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error initializing filled region types: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to initialize filled region types:\n{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Clean up duplicate filled region types from the project
+        /// </summary>
+        private void CleanupDuplicateFilledRegionTypes(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("Cleaning up duplicate filled region types...");
+
+                // Set parameters for the event handler
+                _cleanupDuplicateFilledRegionTypesHandler.SetParameters(
+                    GetUIDocument(),
+                    (result) =>
+                    {
+                        // Refresh the filled region types list after cleanup
+                        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                        {
+                            LoadFilledRegionTypesFromJson();
+                        });
+                    });
+
+                // Raise the external event
+                _cleanupDuplicateFilledRegionTypesEvent.Raise();
+
+                _logger.LogInformation("Cleanup duplicates event raised.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error cleaning up duplicates: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to clean up duplicates:\n{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Initialize all project components (parameters, families, filled region types)
+        /// </summary>
+        private void InitializeAll(object parameter)
+        {
+            try
+            {
+                _logger.LogInformation("Initializing all project components...");
+
+                InitializeProjectParameters(parameter);
+                LoadRequiredFamilies(parameter);
+                InitializeFilledRegionTypes(parameter);
+
+                TaskDialog.Show("Project Setup", "All project components have been initialized.\n\nPlease check the status of each component in the respective sections.");
+
+                _logger.LogInformation("All project components initialized successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error initializing all project components: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to initialize all project components:\n{ex.Message}");
             }
         }
 

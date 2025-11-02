@@ -9,7 +9,7 @@ namespace BoltFramePlugin.Models.LimitingDistance
     public class BuildingCodeComplianceSummary : INotifyPropertyChanged
     {
         public string OccupancyClassification { get; set; } = string.Empty; // e.g., "Office", "Retail"
-        public string Elevation { get; set; } = string.Empty; // e.g., "EAST", "NORTH", "SOUTH", "WEST"
+        public string Orientation { get; set; } = string.Empty; // e.g., "EAST", "NORTH", "SOUTH", "WEST"
 
         // Area of Exposing Building Face (Sqm)
         public double ExposingBuildingFaceArea { get; set; }

@@ -73,143 +73,50 @@
                 <!-- Main Content - Split Left/Right -->
                 <Grid Margin="5">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="150"/>
-                        <ColumnDefinition Width="5"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="5"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Left Section - Controls -->
-                    <ScrollViewer Grid.Column="0"
-                                  Grid.Row="0"
-                                  VerticalScrollBarVisibility="Auto">
-                        <StackPanel>
-                            <!-- Property Line Selection -->
-                            <GroupBox Header="Property Line Selection"
-                                      Margin="0,0,0,10"
-                                      Padding="10">
-                                <StackPanel>
-                                    <Button Content="Select Property Line"
-                                            Command="{Binding SelectPropertyLineCommand}"
-                                            Height="32"
-                                            Margin="0,0,0,10"/>
-                                    <TextBlock Text="{Binding PropertyLineInfo}"
-                                               FontStyle="Italic"
-                                               Foreground="#FF555555"
-                                               TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </GroupBox>
-
-                            <!-- Reference Lines Detection -->
-                            <GroupBox Header="Reference Lines"
-                                      Margin="0,0,0,10"
-                                      Padding="10">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding ReferenceLineCount}"
-                                               FontStyle="Italic"
-                                               Foreground="#FF555555"
-                                               TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </GroupBox>
-
-                            <!-- Actions -->
-                            <GroupBox Header="Actions"
-                                      Margin="0,0,0,10"
-                                      Padding="10">
-                                <StackPanel>
-                                    <Button Content="Highlight in 3D View"
-                                            Command="{Binding HighlightWallsCommand}"
-                                            Height="32"
-                                            Background="#FF3498DB"
-                                            Foreground="White"/>
-                                </StackPanel>
-                            </GroupBox>
-
-                            <!-- Statistics Section -->
-                            <GroupBox Header="Statistics"
-                                      Margin="0,0,0,10"
-                                      Padding="10">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding WallCount}"
-                                               FontSize="14"
-                                               FontWeight="Bold"
-                                               Foreground="#FF2C3E50"
-                                               TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </GroupBox>
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <!-- Splitter -->
-                    <GridSplitter Grid.Column="1"
-                                  Grid.Row="0"
-                                  Width="5"
-                                  HorizontalAlignment="Stretch"
-                                  Background="#FFBDC3C7"/>
-
-                    <!-- Right Section - Walls List -->
-                    <ld:PerimeterWallsControl Grid.Column="2"
-                                               Grid.Row="0"/>
-
-                    <!-- Horizontal Splitter -->
-                    <GridSplitter Grid.Row="1"
-                                  Grid.ColumnSpan="3"
-                                  Height="5"
-                                  HorizontalAlignment="Stretch"
-                                  Background="#FFBDC3C7"/>
-
-                    <!-- Bottom Section - Distance Groups Summary -->
-                    <GroupBox Grid.Row="2"
-                              Grid.ColumnSpan="3"
-                              Header="Distance Groups Summary (Double-click to highlight group)"
-                              Padding="5">
-                        <DataGrid ItemsSource="{Binding DistanceGroups}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  CanUserAddRows="False"
-                                  CanUserDeleteRows="False"
-                                  SelectionMode="Single"
-                                  GridLinesVisibility="Horizontal"
-                                  AlternatingRowBackground="#FFF5F5F5"
-                                  HeadersVisibility="Column"
-                                  MouseDoubleClick="DistanceGroupsDataGrid_MouseDoubleClick">
-
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Orientation"
-                                                    Binding="{Binding Orientation}"
-                                                    Width="100"/>
-                                <DataGridTextColumn Header="Distance Range"
-                                                    Binding="{Binding DistanceRange}"
-                                                    Width="150"/>
-                                <DataGridTextColumn Header="Wall Count"
-                                                    Binding="{Binding WallCount}"
-                                                    Width="100"/>
-                                <DataGridTextColumn Header="Total Gross Area"
-                                                    Binding="{Binding TotalGrossAreaFormatted}"
-                                                    Width="130"/>
-                                <DataGridTextColumn Header="Total Openings"
-                                                    Binding="{Binding TotalOpeningsAreaFormatted}"
-                                                    Width="130"/>
-                                <DataGridTextColumn Header="Avg Opening %"
-                                                    Binding="{Binding AverageOpeningPercentageFormatted}"
-                                                    Width="120"/>
-                                <DataGridTextColumn Header="Total Net Area"
-                                                    Binding="{Binding TotalNetAreaFormatted}"
-                                                    Width="130"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </GroupBox>
+                    <StackPanel>
+                        <!-- Property Line Selection -->
+                        <GroupBox Header="Property Line Selection"
+                                  Margin="0,0,0,10"
+                                  Padding="10">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="Select Property Line"
+                                        Command="{Binding SelectPropertyLineCommand}"
+                                        Height="32"
+                                        Width="180"
+                                        Margin="0,0,10,0"/>
+                                <Button Content="3D View"
+                                        Command="{Binding HighlightWallsCommand}"
+                                        Height="32"
+                                        Width="180"
+                                        Background="#FF3498DB"
+                                        Foreground="White"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                    <TabControl Grid.Column="0"
+                                Grid.Row="1">
+                        <!-- Walls Tab -->
+                        <TabItem Header="Walls">
+                            <ld:PerimeterWallsControl/>
+                        </TabItem>
+                        <!-- Summary Tab -->
+                        <TabItem Header="Summary">
+                            <ld:DistanceGroupsSummaryControl/>
+                        </TabItem>
+                        <!-- View Tracker Tab -->
+                        <TabItem Header="View Tracker">
+                            <ld:ViewTrackerControl/>
+                        </TabItem>
+                    </TabControl>
 
                 </Grid>
-            </TabItem>
-
-            <!-- Building Code Compliance Tab -->
-            <TabItem Header="Code Compliance">
-                <ld:BuildingCodeComplianceControl/>
             </TabItem>
 
             <!-- Configuration Tab -->
@@ -217,9 +124,14 @@
                 <ld:ConfigurationControl/>
             </TabItem>
 
-            <!-- View Tracker Tab -->
-            <TabItem Header="View Tracker">
-                <ld:ViewTrackerControl/>
+            <!-- Project Setup Tab -->
+            <TabItem Header="Project Setup">
+                <ld:ProjectSetupControl/>
+            </TabItem>
+
+            <!-- Building Code Compliance Tab -->
+            <TabItem Header="Code Compliance">
+                <ld:BuildingCodeComplianceControl/>
             </TabItem>
 
             <!-- Dev Tab -->

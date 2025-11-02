@@ -1,0 +1,44 @@
+{
+  "projectParameters": [
+    {
+      "name": "LD_IsPerimeter",
+      "parameterType": "YesNo",
+      "groupName": "Other",
+      "description": "Indicates if the wall is a perimeter wall for limiting distance calculations",
+      "isInstance": true,
+      "categories": ["Walls"]
+    },
+    {
+      "name": "FireCompartment",
+      "parameterType": "Text",
+      "groupName": "Other",
+      "description": "Distance from the property line to the wall",
+      "isInstance": true,
+      "categories": ["Walls", "Curtain Walls", "Doors", "Windows"]
+    },
+    {
+      "name": "IsTopMost",
+      "parameterType": "YesNo",
+      "groupName": "Other",
+      "description": "Distance group classification (0-1m, 1-2m, 2-3m, 3-5m, 5+m)",
+      "isInstance": true,
+      "categories": ["Ceilings"]
+    },
+    {
+      "name": "Occupant",
+      "parameterType": "Text",
+      "groupName": "Other",
+      "description": "Gross wall area for limiting distance calculations",
+      "isInstance": true,
+      "categories": ["Rooms"]
+    },
+    {
+      "name": "OccupantGroup",
+      "parameterType": "Text",
+      "groupName": "Other",
+      "description": "Total area of openings in the wall",
+      "isInstance": true,
+      "categories": ["Walls"]
+    }
+  ]
+}

@@ -4,25 +4,10 @@ namespace BoltFramePlugin.Models.LimitingDistance
 {
     public class DistanceGroupSummary : INotifyPropertyChanged
     {
-        private int _wallCount;
-
-        public string Orientation { get; set; } = string.Empty; // e.g., "North", "South", "East", "West"
+        public string Orientation { get; set; } = string.Empty;
         public string DistanceRange { get; set; } = string.Empty;
         public double MinDistance { get; set; }
         public double MaxDistance { get; set; }
-
-        public int WallCount
-        {
-            get => _wallCount;
-            set
-            {
-                if (_wallCount != value)
-                {
-                    _wallCount = value;
-                    OnPropertyChanged(nameof(WallCount));
-                }
-            }
-        }
 
         public double TotalGrossArea { get; set; }
         public double TotalOpeningsArea { get; set; }

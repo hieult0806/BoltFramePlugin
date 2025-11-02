@@ -289,24 +289,5 @@ namespace BoltFramePlugin.Views
 
             return FindVisualParent<T>(parentObject);
         }
-
-        private void DistanceGroupsDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-        {
-            // Get the DataGrid
-            var dataGrid = sender as DataGrid;
-            if (dataGrid == null || dataGrid.SelectedItem == null)
-                return;
-
-            // Get the ViewModel
-            var viewModel = DataContext as LimitingDistanceWindowVM;
-            if (viewModel == null)
-                return;
-
-            // Execute the Highlight Group command with the selected distance group
-            if (viewModel.HighlightDistanceGroupCommand.CanExecute(dataGrid.SelectedItem))
-            {
-                viewModel.HighlightDistanceGroupCommand.Execute(dataGrid.SelectedItem);
-            }
-        }
     }
 }

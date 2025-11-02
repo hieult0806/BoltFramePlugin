@@ -50,7 +50,6 @@ namespace BoltFramePlugin.Models.LimitingDistance
             {
                 if (_occupantGroup != value)
                 {
-                    // _logger?.LogInformation($"WallInfo {ElementId?.Value}: OccupantGroup changing from '{_occupantGroup}' to '{value}'");
                     _occupantGroup = value;
                     OnPropertyChanged(nameof(OccupantGroup));
 

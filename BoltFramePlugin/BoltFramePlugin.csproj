@@ -52,6 +52,12 @@
     <None Include="Resources\Images\*.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="Resources\Config\*.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="Resources\Families\*.rfa">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <Folder Include="Resources\Fonts\" />
     <Folder Include="Resources\Templates\" />
     <Folder Include="Resources\Styles\" />
