@@ -2,6 +2,10 @@
 using System.Windows;
 using System.Windows.Interop;
 using Autodesk.Revit.DB;
+using BoltFramePlugin.Features.Framing.ViewModels;
+using BoltFramePlugin.Features.Framing.Views;
+using BoltFramePlugin.Features.LimitingDistance.ViewModels;
+using BoltFramePlugin.Features.LimitingDistance.Views;
 using BoltFramePlugin.Models;
 using BoltFramePlugin.ViewModels;
 using BoltFramePlugin.Views;
@@ -184,12 +188,12 @@ namespace BoltFramePlugin.Services
             return new Dictionary<Type, Type>
             {
                 { typeof(BoltFrameMainWindowVM), typeof(BoltFrameMainWindow) },
-                { typeof(BoltWallFrameWindowVM), typeof(Views.BoltWallFrameWindow) },
+                { typeof(BoltWallFrameWindowVM), typeof(BoltWallFrameWindow) },
+                { typeof(FramingSummaryVM), typeof(FramingSummaryWindow) },
+                { typeof(LimitingDistanceWindowVM), typeof(LimitingDistanceWindow) },
                 { typeof(TypeSelectionPopupVM), typeof(TypeSelectionWindow) },
-                { typeof(ConfigurationWindowVM), typeof(ConfigurationWindow) },
-                { typeof(SwitchViewShortcutDockablePaneVM), typeof(SwitchViewShortcutPanel) },
-                { typeof(FramingSummaryVM), typeof(Views.FramingSummaryWindow) },
-                { typeof(LimitingDistanceWindowVM), typeof(Views.LimitingDistanceWindow) },
+                { typeof(ConfigurationWindowVM), typeof(Views.ConfigurationWindow) },
+                { typeof(SwitchViewShortcutDockablePaneVM), typeof(Views.SwitchViewShortcutPanel) },
                 { typeof(LogWindowVM), typeof(Views.LogWindow) }
                 // Add additional ViewModel-View mappings here
             };

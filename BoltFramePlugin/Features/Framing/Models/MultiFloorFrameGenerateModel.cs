@@ -1,0 +1,63 @@
+﻿using Autodesk.Revit.DB;
+using BoltFramePlugin.Features.Framing.Strategies;
+
+namespace BoltFramePlugin.Features.Framing.Models
+{
+    /// <summary>
+    /// Model containing parameters for generating floor frames on multiple floors.
+    /// Each floor can have its own level.
+    /// </summary>
+    public class MultiFloorFrameGenerateModel : IFrameGenerateModel
+    {
+        /// <summary>
+        /// Collection of target floor elements to frame.
+        /// </summary>
+        public IEnumerable<Element> TargetElements { get; set; }
+
+        /// <summary>
+        /// The level associated with each floor element.
+        /// Key: Floor ElementId
+        /// Value: Corresponding Level
+        /// </summary>
+        public Dictionary<ElementId, Level> FloorLevels { get; set; } = new Dictionary<ElementId, Level>();
+
+        /// <summary>
+        /// Collection of grid configurations (horizontal and vertical).
+        /// </summary>
+        public List<GridConfig> GridConfigs { get; set; } = new List<GridConfig>();
+
+        /// <summary>
+        /// Configuration for boundary beams (perimeter of floor).
+        /// Null if boundary beams should not be generated.
+        /// </summary>
+        public GridConfig BoundaryConfig { get; set; }
+
+        /// <summary>
+        /// Whether to create a group containing all generated beams.
+        /// </summary>
+        public bool CreateGroup { get; set; } = true;
+
+        /// <summary>
+        /// Name for the created group (if CreateGroup is true).
+        /// </summary>
+        public string GroupName { get; set; } = "Floor Framing";
+    }
+
+    public class FrameModel
+    {
+        /// <summary>
+        /// Associated ELement
+        /// </summary>
+        public Element TargetElement { get; set; }
+
+        /// <summary>
+        /// Associated Level
+        /// </summary>
+        public Level Level { get; set; }
+
+        /// <summary>
+        /// Collection of grid configurations (horizontal and vertical).
+        /// </summary>
+        public List<GridConfig> GridConfigs { get; set; } = new List<GridConfig>();
+    }
+}

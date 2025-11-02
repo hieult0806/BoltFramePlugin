@@ -5,11 +5,13 @@ using Autodesk.Revit.UI.Selection;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 using BoltFramePlugin.Services;
 using Autodesk.Revit.DB.Events;
-using BoltFramePlugin.Helpers;
-using BoltFramePlugin.Factories;
 using BoltFramePlugin.Constants;
-using BoltFramePlugin.Views;
+using BoltFramePlugin.Factories;
 using BoltFramePlugin.Features.DataImport.Commands;
+using BoltFramePlugin.Features.Framing.Commands;
+using BoltFramePlugin.Features.LimitingDistance.Commands;
+using BoltFramePlugin.Helpers;
+using BoltFramePlugin.Views;
 using Serilog;
 
 namespace BoltFramePlugin.AddInEntryPoint
@@ -186,7 +188,7 @@ namespace BoltFramePlugin.AddInEntryPoint
                 panel,
                 name: "BoltFrameMainButton",
                 text: "Bolt Frame",
-                className: nameof(BoltFrameCommand),
+                className: "BoltFramePlugin.Features.Framing.Commands.BoltFrameCommand",
                 tooltip: "Open BoltFrame Plugin",
                 longDescription: "Configure and manage BoltFrame settings.",
                 iconName: "grid"
@@ -208,7 +210,7 @@ namespace BoltFramePlugin.AddInEntryPoint
                 panel,
                 name: "LimitingDistanceButton",
                 text: "Limiting Distance",
-                className: nameof(LimitingDistanceCommand),
+                className: "BoltFramePlugin.Features.LimitingDistance.Commands.LimitingDistanceCommand",
                 tooltip: "Calculate Limiting Distance",
                 longDescription: "Select property line and highlight perimeter walls for limiting distance calculation.",
                 iconName: "firewall"

@@ -1,12 +1,12 @@
-﻿using Autodesk.Revit.DB;
-using Autodesk.Revit.UI;
-using BoltFramePlugin.Helpers;
-using BoltFramePlugin.Services;
-using BoltFramePlugin.ViewModels.Framing;
-using BoltFramePlugin.Views.Components;
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+using BoltFramePlugin.Features.Framing.ViewModels;
+using BoltFramePlugin.Helpers;
+using BoltFramePlugin.Services;
+using BoltFramePlugin.Views.Components;
 
 namespace BoltFramePlugin.ViewModels.Components
 {
