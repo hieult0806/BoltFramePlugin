@@ -8,6 +8,7 @@ using SimpleInjector.Lifestyles;
 namespace BoltFramePlugin.Features.Framing.Commands
 {
     [Transaction(TransactionMode.Manual)]
+    [Regeneration(RegenerationOption.Manual)]
     public class BoltFrameCommand : IExternalCommand
     {
         private IWindowManager _windowService;

@@ -1,8 +1,8 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Models.Tables;
 using BoltFramePlugin.Features.DataImport.Services.Import;
-using BoltFramePlugin.Features.DataImport.Services.Render;
+using BoltFramePlugin.Services.Rendering;
 using BoltFramePlugin.Services;
 using System;
 using System.Collections.Generic;

@@ -1,4 +1,4 @@
-using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Models.Tables;
 using BoltFramePlugin.Services;
 using System;
 using System.Collections.Generic;

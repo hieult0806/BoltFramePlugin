@@ -146,5 +146,25 @@ namespace BoltFramePlugin.Features.LimitingDistance.Models
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+
+        public string FireCompartment
+        {
+            get
+            {
+                try
+                {
+                    var param = Wall.LookupParameter("FireCompartment");
+                    if (param != null && param.HasValue)
+                    {
+                        return param.AsString() ?? "N/A";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError($"Error retrieving Fire Compartment for Wall ID {ElementId.Value}: {ex.Message}", ex);
+                }
+                return "N/A";
+            }
+        }
     }
 }

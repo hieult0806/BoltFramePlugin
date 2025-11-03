@@ -1,12 +1,12 @@
 using Autodesk.Revit.DB;
-using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Models.Tables;
 using BoltFramePlugin.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace BoltFramePlugin.Features.DataImport.Services.Render
+namespace BoltFramePlugin.Services.Rendering
 {
     /// <summary>
     /// Service for rendering table data to Revit drafting views using Detail Items

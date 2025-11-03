@@ -1,4 +1,4 @@
-using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Models.Tables;
 using System.Threading.Tasks;
 
 namespace BoltFramePlugin.Features.DataImport.Services.Import

@@ -1203,51 +1203,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.ViewModels
                 if (_filledRegionTypeRanges == null || _filledRegionTypeRanges.Count == 0)
                 {
                     _logger.LogWarning("No filled region type ranges loaded from JSON, using fallback defaults");
-                    // Fallback to hardcoded ranges
-                    var fallbackRanges = new[]
-                    {
-                        new { Min = 0.0, Max = 3.937, Label = "0-1.2m (0-3.9ft)" },
-                        new { Min = 3.937, Max = 4.921, Label = "1.2-1.5m (3.9-4.9ft)" },
-                        new { Min = 4.921, Max = 6.562, Label = "1.5-2m (4.9-6.6ft)" },
-                        new { Min = 6.562, Max = 8.202, Label = "2-2.5m (6.6-8.2ft)" },
-                        new { Min = 8.202, Max = 9.843, Label = "2.5-3m (8.2-9.8ft)" },
-                        new { Min = 9.843, Max = 13.123, Label = "3-4m (9.8-13.1ft)" },
-                        new { Min = 13.123, Max = 16.404, Label = "4-5m (13.1-16.4ft)" },
-                        new { Min = 16.404, Max = 19.685, Label = "5-6m (16.4-19.7ft)" },
-                        new { Min = 19.685, Max = 22.966, Label = "6-7m (19.7-23.0ft)" },
-                        new { Min = 22.966, Max = 26.247, Label = "7-8m (23.0-26.2ft)" },
-                        new { Min = 26.247, Max = 29.528, Label = "8-9m (26.2-29.5ft)" },
-                        new { Min = 29.528, Max = double.MaxValue, Label = "9m+ (29.5ft+)" }
-                    };
-
-                    foreach (var orientationGroup in wallsByOrientation)
-                    {
-                        var orientationName = orientationGroup.Key.ToString();
-
-                        foreach (var range in fallbackRanges)
-                        {
-                            var wallsInRange = orientationGroup
-                                .Where(w => w.LimitingDistance.Value >= range.Min &&
-                                           (w.LimitingDistance.Value < range.Max || range.Max == double.MaxValue))
-                                .ToList();
-
-                            if (wallsInRange.Any())
-                            {
-                                var group = new DistanceGroupSummary
-                                {
-                                    Orientation = orientationName,
-                                    DistanceRange = range.Label,
-                                    MinDistance = range.Min,
-                                    MaxDistance = range.Max,
-                                    TotalGrossArea = wallsInRange.Sum(w => w.GrossArea),
-                                    TotalOpeningsArea = wallsInRange.Sum(w => w.OpeningsArea)
-                                };
-
-                                DistanceGroups.Add(group);
-                                _logger.LogInformation($"Added group: {orientationName} - {range.Label}");
-                            }
-                        }
-                    }
+                    TaskDialog.Show("Warning", "No distance ranges loaded from configuration, using default ranges.");
                 }
                 else
                 {

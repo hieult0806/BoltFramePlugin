@@ -7,6 +7,7 @@ using BoltFramePlugin.Features.LimitingDistance.ViewModels;
 namespace BoltFramePlugin.Features.LimitingDistance.Commands
 {
     [Transaction(TransactionMode.Manual)]
+    [Regeneration(RegenerationOption.Manual)]
     public class LimitingDistanceCommand : IExternalCommand
     {
         private IWindowManager _windowService;

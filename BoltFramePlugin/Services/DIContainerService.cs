@@ -25,13 +25,18 @@ namespace BoltFramePlugin.Services
             container.RegisterSingleton<IProjectConfigurationManager, ProjectConfigurationManager>();
             container.RegisterSingleton<IExtensibleStorageService, ExtensibleStorageService>();
 
+            // Shared Rendering Services
+            container.RegisterSingleton<BoltFramePlugin.Services.Rendering.ITableRenderService, BoltFramePlugin.Services.Rendering.RevitTableRenderService>();
+
             // Data Import Services
             container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.Import.CsvImportService>();
             container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.Import.ExcelImportService>();
-            container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.Render.ITableRenderService, BoltFramePlugin.Features.DataImport.Services.Render.RevitTableRenderService>();
             container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.DataImportManager>();
             container.RegisterSingleton<BoltFramePlugin.Features.DataImport.Services.FileWatcherService>();
             container.RegisterSingleton<BoltFramePlugin.Features.DataImport.EventHandlers.AutoSyncEventHandler>();
+
+            // Limiting Distance Services
+            container.RegisterSingleton<BoltFramePlugin.Features.LimitingDistance.Services.LimitingDistanceReportService>();
 
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());

@@ -1,6 +1,6 @@
 using Autodesk.Revit.UI;
 using BoltFramePlugin.Features.DataImport.EventHandlers;
-using BoltFramePlugin.Features.DataImport.Models;
+using BoltFramePlugin.Models.Tables;
 using BoltFramePlugin.Features.DataImport.Services;
 using BoltFramePlugin.Models;
 using BoltFramePlugin.Services;

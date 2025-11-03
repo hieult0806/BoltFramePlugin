@@ -2,6 +2,9 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using BoltFramePlugin.Services;
 using BoltFramePlugin.Features.LimitingDistance.Models;
+using BoltFramePlugin.Features.LimitingDistance.Services;
+using BoltFramePlugin.Services.Rendering;
+using BoltFramePlugin.Models.Tables;
 using System.Collections.Generic;
 using System.Linq;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
@@ -32,6 +35,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
         private List<ReferenceLineInfo> _referenceLines;
         private DistanceGroupSummary? _distanceGroup;
         private readonly ILoggingService _logger;
+        private readonly LimitingDistanceReportService _reportService;
         private Action<ViewSection, int>? _onViewCreated;
         private Action<List<WallInfo>>? _onProjectionsCompleted;
 
@@ -42,6 +46,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
         public CreateWallProjectionsEventHandler()
         {
             _logger = DIContainerService.Container.GetInstance<ILoggingService>();
+            _reportService = DIContainerService.Container.GetInstance<LimitingDistanceReportService>();
             _perimeterWalls = new List<WallInfo>();
             _referenceLines = new List<ReferenceLineInfo>();
         }
@@ -93,6 +98,10 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
 
                 _logger.LogInformation("Starting view and region creation");
                 CreateViewsAndRegions(doc, orientationGroups);
+
+                // Generate NBC Compliance Report Drafting View
+                _logger.LogInformation("Generating NBC Compliance Report");
+                GenerateNBCComplianceReport(doc);
 
                 _logger.LogInformation("Execute completed successfully");
             }
@@ -289,9 +298,6 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
                     }
 
                     trans.Commit();
-
-                    // Calculate distance groups summary based on created regions
-                    var distanceGroupsSummary = CalculateDistanceGroupsSummary(wallsWithRegions);
 
                     // Invoke callback to update ViewModel with walls that have regions
                     _onProjectionsCompleted?.Invoke(wallsWithRegions);
@@ -1108,51 +1114,6 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
         }
 
         /// <summary>
-        /// Calculates summary statistics for distance groups based on walls with created regions
-        /// Groups by: Linked Reference Line -> Distance Group
-        /// </summary>
-        private string CalculateDistanceGroupsSummary(List<WallInfo> wallsWithRegions)
-        {
-            if (wallsWithRegions == null || wallsWithRegions.Count == 0)
-            {
-                return "Distance Groups Summary:\n  No walls with regions created";
-            }
-
-            // Group walls by reference line, then by distance group
-            var groupedByRefLine = wallsWithRegions
-                .Where(w => w.LimitingDistance.HasValue && w.ReferenceLine != null)
-                .GroupBy(w => w.ReferenceLine)
-                .OrderBy(g => g.Key.LineTypeFormatted)
-                .ThenBy(g => g.Key.Name);
-
-            if (!groupedByRefLine.Any())
-            {
-                return "Distance Groups Summary:\n  No walls with reference lines and limiting distances";
-            }
-
-            var summary = new System.Text.StringBuilder();
-            summary.AppendLine("Distance Groups Summary:");
-
-            foreach (var refLineGroup in groupedByRefLine)
-            {
-                summary.AppendLine($"\n  {refLineGroup.Key.Name}:");
-
-                // Within each reference line, group by distance group
-                var distanceGroups = refLineGroup
-                    .GroupBy(w => GetDistanceGroupForWall(w.LimitingDistance.Value))
-                    .OrderBy(g => g.Key.ColorIndex)
-                    .ToList();
-
-                foreach (var distGroup in distanceGroups)
-                {
-                    summary.AppendLine($"    {distGroup.Key.Label}: {distGroup.Count()} wall(s)");
-                }
-            }
-
-            return summary.ToString().TrimEnd();
-        }
-
-        /// <summary>
         /// Gets or creates a filled region type with the appropriate color for a distance group
         /// </summary>
         private FilledRegionType? GetOrCreateColoredFilledRegionType(Document doc,
@@ -1276,6 +1237,245 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
             };
 
             return colorIndex >= 0 && colorIndex < colors.Length ? colors[colorIndex] : colors[^1];
+        }
+
+        #endregion
+
+        #region NBC Compliance Report
+
+        /// <summary>
+        /// Creates the NBC compliance table data structure with actual calculated results
+        /// </summary>
+        private ImportedTableData CreateNBCComplianceTableData()
+        {
+            var tableData = new ImportedTableData
+            {
+                Headers = new List<string>
+                {
+                    "Orientation",
+                    "Classification",
+                    "Limiting Distance (m)",
+                    "Exposing Face Area (m²)",
+                    "Max NBC (%)",
+                    "Proposed (%)",
+                    "FRR",
+                    "Construction",
+                    "Cladding",
+                    "Status"
+                },
+                Rows = new List<List<string>>(),
+                MergedCells = new List<MergedCellRange>(),
+                CellFormats = new List<CellFormat>(),
+                ColumnWidths = new List<double> { 1.2, 1.3, 1.8, 2.0, 1.2, 1.2, 0.8, 1.8, 1.8, 0.8 },
+                RowHeights = new List<double>()
+            };
+
+            // Group walls by orientation (only walls with regions/projections created)
+            var orientationGroups = _perimeterWalls
+                .Where(w => w.LinkedRegion != null)
+                .GroupBy(w => GetOrientationNumber(w))
+                .OrderBy(g => g.Key);
+
+            _logger.LogInformation($"Processing {orientationGroups.Count()} orientation groups for NBC report");
+
+            foreach (var group in orientationGroups)
+            {
+                var orientationNumber = group.Key;
+                var orientationName = GetOrientationName(orientationNumber);
+                var wallsInOrientation = group.ToList();
+
+                // Calculate totals for this orientation
+                double totalGrossArea = wallsInOrientation.Sum(w => w.GrossArea);
+                double totalOpeningArea = wallsInOrientation.Sum(w => w.OpeningsArea);
+                double openingPercentage = totalGrossArea > 0 ? (totalOpeningArea / totalGrossArea * 100) : 0;
+
+                // Get minimum limiting distance for this orientation (in meters)
+                double minLimitingDistance = double.MaxValue;
+                foreach (var wall in wallsInOrientation)
+                {
+                    if (wall.LimitingDistance.HasValue)
+                    {
+                        double distanceMeters = wall.LimitingDistance.Value / 3.28084; // Convert feet to meters
+                        if (distanceMeters < minLimitingDistance)
+                            minLimitingDistance = distanceMeters;
+                    }
+                }
+
+                // Convert areas from ft² to m²
+                double totalGrossAreaM2 = totalGrossArea * 0.092903;
+
+                // Determine NBC requirements based on limiting distance
+                var (maxAllowance, frr, construction, cladding) = GetNBCRequirements(minLimitingDistance, totalGrossAreaM2);
+
+                // Add main row for this orientation
+                var status = openingPercentage <= maxAllowance ? "✓" : "✗";
+
+                tableData.Rows.Add(new List<string>
+                {
+                    orientationName,
+                    "Group D",
+                    minLimitingDistance == double.MaxValue ? "N/A" : $"{minLimitingDistance:F1}",
+                    $"{totalGrossAreaM2:F1}",
+                    $"{maxAllowance:F0}",
+                    $"{openingPercentage:F1}",
+                    frr,
+                    construction,
+                    cladding,
+                    status
+                });
+            }
+
+            // Set all rows to same height
+            for (int i = 0; i < tableData.Rows.Count + 1; i++) // +1 for header
+            {
+                tableData.RowHeights.Add(0.167); // 2 inches in feet
+            }
+
+            _logger.LogInformation($"Created NBC compliance report with {tableData.Rows.Count} rows");
+            return tableData;
+        }
+
+        /// <summary>
+        /// Get NBC requirements based on limiting distance and area
+        /// </summary>
+        private (double maxAllowance, string frr, string construction, string cladding) GetNBCRequirements(double limitingDistanceM, double areaM2)
+        {
+            // NBC Table 3.2.3.1.D - Group D (Residential)
+            // Simplified logic - you should implement full NBC table lookup
+            if (limitingDistanceM < 1.2)
+            {
+                return (0, "45min", "Combustible", "Combustible");
+            }
+            else if (limitingDistanceM < 2.0)
+            {
+                return (10, "None", "Combustible", "Combustible");
+            }
+            else if (limitingDistanceM < 3.0)
+            {
+                return (25, "None", "Combustible", "Combustible");
+            }
+            else if (limitingDistanceM < 6.0)
+            {
+                return (50, "None", "Combustible", "Combustible");
+            }
+            else
+            {
+                return (100, "None", "Combustible", "Combustible");
+            }
+        }
+
+        /// <summary>
+        /// Get orientation number for grouping
+        /// </summary>
+        private int GetOrientationNumber(WallInfo wall)
+        {
+            // Group by orientation direction
+            var orientation = wall.Wall.Orientation;
+            var angle = Math.Atan2(orientation.Y, orientation.X) * 180 / Math.PI;
+
+            // Normalize angle to 0-360
+            if (angle < 0) angle += 360;
+
+            // Group into 4 main orientations
+            if (angle >= 315 || angle < 45) return 1; // East
+            if (angle >= 45 && angle < 135) return 2; // North
+            if (angle >= 135 && angle < 225) return 3; // West
+            return 4; // South
+        }
+
+        /// <summary>
+        /// Get orientation name
+        /// </summary>
+        private string GetOrientationName(int orientationNumber)
+        {
+            switch (orientationNumber)
+            {
+                case 1: return "EAST";
+                case 2: return "NORTH";
+                case 3: return "WEST";
+                case 4: return "SOUTH";
+                default: return "UNKNOWN";
+            }
+        }
+
+        /// <summary>
+        /// Helper method to add a row to the NBC compliance table
+        /// </summary>
+        private void AddNBCRow(ImportedTableData tableData, string orientation, string classification,
+            string limitingDistance, string area, string maxAllowance, string proposedOpening,
+            string frr, string construction, string cladding)
+        {
+            tableData.Rows.Add(new List<string>
+            {
+                orientation,
+                classification,
+                limitingDistance,
+                area,
+                maxAllowance,
+                proposedOpening,
+                frr,
+                construction,
+                cladding
+            });
+        }
+
+        /// <summary>
+        /// Generates NBC Compliance Report as a Drafting View
+        /// </summary>
+        private void GenerateNBCComplianceReport(Document doc)
+        {
+            try
+            {
+                _logger.LogInformation("Generating NBC Compliance Report table");
+
+                // Generate hard-coded NBC compliance table
+                var tableData = CreateNBCComplianceTableData();
+
+                // Create drafting view and render table within a transaction
+                using (var transaction = new Transaction(doc, "Create NBC Compliance Report"))
+                {
+                    transaction.Start();
+
+                    try
+                    {
+                        // Get table render service
+                        var tableRenderService = DIContainerService.Container.GetInstance<ITableRenderService>();
+
+                        // Create drafting view
+                        var view = tableRenderService.CreateDraftingView(doc, "NBC Compliance Report", 48);
+                        _logger.LogInformation($"Created drafting view: {view.Name}");
+
+                        // Render the table
+                        var options = new TableRenderOptions
+                        {
+                            ViewScale = 48, // 1/4" = 1'-0"
+                            PaperTextHeight = 0.125, // 1/8" text
+                            DrawGridLines = true,
+                            TextStyleName = "Standard",
+                            ColumnWidth = 1.5,
+                            RowHeight = 0.167
+                        };
+
+                        tableRenderService.RenderToView(doc, view, tableData, options);
+                        _logger.LogInformation("Table rendered successfully");
+
+                        transaction.Commit();
+
+                        TaskDialog.Show("Success", $"NBC Compliance Report generated:\n{view.Name}\n\nRows: {tableData.Rows.Count}");
+                    }
+                    catch (Exception ex)
+                    {
+                        transaction.RollBack();
+                        throw;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error generating NBC Compliance Report: {ex.Message}\nStack: {ex.StackTrace}", ex);
+                TaskDialog.Show("Error", $"Error generating NBC Compliance Report:\n{ex.Message}\n\nSee log for details.");
+                // Don't throw - allow wall projections to succeed even if report fails
+            }
         }
 
         #endregion
