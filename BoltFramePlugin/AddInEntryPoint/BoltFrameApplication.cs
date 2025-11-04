@@ -227,6 +227,17 @@ namespace BoltFramePlugin.AddInEntryPoint
                 iconName: "excel"
             );
 
+            // Add Sheet Management Button
+            AddPushButton(
+                panel,
+                name: "SheetManagementButton",
+                text: "Manage Sheets",
+                className: "BoltFramePlugin.Features.SheetManagement.Commands.SheetManagementCommand",
+                tooltip: "Manage and Renumber Sheets",
+                longDescription: "Organize sheets with drag-and-drop reordering, filter by parameters, and renumber sheets automatically.",
+                iconName: "sheets"
+            );
+
             // Add separator
             panel.AddSeparator();
 

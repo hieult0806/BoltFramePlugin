@@ -38,6 +38,9 @@ namespace BoltFramePlugin.Services
             // Limiting Distance Services
             container.RegisterSingleton<BoltFramePlugin.Features.LimitingDistance.Services.LimitingDistanceReportService>();
 
+            // Sheet Management Services
+            container.RegisterSingleton<BoltFramePlugin.Features.SheetManagement.Services.ISheetManagementService, BoltFramePlugin.Features.SheetManagement.Services.SheetManagementService>();
+
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());
             // Add other registrations as needed
