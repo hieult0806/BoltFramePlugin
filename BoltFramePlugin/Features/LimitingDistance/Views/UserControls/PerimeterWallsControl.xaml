@@ -24,13 +24,33 @@
                   MouseDoubleClick="DataGrid_MouseDoubleClick">
 
             <DataGrid.Resources>
-                <!-- HighlightedRowStyle -->
+                <!-- Enhanced HighlightedRowStyle with better selection visual -->
                 <Style x:Key="HighlightedRowStyle" TargetType="DataGridRow">
+                    <Setter Property="BorderThickness" Value="0"/>
                     <Style.Triggers>
+                        <!-- Highlight for IsHighlighted property -->
                         <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
-                            <Setter Property="Background" Value="#FFFFD700"/>
+                            <Setter Property="Background" Value="#FFB0C4DE"/>
                             <Setter Property="FontWeight" Value="Bold"/>
                         </DataTrigger>
+
+                        <!-- Enhanced selected row style -->
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="#FF0078D7"/>
+                            <!-- <Setter Property="Foreground" Value="White"/> -->
+                            <Setter Property="FontWeight" Value="Bold"/>
+                            <Setter Property="BorderBrush" Value="#FF005A9E"/>
+                            <Setter Property="BorderThickness" Value="2"/>
+                        </Trigger>
+
+                        <!-- Hover effect for better visibility -->
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsSelected" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Background" Value="#FFE5F1FB"/>
+                        </MultiTrigger>
                     </Style.Triggers>
                 </Style>
             </DataGrid.Resources>

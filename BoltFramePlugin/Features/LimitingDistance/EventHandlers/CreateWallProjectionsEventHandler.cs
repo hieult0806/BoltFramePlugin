@@ -36,6 +36,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
         private DistanceGroupSummary? _distanceGroup;
         private readonly ILoggingService _logger;
         private readonly LimitingDistanceReportService _reportService;
+        private readonly INBCConfigurationService _nbcConfig;
         private Action<ViewSection, int>? _onViewCreated;
         private Action<List<WallInfo>>? _onProjectionsCompleted;
 
@@ -47,6 +48,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
         {
             _logger = DIContainerService.Container.GetInstance<ILoggingService>();
             _reportService = DIContainerService.Container.GetInstance<LimitingDistanceReportService>();
+            _nbcConfig = DIContainerService.Container.GetInstance<INBCConfigurationService>();
             _perimeterWalls = new List<WallInfo>();
             _referenceLines = new List<ReferenceLineInfo>();
         }
@@ -133,10 +135,6 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
             }
             return true;
         }
-
-        #endregion
-
-        #region Limiting Distance Calculation
 
         #endregion
 
@@ -287,7 +285,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
 
                     foreach (var group in orientationGroups)
                     {
-                        var elevationView = CreateElevationViewForGroup(doc, group);
+                        var elevationView = CreateCustomElevationViewForGroup(doc, group);
 
                         if (elevationView != null)
                         {
@@ -314,9 +312,9 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
         }
 
         /// <summary>
-        /// Creates an elevation view for a specific wall orientation group
+        /// Creates a custom elevation view for a specific wall orientation group
         /// </summary>
-        private ViewSection? CreateElevationViewForGroup(Document doc, WallGroup group)
+        private ViewSection? CreateCustomElevationViewForGroup(Document doc, WallGroup group)
         {
             try
             {
@@ -333,8 +331,6 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
                     CalculateViewCoordinateSystem(group.Orientation, centerPoint);
 
                 var sectionBox = CreateSectionBoundingBox(boundingBox, centerPoint, viewDirection, rightDirection, upDirection, sectionOrigin);
-
-                LogViewCreationInfo(group.Orientation, viewDirection, rightDirection, sectionOrigin);
 
                 var sectionView = ViewSection.CreateSection(doc, viewFamilyType.Id, sectionBox);
 
@@ -435,7 +431,8 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
         /// </summary>
         private void ConfigureView(Document doc, ViewSection sectionView, WallGroup group)
         {
-            var baseName = $"Wall Projection - {group.GroupName}";
+            string viewName = DirectionNaming.BuildViewNameFromNormal(group.Orientation);
+            var baseName = $"Wall Projection - {viewName}";
             var uniqueName = GetUniqueViewName(doc, baseName);
             sectionView.Name = uniqueName;
 
@@ -506,17 +503,6 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
             bbox.Min = min;
             bbox.Max = max;
             return bbox;
-        }
-
-        /// <summary>
-        /// Logs view creation information for debugging
-        /// </summary>
-        private void LogViewCreationInfo(XYZ wallNormal, XYZ viewDirection, XYZ rightDirection, XYZ sectionOrigin)
-        {
-            _logger.LogInformation($"Wall normal: ({wallNormal.X:F2}, {wallNormal.Y:F2})");
-            _logger.LogInformation($"View direction: ({viewDirection.X:F2}, {viewDirection.Y:F2})");
-            _logger.LogInformation($"Right direction: ({rightDirection.X:F2}, {rightDirection.Y:F2})");
-            _logger.LogInformation($"Section origin: ({sectionOrigin.X:F2}, {sectionOrigin.Y:F2}, {sectionOrigin.Z:F2})");
         }
 
         #endregion
@@ -1082,35 +1068,28 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
 
         /// <summary>
         /// Gets the distance group classification for a wall's limiting distance
+        /// Uses NBCConfigurationService to load distance ranges from NBCRequirements.json
         /// </summary>
-        private static (double Min, double Max, string Label, int ColorIndex) GetDistanceGroupForWall(double limitingDistance)
+        private (double Min, double Max, string Label, int ColorIndex) GetDistanceGroupForWall(double limitingDistance)
         {
-            var ranges = new[]
-            {
-                (Min: 0.0, Max: 3.937, Label: "0-1.2m (0-3.9ft)", ColorIndex: 0),
-                (Min: 3.937, Max: 4.921, Label: "1.2-1.5m (3.9-4.9ft)", ColorIndex: 1),
-                (Min: 4.921, Max: 6.562, Label: "1.5-2m (4.9-6.6ft)", ColorIndex: 2),
-                (Min: 6.562, Max: 8.202, Label: "2-2.5m (6.6-8.2ft)", ColorIndex: 3),
-                (Min: 8.202, Max: 9.843, Label: "2.5-3m (8.2-9.8ft)", ColorIndex: 4),
-                (Min: 9.843, Max: 13.123, Label: "3-4m (9.8-13.1ft)", ColorIndex: 5),
-                (Min: 13.123, Max: 16.404, Label: "4-5m (13.1-16.4ft)", ColorIndex: 6),
-                (Min: 16.404, Max: 19.685, Label: "5-6m (16.4-19.7ft)", ColorIndex: 7),
-                (Min: 19.685, Max: 22.966, Label: "6-7m (19.7-23.0ft)", ColorIndex: 8),
-                (Min: 22.966, Max: 26.247, Label: "7-8m (23.0-26.2ft)", ColorIndex: 9),
-                (Min: 26.247, Max: 29.528, Label: "8-9m (26.2-29.5ft)", ColorIndex: 10),
-                (Min: 29.528, Max: double.MaxValue, Label: "9m+ (29.5ft+)", ColorIndex: 11)
-            };
+            // Load ranges from NBC configuration
+            var ranges = _nbcConfig.Configuration.GetDistanceRangesAsTuples();
 
             foreach (var range in ranges)
             {
-                // For the last range (9m+), only check lower bound since Max is infinity
+                // For the last range, only check lower bound since Max could be infinity
                 // For all other ranges, check both bounds with < for exclusive upper bound
-                if (limitingDistance >= range.Min && (limitingDistance < range.Max || range.Max == double.MaxValue))
+                if (limitingDistance >= range.Min && (limitingDistance < range.Max || range.Max >= 999000))
                     return range;
             }
 
-            // Fallback to last range
-            return ranges[^1];
+            // Fallback to last range if available
+            if (ranges.Count > 0)
+                return ranges[^1];
+
+            // Ultimate fallback if no ranges configured
+            _logger.LogWarning($"No distance range found for {limitingDistance} ft, using fallback");
+            return (0, double.MaxValue, "Unknown", 0);
         }
 
         /// <summary>
@@ -1217,26 +1196,21 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
 
         /// <summary>
         /// Gets the RGB color values for a distance group index (green to red gradient)
+        /// Uses NBCConfigurationService to load colors from NBCRequirements.json
         /// </summary>
-        private static (byte Red, byte Green, byte Blue) GetColorFromDistanceGroupIndex(int colorIndex)
+        private (byte Red, byte Green, byte Blue) GetColorFromDistanceGroupIndex(int colorIndex)
         {
-            var colors = new (byte Red, byte Green, byte Blue)[]
-            {
-                (0, 255, 0),       // 0: Bright Green - 0-1.2m
-                (50, 205, 50),     // 1: Lime Green - 1.2-1.5m
-                (173, 255, 47),    // 2: Green Yellow - 1.5-2m
-                (255, 255, 0),     // 3: Yellow - 2-2.5m
-                (255, 215, 0),     // 4: Gold - 2.5-3m
-                (255, 165, 0),     // 5: Orange - 3-4m
-                (255, 100, 0),     // 6: Dark Orange - 4-5m
-                (255, 0, 0),       // 7: Red - 5-6m
-                (220, 20, 60),     // 8: Crimson - 6-7m
-                (178, 34, 34),     // 9: Firebrick - 7-8m
-                (128, 0, 0),       // 10: Maroon - 8-9m
-                (80, 0, 80)        // 11: Dark Purple - 9m+
-            };
+            // Load colors from NBC configuration
+            var colors = _nbcConfig.Configuration.GetColorsAsTuples();
 
-            return colorIndex >= 0 && colorIndex < colors.Length ? colors[colorIndex] : colors[^1];
+            if (colors.Count > 0 && colorIndex >= 0 && colorIndex < colors.Count)
+            {
+                return colors[colorIndex];
+            }
+
+            // Fallback: return red if index out of range or no colors configured
+            _logger.LogWarning($"Color index {colorIndex} out of range (total: {colors.Count}), using fallback red");
+            return (255, 0, 0);
         }
 
         #endregion
@@ -1248,40 +1222,31 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
         /// </summary>
         private ImportedTableData CreateNBCComplianceTableData()
         {
+            // Load table formatting from NBC configuration
+            var tableFormatting = _nbcConfig.Configuration.TableFormatting;
+
             var tableData = new ImportedTableData
             {
-                Headers = new List<string>
-                {
-                    "Orientation",
-                    "Classification",
-                    "Limiting Distance (m)",
-                    "Exposing Face Area (m²)",
-                    "Max NBC (%)",
-                    "Proposed (%)",
-                    "FRR",
-                    "Construction",
-                    "Cladding",
-                    "Status"
-                },
+                Headers = new List<string>(tableFormatting.Headers),
                 Rows = new List<List<string>>(),
                 MergedCells = new List<MergedCellRange>(),
                 CellFormats = new List<CellFormat>(),
-                ColumnWidths = new List<double> { 1.2, 1.3, 1.8, 2.0, 1.2, 1.2, 0.8, 1.8, 1.8, 0.8 },
+                ColumnWidths = new List<double>(tableFormatting.ColumnWidths),
                 RowHeights = new List<double>()
             };
 
             // Group walls by orientation (only walls with regions/projections created)
             var orientationGroups = _perimeterWalls
                 .Where(w => w.LinkedRegion != null)
-                .GroupBy(w => GetOrientationNumber(w))
+                .GroupBy(w => w.Orientation)
                 .OrderBy(g => g.Key);
 
             _logger.LogInformation($"Processing {orientationGroups.Count()} orientation groups for NBC report");
 
-            foreach (var group in orientationGroups)
+            foreach (IGrouping<XYZ?, WallInfo>? group in orientationGroups)
             {
                 var orientationNumber = group.Key;
-                var orientationName = GetOrientationName(orientationNumber);
+                var orientationName = DirectionNaming.BuildViewNameFromNormal(group.Key);
                 var wallsInOrientation = group.ToList();
 
                 // Calculate totals for this orientation
@@ -1325,10 +1290,10 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
                 });
             }
 
-            // Set all rows to same height
+            // Set all rows to same height using NBC configuration
             for (int i = 0; i < tableData.Rows.Count + 1; i++) // +1 for header
             {
-                tableData.RowHeights.Add(0.167); // 2 inches in feet
+                tableData.RowHeights.Add(tableFormatting.RowHeightFeet);
             }
 
             _logger.LogInformation($"Created NBC compliance report with {tableData.Rows.Count} rows");
@@ -1337,86 +1302,28 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
 
         /// <summary>
         /// Get NBC requirements based on limiting distance and area
+        /// Uses NBCConfigurationService to load requirements from NBCRequirements.json
         /// </summary>
         private (double maxAllowance, string frr, string construction, string cladding) GetNBCRequirements(double limitingDistanceM, double areaM2)
         {
-            // NBC Table 3.2.3.1.D - Group D (Residential)
-            // Simplified logic - you should implement full NBC table lookup
-            if (limitingDistanceM < 1.2)
-            {
-                return (0, "45min", "Combustible", "Combustible");
-            }
-            else if (limitingDistanceM < 2.0)
-            {
-                return (10, "None", "Combustible", "Combustible");
-            }
-            else if (limitingDistanceM < 3.0)
-            {
-                return (25, "None", "Combustible", "Combustible");
-            }
-            else if (limitingDistanceM < 6.0)
-            {
-                return (50, "None", "Combustible", "Combustible");
-            }
-            else
-            {
-                return (100, "None", "Combustible", "Combustible");
-            }
-        }
+            // Default to Group D (Residential) - can be parameterized later
+            const string classificationKey = "GroupD";
 
-        /// <summary>
-        /// Get orientation number for grouping
-        /// </summary>
-        private int GetOrientationNumber(WallInfo wall)
-        {
-            // Group by orientation direction
-            var orientation = wall.Wall.Orientation;
-            var angle = Math.Atan2(orientation.Y, orientation.X) * 180 / Math.PI;
+            var requirement = _nbcConfig.GetRequirement(classificationKey, limitingDistanceM);
 
-            // Normalize angle to 0-360
-            if (angle < 0) angle += 360;
-
-            // Group into 4 main orientations
-            if (angle >= 315 || angle < 45) return 1; // East
-            if (angle >= 45 && angle < 135) return 2; // North
-            if (angle >= 135 && angle < 225) return 3; // West
-            return 4; // South
-        }
-
-        /// <summary>
-        /// Get orientation name
-        /// </summary>
-        private string GetOrientationName(int orientationNumber)
-        {
-            switch (orientationNumber)
+            if (requirement != null)
             {
-                case 1: return "EAST";
-                case 2: return "NORTH";
-                case 3: return "WEST";
-                case 4: return "SOUTH";
-                default: return "UNKNOWN";
+                return (
+                    requirement.MaxUnprotectedOpeningPercent,
+                    requirement.FireResistanceRating,
+                    requirement.ConstructionType,
+                    requirement.CladdingType
+                );
             }
-        }
 
-        /// <summary>
-        /// Helper method to add a row to the NBC compliance table
-        /// </summary>
-        private void AddNBCRow(ImportedTableData tableData, string orientation, string classification,
-            string limitingDistance, string area, string maxAllowance, string proposedOpening,
-            string frr, string construction, string cladding)
-        {
-            tableData.Rows.Add(new List<string>
-            {
-                orientation,
-                classification,
-                limitingDistance,
-                area,
-                maxAllowance,
-                proposedOpening,
-                frr,
-                construction,
-                cladding
-            });
+            // Fallback to most restrictive requirements if no match found
+            _logger.LogWarning($"No NBC requirement found for {classificationKey} at {limitingDistanceM}m, using fallback");
+            return (0, "45min", "Noncombustible", "Noncombustible");
         }
 
         /// <summary>
@@ -1429,7 +1336,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.EventHandlers
                 _logger.LogInformation("Generating NBC Compliance Report table");
 
                 // Generate hard-coded NBC compliance table
-                var tableData = CreateNBCComplianceTableData();
+                ImportedTableData tableData = CreateNBCComplianceTableData();
 
                 // Create drafting view and render table within a transaction
                 using (var transaction = new Transaction(doc, "Create NBC Compliance Report"))

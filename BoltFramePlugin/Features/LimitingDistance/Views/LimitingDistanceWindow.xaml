@@ -129,11 +129,6 @@
                 <ld:ProjectSetupControl/>
             </TabItem>
 
-            <!-- Building Code Compliance Tab -->
-            <TabItem Header="Code Compliance">
-                <ld:BuildingCodeComplianceControl/>
-            </TabItem>
-
             <!-- Dev Tab -->
             <TabItem Header="Dev">
                 <ld:DevTabControl/>

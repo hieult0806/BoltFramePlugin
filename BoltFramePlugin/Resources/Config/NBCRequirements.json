@@ -1,0 +1,361 @@
+{
+  "CodeReference": "NBC 2020",
+  "Version": "1.0",
+  "LastUpdated": "2025-01-03",
+  "Description": "National Building Code requirements for limiting distance, fire resistance rating, and construction types",
+
+  "OccupantGroups": [
+    {
+      "Code": "Group A",
+      "Name": "Group A - Assembly",
+      "Description": "Assembly occupancies including theatres, arenas, churches, community halls, etc.",
+      "Examples": ["Theatres", "Arenas", "Churches", "Community Halls", "Restaurants", "Bars"]
+    },
+    {
+      "Code": "Group B",
+      "Name": "Group B - Institutional",
+      "Description": "Care or detention occupancies including hospitals, care facilities, jails, prisons",
+      "Examples": ["Hospitals", "Care Facilities", "Jails", "Prisons", "Nursing Homes"]
+    },
+    {
+      "Code": "Group C",
+      "Name": "Group C - Residential",
+      "Description": "Residential occupancies including apartments, hotels, dormitories",
+      "Examples": ["Apartments", "Hotels", "Motels", "Dormitories", "Boarding Houses"]
+    },
+    {
+      "Code": "Group D",
+      "Name": "Group D - Business and Personal Services",
+      "Description": "Business and personal service occupancies including offices, banks, professional services",
+      "Examples": ["Offices", "Banks", "Professional Services", "Clinics", "Salons"]
+    },
+    {
+      "Code": "Group E",
+      "Name": "Group E - Mercantile",
+      "Description": "Mercantile occupancies including shops, stores, markets",
+      "Examples": ["Retail Stores", "Shopping Centers", "Markets", "Department Stores"]
+    },
+    {
+      "Code": "Group F",
+      "Name": "Group F - Industrial",
+      "Description": "Industrial occupancies including factories, workshops, warehouses",
+      "Examples": ["Factories", "Warehouses", "Workshops", "Manufacturing Plants", "Storage Facilities"],
+      "SubGroups": [
+        {
+          "Code": "F1",
+          "Name": "High Hazard Industrial",
+          "Description": "Industrial occupancies with high fire or explosion hazard"
+        },
+        {
+          "Code": "F2",
+          "Name": "Medium Hazard Industrial",
+          "Description": "Industrial occupancies with moderate fire hazard"
+        },
+        {
+          "Code": "F3",
+          "Name": "Low Hazard Industrial",
+          "Description": "Industrial occupancies with low fire hazard"
+        }
+      ]
+    }
+  ],
+
+  "BuildingCodeParts": [
+    {
+      "Code": "Part 3",
+      "Name": "Part 3: Commercial",
+      "Description": "Commercial and institutional buildings"
+    },
+    {
+      "Code": "Part 9",
+      "Name": "Part 9: Residential",
+      "Description": "Housing and small buildings (up to 3 storeys, 600 m²)"
+    }
+  ],
+
+  "DistanceRanges": [
+    {
+      "RangeId": "0-1.2m",
+      "MinMeters": 0.0,
+      "MaxMeters": 1.2,
+      "MinFeet": 0.0,
+      "MaxFeet": 3.937,
+      "Label": "0-1.2m (0-3.9ft)",
+      "ColorIndex": 0,
+      "ColorRGB": { "R": 0, "G": 255, "B": 0 },
+      "ColorName": "Bright Green"
+    },
+    {
+      "RangeId": "1.2-1.5m",
+      "MinMeters": 1.2,
+      "MaxMeters": 1.5,
+      "MinFeet": 3.937,
+      "MaxFeet": 4.921,
+      "Label": "1.2-1.5m (3.9-4.9ft)",
+      "ColorIndex": 1,
+      "ColorRGB": { "R": 50, "G": 205, "B": 50 },
+      "ColorName": "Lime Green"
+    },
+    {
+      "RangeId": "1.5-2m",
+      "MinMeters": 1.5,
+      "MaxMeters": 2.0,
+      "MinFeet": 4.921,
+      "MaxFeet": 6.562,
+      "Label": "1.5-2m (4.9-6.6ft)",
+      "ColorIndex": 2,
+      "ColorRGB": { "R": 173, "G": 255, "B": 47 },
+      "ColorName": "Green Yellow"
+    },
+    {
+      "RangeId": "2-2.5m",
+      "MinMeters": 2.0,
+      "MaxMeters": 2.5,
+      "MinFeet": 6.562,
+      "MaxFeet": 8.202,
+      "Label": "2-2.5m (6.6-8.2ft)",
+      "ColorIndex": 3,
+      "ColorRGB": { "R": 255, "G": 255, "B": 0 },
+      "ColorName": "Yellow"
+    },
+    {
+      "RangeId": "2.5-3m",
+      "MinMeters": 2.5,
+      "MaxMeters": 3.0,
+      "MinFeet": 8.202,
+      "MaxFeet": 9.843,
+      "Label": "2.5-3m (8.2-9.8ft)",
+      "ColorIndex": 4,
+      "ColorRGB": { "R": 255, "G": 215, "B": 0 },
+      "ColorName": "Gold"
+    },
+    {
+      "RangeId": "3-4m",
+      "MinMeters": 3.0,
+      "MaxMeters": 4.0,
+      "MinFeet": 9.843,
+      "MaxFeet": 13.123,
+      "Label": "3-4m (9.8-13.1ft)",
+      "ColorIndex": 5,
+      "ColorRGB": { "R": 255, "G": 165, "B": 0 },
+      "ColorName": "Orange"
+    },
+    {
+      "RangeId": "4-5m",
+      "MinMeters": 4.0,
+      "MaxMeters": 5.0,
+      "MinFeet": 13.123,
+      "MaxFeet": 16.404,
+      "Label": "4-5m (13.1-16.4ft)",
+      "ColorIndex": 6,
+      "ColorRGB": { "R": 255, "G": 140, "B": 0 },
+      "ColorName": "Dark Orange"
+    },
+    {
+      "RangeId": "5-6m",
+      "MinMeters": 5.0,
+      "MaxMeters": 6.0,
+      "MinFeet": 16.404,
+      "MaxFeet": 19.685,
+      "Label": "5-6m (16.4-19.7ft)",
+      "ColorIndex": 7,
+      "ColorRGB": { "R": 255, "G": 69, "B": 0 },
+      "ColorName": "Red Orange"
+    },
+    {
+      "RangeId": "6m+",
+      "MinMeters": 6.0,
+      "MaxMeters": 999999.0,
+      "MinFeet": 19.685,
+      "MaxFeet": 999999.0,
+      "Label": "6m+ (19.7ft+)",
+      "ColorIndex": 8,
+      "ColorRGB": { "R": 255, "G": 0, "B": 0 },
+      "ColorName": "Red"
+    }
+  ],
+
+  "BuildingClassifications": {
+    "GroupA": {
+      "Name": "Group A - Assembly",
+      "Description": "Assembly occupancies including theatres, arenas, churches, etc.",
+      "Requirements": [
+        {
+          "LimitingDistanceMeters": 1.2,
+          "MaxUnprotectedOpeningPercent": 0,
+          "FireResistanceRating": "45min",
+          "ConstructionType": "Noncombustible",
+          "CladdingType": "Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 2.0,
+          "MaxUnprotectedOpeningPercent": 10,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 3.0,
+          "MaxUnprotectedOpeningPercent": 25,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 6.0,
+          "MaxUnprotectedOpeningPercent": 50,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 999.0,
+          "MaxUnprotectedOpeningPercent": 100,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        }
+      ]
+    },
+    "GroupC": {
+      "Name": "Group C - Institutional/Residential",
+      "Description": "Care or detention occupancies including hospitals, care facilities, jails",
+      "Requirements": [
+        {
+          "LimitingDistanceMeters": 1.2,
+          "MaxUnprotectedOpeningPercent": 0,
+          "FireResistanceRating": "45min",
+          "ConstructionType": "Noncombustible",
+          "CladdingType": "Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 2.0,
+          "MaxUnprotectedOpeningPercent": 10,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 3.0,
+          "MaxUnprotectedOpeningPercent": 25,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 6.0,
+          "MaxUnprotectedOpeningPercent": 50,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 999.0,
+          "MaxUnprotectedOpeningPercent": 100,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        }
+      ]
+    },
+    "GroupD": {
+      "Name": "Group D - Residential",
+      "Description": "Residential occupancies including apartments, hotels, dormitories",
+      "Requirements": [
+        {
+          "LimitingDistanceMeters": 1.2,
+          "MaxUnprotectedOpeningPercent": 0,
+          "FireResistanceRating": "45min",
+          "ConstructionType": "Combustible",
+          "CladdingType": "Combustible"
+        },
+        {
+          "LimitingDistanceMeters": 2.0,
+          "MaxUnprotectedOpeningPercent": 10,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible",
+          "CladdingType": "Combustible"
+        },
+        {
+          "LimitingDistanceMeters": 3.0,
+          "MaxUnprotectedOpeningPercent": 25,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible",
+          "CladdingType": "Combustible"
+        },
+        {
+          "LimitingDistanceMeters": 6.0,
+          "MaxUnprotectedOpeningPercent": 50,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible",
+          "CladdingType": "Combustible"
+        },
+        {
+          "LimitingDistanceMeters": 999.0,
+          "MaxUnprotectedOpeningPercent": 100,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible",
+          "CladdingType": "Combustible"
+        }
+      ]
+    },
+    "GroupE": {
+      "Name": "Group E - Business/Personal Services/Mercantile",
+      "Description": "Offices, shops, restaurants, service businesses",
+      "Requirements": [
+        {
+          "LimitingDistanceMeters": 1.2,
+          "MaxUnprotectedOpeningPercent": 0,
+          "FireResistanceRating": "45min",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 2.0,
+          "MaxUnprotectedOpeningPercent": 10,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 3.0,
+          "MaxUnprotectedOpeningPercent": 25,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 6.0,
+          "MaxUnprotectedOpeningPercent": 50,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        },
+        {
+          "LimitingDistanceMeters": 999.0,
+          "MaxUnprotectedOpeningPercent": 100,
+          "FireResistanceRating": "None",
+          "ConstructionType": "Combustible/Noncombustible",
+          "CladdingType": "Combustible/Noncombustible"
+        }
+      ]
+    }
+  },
+
+  "TableFormatting": {
+    "ColumnWidths": [1.2, 1.3, 1.8, 2.0, 1.2, 1.2, 0.8, 1.8, 1.8, 0.8],
+    "RowHeightFeet": 0.167,
+    "Headers": [
+      "Orientation",
+      "Classification",
+      "Limiting Distance (m)",
+      "Exposing Face Area (m²)",
+      "Max NBC (%)",
+      "Proposed (%)",
+      "FRR",
+      "Construction",
+      "Cladding",
+      "Status"
+    ]
+  }
+}

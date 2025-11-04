@@ -7,6 +7,7 @@ using Autodesk.Revit.UI.Selection;
 using BoltFramePlugin.EventHandlers;
 using BoltFramePlugin.Features.LimitingDistance.EventHandlers;
 using BoltFramePlugin.Features.LimitingDistance.Models;
+using BoltFramePlugin.Features.LimitingDistance.Services;
 using BoltFramePlugin.Filters;
 using BoltFramePlugin.Services;
 using BoltFramePlugin.ViewModels;
@@ -18,6 +19,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.ViewModels
     {
         private IRevitService _revitService;
         private ILoggingService _logger;
+        private INBCConfigurationService _nbcConfig;
         public ILoggingService Logger => _logger; // Expose for code-behind
         private ExternalEvent _createArrowsEvent;
         private CreateArrowsEventHandler _createArrowsHandler;
@@ -131,22 +133,9 @@ namespace BoltFramePlugin.Features.LimitingDistance.ViewModels
             }
         }
 
-        public List<string> BuildingClassifications { get; } = new List<string>
-        {
-            "Part 3: Commercial",
-            "Part 9: Residential"
-        };
-
-        // Occupant Groups for dropdown
-        public List<string> OccupantGroups { get; } = new List<string>
-        {
-            "Group A",
-            "Group B",
-            "Group C",
-            "Group D",
-            "Group E",
-            "Group F"
-        };
+        // Building classifications and occupant groups loaded from NBC configuration
+        public List<string> BuildingClassifications => _nbcConfig.Configuration.GetBuildingCodePartNames();
+        public List<string> OccupantGroups => _nbcConfig.Configuration.GetOccupantGroupCodes();
 
         // Ray Casting Configuration
         private double _rayLengthLimit = 500.0; // meters, configurable
@@ -301,6 +290,7 @@ namespace BoltFramePlugin.Features.LimitingDistance.ViewModels
         {
             _revitService = DIContainerService.Container.GetInstance<IRevitServiceFactory>().Create(uidoc);
             _logger = DIContainerService.Container.GetInstance<ILoggingService>();
+            _nbcConfig = DIContainerService.Container.GetInstance<INBCConfigurationService>();
             _extensibleStorage = DIContainerService.Container.GetInstance<IExtensibleStorageService>();
             _pluginConfig = DIContainerService.Container.GetInstance<IPluginConfigurationManager>();
 
@@ -1181,8 +1171,6 @@ namespace BoltFramePlugin.Features.LimitingDistance.ViewModels
                 _logger.LogInformation("Calculating distance groups from walls with created regions...");
                 _logger.LogInformation($"Walls with regions: {wallsWithRegions?.Count ?? 0}");
 
-                var groups = new List<DistanceGroupSummary>();
-
                 if (wallsWithRegions == null || wallsWithRegions.Count == 0)
                 {
                     DistanceGroups.Clear();
@@ -1210,9 +1198,9 @@ namespace BoltFramePlugin.Features.LimitingDistance.ViewModels
                     // Use ranges from JSON configuration
                     _logger.LogInformation($"Using {_filledRegionTypeRanges.Count} distance ranges from JSON configuration");
 
-                    foreach (var orientationGroup in wallsByOrientation)
+                    foreach (IGrouping<XYZ?, WallInfo>? orientationGroup in wallsByOrientation)
                     {
-                        var orientationName = orientationGroup.Key.ToString();
+                        var orientationName = DirectionNaming.BuildViewNameFromNormal(orientationGroup.Key);
 
                         foreach (var range in _filledRegionTypeRanges)
                         {
@@ -1324,22 +1312,39 @@ namespace BoltFramePlugin.Features.LimitingDistance.ViewModels
 
         /// <summary>
         /// Determines maximum allowed unprotected openings percentage based on limiting distance
-        /// Based on NBC (National Building Code) Table 3.2.3.1.D
+        /// Uses NBCConfigurationService to load requirements from NBCRequirements.json
         /// </summary>
         private double GetMaxAllowedOpeningsPercent(double limitingDistanceFt, string buildingClassification)
         {
             var limitingDistanceM = limitingDistanceFt * 0.3048; // Convert ft to m
 
-            // Simplified NBC Table 3.2.3.1.D logic
-            // These values should be adjusted based on actual building code requirements
-            if (limitingDistanceM <= 1.2) return 10;
-            if (limitingDistanceM <= 1.5) return 15;
-            if (limitingDistanceM <= 2.0) return 25;
-            if (limitingDistanceM <= 2.5) return 40;
-            if (limitingDistanceM <= 3.0) return 60;
-            if (limitingDistanceM <= 4.0) return 80;
-            if (limitingDistanceM <= 5.0) return 100;
-            return 100; // No restriction for > 5m
+            // Default to Group D if classification not specified or not found
+            string classificationKey = "GroupD";
+
+            // Map building classification to NBC group key if needed
+            if (!string.IsNullOrEmpty(buildingClassification))
+            {
+                // Try to map the classification string to a group key
+                if (buildingClassification.Contains("A", StringComparison.OrdinalIgnoreCase))
+                    classificationKey = "GroupA";
+                else if (buildingClassification.Contains("C", StringComparison.OrdinalIgnoreCase))
+                    classificationKey = "GroupC";
+                else if (buildingClassification.Contains("D", StringComparison.OrdinalIgnoreCase))
+                    classificationKey = "GroupD";
+                else if (buildingClassification.Contains("E", StringComparison.OrdinalIgnoreCase))
+                    classificationKey = "GroupE";
+            }
+
+            var requirement = _nbcConfig.GetRequirement(classificationKey, limitingDistanceM);
+
+            if (requirement != null)
+            {
+                return requirement.MaxUnprotectedOpeningPercent;
+            }
+
+            // Fallback: no restriction if no requirement found
+            _logger.LogWarning($"No NBC requirement found for {classificationKey} at {limitingDistanceM}m, returning 100%");
+            return 100;
         }
 
         /// <summary>

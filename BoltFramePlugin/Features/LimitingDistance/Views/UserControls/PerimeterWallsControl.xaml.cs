@@ -20,6 +20,41 @@ namespace BoltFramePlugin.Features.LimitingDistance.Views.UserControls
         public PerimeterWallsControl()
         {
             InitializeComponent();
+
+            // Subscribe to DataContext changes to listen for SelectedWall changes
+            this.DataContextChanged += PerimeterWallsControl_DataContextChanged;
+        }
+
+        private void PerimeterWallsControl_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            // Unsubscribe from old ViewModel
+            if (e.OldValue is LimitingDistanceWindowVM oldVm)
+            {
+                oldVm.PropertyChanged -= ViewModel_PropertyChanged;
+            }
+
+            // Subscribe to new ViewModel
+            if (e.NewValue is LimitingDistanceWindowVM newVm)
+            {
+                newVm.PropertyChanged += ViewModel_PropertyChanged;
+            }
+        }
+
+        private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            // When SelectedWall changes, scroll to it in the DataGrid
+            if (e.PropertyName == nameof(LimitingDistanceWindowVM.SelectedWall))
+            {
+                var viewModel = DataContext as LimitingDistanceWindowVM;
+                if (viewModel?.SelectedWall != null)
+                {
+                    // Scroll the selected item into view
+                    WallsDataGrid.ScrollIntoView(viewModel.SelectedWall);
+
+                    // Optional: Give it focus for better visibility
+                    WallsDataGrid.UpdateLayout();
+                }
+            }
         }
 
         private void DataGrid_BeginningEdit(object sender, System.Windows.Controls.DataGridBeginningEditEventArgs e)

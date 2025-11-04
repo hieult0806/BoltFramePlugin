@@ -37,6 +37,8 @@ namespace BoltFramePlugin.Services
 
             // Limiting Distance Services
             container.RegisterSingleton<BoltFramePlugin.Features.LimitingDistance.Services.LimitingDistanceReportService>();
+            container.RegisterSingleton<BoltFramePlugin.Features.LimitingDistance.Services.INBCConfigurationService, BoltFramePlugin.Features.LimitingDistance.Services.NBCConfigurationService>();
+            container.RegisterSingleton<BoltFramePlugin.Features.LimitingDistance.Services.IElementHighlightService, BoltFramePlugin.Features.LimitingDistance.Services.ElementHighlightService>();
 
             // Sheet Management Services
             container.RegisterSingleton<BoltFramePlugin.Features.SheetManagement.Services.ISheetManagementService, BoltFramePlugin.Features.SheetManagement.Services.SheetManagementService>();
