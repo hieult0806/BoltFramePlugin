@@ -235,7 +235,18 @@ namespace BoltFramePlugin.AddInEntryPoint
                 className: "BoltFramePlugin.Features.SheetManagement.Commands.SheetManagementCommand",
                 tooltip: "Manage and Renumber Sheets",
                 longDescription: "Organize sheets with drag-and-drop reordering, filter by parameters, and renumber sheets automatically.",
-                iconName: "sheets"
+                iconName: "folders"
+            );
+
+            // Add View Cloning Button
+            AddPushButton(
+                panel,
+                name: "ViewCloningButton",
+                text: "Clone Views",
+                className: "BoltFramePlugin.Features.ViewCloning.Commands.ViewCloningCommand",
+                tooltip: "Clone Views from Linked Files",
+                longDescription: "Clone views from linked Revit files into the current document.",
+                iconName: "copy"
             );
 
             // Add separator

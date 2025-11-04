@@ -43,6 +43,9 @@ namespace BoltFramePlugin.Services
             // Sheet Management Services
             container.RegisterSingleton<BoltFramePlugin.Features.SheetManagement.Services.ISheetManagementService, BoltFramePlugin.Features.SheetManagement.Services.SheetManagementService>();
 
+            // View Cloning Services
+            container.RegisterSingleton<BoltFramePlugin.Features.ViewCloning.Services.IViewCloningService, BoltFramePlugin.Features.ViewCloning.Services.ViewCloningService>();
+
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());
             // Add other registrations as needed
