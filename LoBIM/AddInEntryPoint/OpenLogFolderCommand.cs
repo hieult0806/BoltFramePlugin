@@ -1,6 +1,7 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LoBIM.Constants;
 using LoBIM.Services;
 using LoBIM.ViewModels;
 using System;
@@ -14,19 +15,25 @@ namespace LoBIM.AddInEntryPoint
         {
             try
             {
-                // Get the window manager from DI container
-                var container = DIContainerService.Container;
-                var windowManager = container.GetInstance<IWindowManager>();
+                // Show the log dockable pane
+                var dockablePaneId = new DockablePaneId(DockablePaneGuids.LogPanel);
+                var dockablePane = commandData.Application.GetDockablePane(dockablePaneId);
 
-                // Create and show the Log Window as modeless
-                var viewModel = new LogWindowVM();
-                windowManager.Open(viewModel);
+                if (dockablePane != null)
+                {
+                    dockablePane.Show();
+                }
+                else
+                {
+                    Autodesk.Revit.UI.TaskDialog.Show("Error", "Log panel not found. Please restart Revit.");
+                    return Result.Failed;
+                }
 
                 return Result.Succeeded;
             }
             catch (Exception ex)
             {
-                message = $"Failed to open log window: {ex.Message}";
+                message = $"Failed to open log panel: {ex.Message}";
                 Autodesk.Revit.UI.TaskDialog.Show("Error", message);
                 return Result.Failed;
             }

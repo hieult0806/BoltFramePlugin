@@ -1,0 +1,67 @@
+{
+  "Features": {
+    "BoltFrame": {
+      "Enabled": true,
+      "Name": "Bolt Frame",
+      "ButtonName": "BoltFrameMainButton",
+      "ClassName": "LoBIM.Features.Framing.Commands.BoltFrameCommand",
+      "Tooltip": "Open BoltFrame Plugin",
+      "LongDescription": "Configure and manage BoltFrame settings.",
+      "IconName": "grid"
+    },
+    "SwitchViewPanel": {
+      "Enabled": true,
+      "Name": "View Plans",
+      "ButtonName": "SwitchViewPanelButton",
+      "ClassName": "ShowSwitchViewPanelCommand",
+      "Tooltip": "Toggle the Switch View Panel",
+      "LongDescription": "Show or hide the Switch View Plans panel.",
+      "IconName": "design"
+    },
+    "LimitingDistance": {
+      "Enabled": true,
+      "Name": "Limiting Distance",
+      "ButtonName": "LimitingDistanceButton",
+      "ClassName": "LoBIM.Features.LimitingDistance.Commands.LimitingDistanceCommand",
+      "Tooltip": "Calculate Limiting Distance",
+      "LongDescription": "Select property line and highlight perimeter walls for limiting distance calculation.",
+      "IconName": "firewall"
+    },
+    "DataImport": {
+      "Enabled": true,
+      "Name": "Import Table",
+      "ButtonName": "DataImportButton",
+      "ClassName": "LoBIM.Features.DataImport.Commands.DataImportCommand",
+      "Tooltip": "Import CSV/Excel to Drafting View",
+      "LongDescription": "Import tabular data from CSV or Excel files and render as tables in Revit drafting views using detail items (text, lines, regions).",
+      "IconName": "excel"
+    },
+    "SheetManagement": {
+      "Enabled": true,
+      "Name": "Manage Sheets",
+      "ButtonName": "SheetManagementButton",
+      "ClassName": "LoBIM.Features.SheetManagement.Commands.SheetManagementCommand",
+      "Tooltip": "Manage and Renumber Sheets",
+      "LongDescription": "Organize sheets with drag-and-drop reordering, filter by parameters, and renumber sheets automatically.",
+      "IconName": "folders"
+    },
+    "ViewCloning": {
+      "Enabled": true,
+      "Name": "Clone Views",
+      "ButtonName": "ViewCloningButton",
+      "ClassName": "LoBIM.Features.ViewCloning.Commands.ViewCloningCommand",
+      "Tooltip": "Clone Views from Linked Files",
+      "LongDescription": "Clone views from linked Revit files into the current document.",
+      "IconName": "copy"
+    },
+    "OpenLogs": {
+      "Enabled": true,
+      "Name": "Open Logs",
+      "ButtonName": "OpenLogFolderButton",
+      "ClassName": "OpenLogFolderCommand",
+      "Tooltip": "Open Log Folder",
+      "LongDescription": "Opens the LoBIM log folder in Windows Explorer to view log files.",
+      "IconName": "code-files"
+    }
+  }
+}

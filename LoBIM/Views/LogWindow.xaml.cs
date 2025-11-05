@@ -4,7 +4,7 @@ using LoBIM.ViewModels;
 
 namespace LoBIM.Views
 {
-    public partial class LogWindow : Window
+    public partial class LogWindow : System.Windows.Controls.UserControl
     {
         public LogWindow()
         {

@@ -70,6 +70,19 @@ namespace LoBIM.Features.ViewCloning.ViewModels
             }
         }
 
+        private ViewPositioningMode _selectedPositioningMode = ViewPositioningMode.InternalOriginToInternalOrigin;
+        public ViewPositioningMode SelectedPositioningMode
+        {
+            get => _selectedPositioningMode;
+            set
+            {
+                _selectedPositioningMode = value;
+                OnPropertyChanged(nameof(SelectedPositioningMode));
+            }
+        }
+
+        public Array PositioningModes => Enum.GetValues(typeof(ViewPositioningMode));
+
         private bool _isLoading;
         public bool IsLoading
         {
@@ -97,6 +110,7 @@ namespace LoBIM.Features.ViewCloning.ViewModels
         public ICommand SelectAllViewsCommand { get; }
         public ICommand DeselectAllViewsCommand { get; }
         public ICommand CloneSelectedViewsCommand { get; }
+        public ICommand LogSectionMarkerPositionCommand { get; }
         public ICommand CloseCommand { get; }
 
         public ViewCloningWindowVM(UIDocument uidoc) : base(uidoc)
@@ -115,6 +129,7 @@ namespace LoBIM.Features.ViewCloning.ViewModels
             SelectAllViewsCommand = new RelayCommand(SelectAllViews);
             DeselectAllViewsCommand = new RelayCommand(DeselectAllViews);
             CloneSelectedViewsCommand = new RelayCommand(CloneSelectedViews, CanCloneViews);
+            LogSectionMarkerPositionCommand = new RelayCommand(LogSectionMarkerPosition);
             CloseCommand = new RelayCommand(Close);
 
             // Load linked files on startup
@@ -207,7 +222,7 @@ namespace LoBIM.Features.ViewCloning.ViewModels
                 StatusMessage = $"Cloning {selectedViews.Count} view(s)...";
 
                 // Use ExternalEvent to execute cloning in Revit API context
-                _cloneViewsHandler.SetParameters(selectedViews, NamePrefix, OnCloningCompleted);
+                _cloneViewsHandler.SetParameters(selectedViews, NamePrefix, SelectedPositioningMode, OnCloningCompleted);
                 _cloneViewsEvent.Raise();
 
                 _logger.LogInformation($"Initiated cloning of {selectedViews.Count} views with prefix '{NamePrefix}'");
@@ -218,6 +233,80 @@ namespace LoBIM.Features.ViewCloning.ViewModels
                 StatusMessage = $"Error: {ex.Message}";
                 TaskDialog.Show("Error", $"Failed to initiate view cloning: {ex.Message}");
                 IsLoading = false;
+            }
+        }
+
+        private void LogSectionMarkerPosition(object parameter)
+        {
+            try
+            {
+                var doc = _document.Document;
+
+                Autodesk.Revit.DB.ViewSection viewSection = null;
+
+                // First, try to use the active view if it's a section
+                if (_document.ActiveView is Autodesk.Revit.DB.ViewSection activeSection)
+                {
+                    _logger.LogInformation($"Using active section view: {activeSection.Name}");
+                    viewSection = activeSection;
+                }
+                else
+                {
+                    // Try to get from selection
+                    var selection = _document.Selection;
+                    if (selection.GetElementIds().Count > 0)
+                    {
+                        var selectedId = selection.GetElementIds().FirstOrDefault();
+                        if (selectedId != null)
+                        {
+                            var element = doc.GetElement(selectedId);
+                            _logger.LogInformation($"Selected Element Type: {element?.GetType().Name}");
+                            _logger.LogInformation($"Selected Element Category: {element?.Category?.Name}");
+                            _logger.LogInformation($"Selected Element Id: {element?.Id.Value}");
+
+                            viewSection = element as Autodesk.Revit.DB.ViewSection;
+                        }
+                    }
+                }
+
+                if (viewSection != null)
+                {
+                    _logger.LogInformation($"=== SECTION VIEW INFORMATION ===");
+                    _logger.LogInformation($"Section View Name: {viewSection.Name}");
+                    _logger.LogInformation($"Section View Id: {viewSection.Id.Value}");
+                    _logger.LogInformation($"Section Origin: {viewSection.Origin}");
+                    _logger.LogInformation($"Section Direction: {viewSection.ViewDirection}");
+                    _logger.LogInformation($"Section Up Direction: {viewSection.UpDirection}");
+                    _logger.LogInformation($"Section Right Direction: {viewSection.RightDirection}");
+
+                    var cropBox = viewSection.CropBox;
+                    if (cropBox != null)
+                    {
+                        _logger.LogInformation($"=== CROPBOX INFORMATION ===");
+                        _logger.LogInformation($"CropBox Origin: {cropBox.Transform.Origin}");
+                        _logger.LogInformation($"CropBox BasisX: {cropBox.Transform.BasisX}");
+                        _logger.LogInformation($"CropBox BasisY: {cropBox.Transform.BasisY}");
+                        _logger.LogInformation($"CropBox BasisZ: {cropBox.Transform.BasisZ}");
+                        _logger.LogInformation($"CropBox Scale: {cropBox.Transform.Scale}");
+                        _logger.LogInformation($"CropBox Min: {cropBox.Min}");
+                        _logger.LogInformation($"CropBox Max: {cropBox.Max}");
+                    }
+
+                    StatusMessage = $"Logged position info for section: {viewSection.Name}";
+                    TaskDialog.Show("Success", $"Logged position information for section '{viewSection.Name}'. Check the log file for details.");
+                }
+                else
+                {
+                    _logger.LogWarning($"Could not find a section view. Please open a section view first.");
+                    TaskDialog.Show("No Section View",
+                        "Please open a section view in Revit and click this button again.\n\n" +
+                        "The active view must be a section view.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error logging section marker position: {ex.Message}", ex);
+                TaskDialog.Show("Error", $"Failed to log position: {ex.Message}");
             }
         }
 

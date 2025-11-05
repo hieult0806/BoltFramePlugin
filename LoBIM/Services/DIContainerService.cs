@@ -18,6 +18,7 @@ namespace LoBIM.Services
         public static void RegisterServices()
         {
             container.RegisterSingleton<ILoggingService, LoggingService>();
+            container.RegisterSingleton<IFeatureFlagService, FeatureFlagService>();
             container.RegisterSingleton<IRevitServiceFactory, RevitServiceFactory>();
             container.RegisterSingleton<IThemeService, ThemeService>();
             container.RegisterSingleton<IFileService, FileService>();

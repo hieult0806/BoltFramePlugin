@@ -15,6 +15,7 @@ namespace LoBIM.Features.ViewCloning.EventHandlers
     {
         private List<LinkedViewInfo> _viewsToClone;
         private string _namePrefix;
+        private ViewPositioningMode _positioningMode;
         private Action<int> _onCompleted;
         private readonly IViewCloningService _viewCloningService;
         private readonly ILoggingService _logger;
@@ -28,10 +29,11 @@ namespace LoBIM.Features.ViewCloning.EventHandlers
         /// <summary>
         /// Set parameters for the cloning operation
         /// </summary>
-        public void SetParameters(List<LinkedViewInfo> viewsToClone, string namePrefix, Action<int> onCompleted)
+        public void SetParameters(List<LinkedViewInfo> viewsToClone, string namePrefix, ViewPositioningMode positioningMode, Action<int> onCompleted)
         {
             _viewsToClone = viewsToClone;
             _namePrefix = namePrefix;
+            _positioningMode = positioningMode;
             _onCompleted = onCompleted;
         }
 
@@ -51,7 +53,7 @@ namespace LoBIM.Features.ViewCloning.EventHandlers
                 }
 
                 // Clone the views (transaction is handled inside the service)
-                int successCount = _viewCloningService.CloneViews(doc, _viewsToClone, _namePrefix);
+                int successCount = _viewCloningService.CloneViews(doc, _viewsToClone, _namePrefix, _positioningMode);
 
                 _logger.LogInformation($"Successfully cloned {successCount} out of {_viewsToClone.Count} views");
 

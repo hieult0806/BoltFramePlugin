@@ -128,14 +128,18 @@ namespace LoBIM.Features.ViewCloning.Services
             return views;
         }
 
-        public ElementId? CloneView(Document hostDoc, LinkedViewInfo viewInfo, string namePrefix = "")
+        public ElementId? CloneView(Document hostDoc, LinkedViewInfo viewInfo, string namePrefix = "", ViewPositioningMode positioningMode = ViewPositioningMode.InternalOriginToInternalOrigin)
         {
             try
             {
                 var sourceView = viewInfo.View;
                 var linkedDoc = viewInfo.ParentLink.LinkedDocument;
+                var linkInstance = viewInfo.ParentLink.LinkInstance;
 
-                _logger.LogInformation($"Cloning view: {sourceView.Name} from {linkedDoc.Title}");
+                _logger.LogInformation($"Cloning view: {sourceView.Name} from {linkedDoc.Title} using positioning mode: {positioningMode}");
+
+                // Get the link transform based on the selected positioning mode
+                Transform linkTransform = GetLinkTransform(linkInstance, positioningMode);
 
                 // Create a view of the same type in the host document
                 Autodesk.Revit.DB.View newView = null;
@@ -149,15 +153,20 @@ namespace LoBIM.Features.ViewCloning.Services
                         break;
 
                     case ViewType.Section:
-                        newView = CloneSectionView(hostDoc, sourceView, namePrefix);
+                        newView = CloneSectionView(hostDoc, sourceView, namePrefix, linkTransform, positioningMode);
                         break;
 
                     case ViewType.Elevation:
-                        newView = CloneElevationView(hostDoc, sourceView, namePrefix);
+                        newView = CloneElevationView(hostDoc, sourceView, namePrefix, linkTransform, positioningMode);
                         break;
 
                     case ViewType.ThreeD:
                         newView = Clone3DView(hostDoc, sourceView, namePrefix);
+                        break;
+
+                    case ViewType.DraftingView:
+                    case ViewType.Detail:
+                        newView = CloneDraftingView(hostDoc, sourceView, namePrefix);
                         break;
 
                     default:
@@ -185,7 +194,7 @@ namespace LoBIM.Features.ViewCloning.Services
             return null;
         }
 
-        public int CloneViews(Document hostDoc, List<LinkedViewInfo> viewsToClone, string namePrefix = "")
+        public int CloneViews(Document hostDoc, List<LinkedViewInfo> viewsToClone, string namePrefix = "", ViewPositioningMode positioningMode = ViewPositioningMode.InternalOriginToInternalOrigin)
         {
             int successCount = 0;
 
@@ -195,7 +204,7 @@ namespace LoBIM.Features.ViewCloning.Services
 
                 foreach (var viewInfo in viewsToClone)
                 {
-                    var result = CloneView(hostDoc, viewInfo, namePrefix);
+                    var result = CloneView(hostDoc, viewInfo, namePrefix, positioningMode);
                     if (result != null)
                     {
                         successCount++;
@@ -260,7 +269,7 @@ namespace LoBIM.Features.ViewCloning.Services
             return newView;
         }
 
-        private Autodesk.Revit.DB.View CloneSectionView(Document hostDoc, Autodesk.Revit.DB.View sourceView, string namePrefix)
+        private Autodesk.Revit.DB.View CloneSectionView(Document hostDoc, Autodesk.Revit.DB.View sourceView, string namePrefix, Transform linkTransform, ViewPositioningMode positioningMode)
         {
             try
             {
@@ -278,16 +287,36 @@ namespace LoBIM.Features.ViewCloning.Services
                     return null;
                 }
 
-                // Get the view direction and origin
+                // Get the view direction and origin from the linked file
                 var sourceOrigin = sourceSection.Origin;
                 var sourceDirection = sourceSection.ViewDirection;
                 var sourceUpDirection = sourceSection.UpDirection;
                 var sourceRightDirection = sourceSection.RightDirection;
 
-                // Find matching view family type in host document
-                var viewFamilyTypeId = sourceView.GetTypeId();
-                var viewFamilyType = sourceView.Document.GetElement(viewFamilyTypeId) as ViewFamilyType;
+                _logger.LogInformation($"=== SOURCE SECTION VIEW DETAILS ===");
+                _logger.LogInformation($"Source Origin: {sourceOrigin}");
+                _logger.LogInformation($"Source Direction: {sourceDirection}");
+                _logger.LogInformation($"Source Up: {sourceUpDirection}");
+                _logger.LogInformation($"Source Right: {sourceRightDirection}");
 
+                var srcTransform = sourceBoundingBox.Transform;
+                _logger.LogInformation($"=== SOURCE CROPBOX TRANSFORM ===");
+                _logger.LogInformation($"CropBox Origin: {srcTransform.Origin}");
+                _logger.LogInformation($"CropBox BasisX: {srcTransform.BasisX}");
+                _logger.LogInformation($"CropBox BasisY: {srcTransform.BasisY}");
+                _logger.LogInformation($"CropBox BasisZ: {srcTransform.BasisZ}");
+                _logger.LogInformation($"CropBox Scale: {srcTransform.Scale}");
+                _logger.LogInformation($"CropBox Min: {sourceBoundingBox.Min}");
+                _logger.LogInformation($"CropBox Max: {sourceBoundingBox.Max}");
+
+                _logger.LogInformation($"=== LINK TRANSFORM ===");
+                _logger.LogInformation($"Link Origin: {linkTransform.Origin}");
+                _logger.LogInformation($"Link BasisX: {linkTransform.BasisX}");
+                _logger.LogInformation($"Link BasisY: {linkTransform.BasisY}");
+                _logger.LogInformation($"Link BasisZ: {linkTransform.BasisZ}");
+                _logger.LogInformation($"Link Scale: {linkTransform.Scale}");
+
+                // Find matching view family type in host document
                 var hostViewFamilyType = new FilteredElementCollector(hostDoc)
                     .OfClass(typeof(ViewFamilyType))
                     .Cast<ViewFamilyType>()
@@ -299,26 +328,139 @@ namespace LoBIM.Features.ViewCloning.Services
                     return null;
                 }
 
-                // Create a bounding box for the section in the host document
-                var transform = Transform.Identity;
-                transform.Origin = sourceOrigin;
-                transform.BasisX = sourceRightDirection;
-                transform.BasisY = sourceUpDirection;
-                transform.BasisZ = sourceDirection;
+                // Determine the final transform based on positioning mode
+                Transform finalTransform;
+                XYZ min = sourceBoundingBox.Min;
+                XYZ max = sourceBoundingBox.Max;
 
-                var min = sourceBoundingBox.Min;
-                var max = sourceBoundingBox.Max;
+                _logger.LogInformation($"=== APPLYING POSITIONING MODE: {positioningMode} ===");
+
+                switch (positioningMode)
+                {
+                    case ViewPositioningMode.TestIdentity:
+                        _logger.LogInformation($"TEST: Using Identity transform (origin at 0,0,0)");
+                        finalTransform = Transform.Identity;
+                        break;
+
+                    case ViewPositioningMode.TestSourceTransformOnly:
+                        _logger.LogInformation($"TEST: Using source cropbox transform ONLY (no link transform)");
+                        _logger.LogInformation($"Source transform origin: {srcTransform.Origin}");
+                        finalTransform = srcTransform;
+                        break;
+
+                    case ViewPositioningMode.TestAbsoluteWorldCoordinates:
+                        _logger.LogInformation($"TEST: Creating section using absolute world coordinates");
+                        // Transform the source section origin to host document coordinates
+                        var transformedOrigin = linkTransform.OfPoint(sourceOrigin);
+                        _logger.LogInformation($"Source section origin: {sourceOrigin}");
+                        _logger.LogInformation($"Transformed section origin: {transformedOrigin}");
+
+                        // Transform the direction vectors
+                        var transformedDirection = linkTransform.OfVector(sourceDirection);
+                        var transformedUp = linkTransform.OfVector(sourceUpDirection);
+                        var transformedRight = linkTransform.OfVector(sourceRightDirection);
+
+                        _logger.LogInformation($"Transformed direction: {transformedDirection}");
+                        _logger.LogInformation($"Transformed up: {transformedUp}");
+                        _logger.LogInformation($"Transformed right: {transformedRight}");
+
+                        // Create a new transform at the transformed origin with transformed basis vectors
+                        finalTransform = Transform.Identity;
+                        finalTransform.Origin = transformedOrigin;
+                        finalTransform.BasisX = transformedRight;
+                        finalTransform.BasisY = transformedUp;
+                        finalTransform.BasisZ = transformedDirection;
+                        break;
+
+                    case ViewPositioningMode.TestReconstructFromOrigin:
+                        _logger.LogInformation($"TEST: Reconstructing section from Origin (no cropbox transform)");
+                        // For ProjectBasePointToProjectBasePoint, the section Origin is already in shared coordinates
+                        // Just use it directly without any transformation
+                        _logger.LogInformation($"Using section origin directly: {sourceOrigin}");
+                        _logger.LogInformation($"Using section direction directly: {sourceDirection}");
+
+                        // Create transform using the section's origin and direction vectors directly
+                        finalTransform = Transform.Identity;
+                        finalTransform.Origin = sourceOrigin;  // Already in shared coordinates
+                        finalTransform.BasisX = sourceRightDirection;
+                        finalTransform.BasisY = sourceUpDirection;
+                        finalTransform.BasisZ = sourceDirection;
+                        break;
+
+                    case ViewPositioningMode.TestLinkOriginOnly:
+                        _logger.LogInformation($"TEST: Using source transform PLUS link origin offset");
+                        // Take source transform and add link origin offset
+                        var translatedOrigin = srcTransform.Origin + linkTransform.Origin;
+                        _logger.LogInformation($"Source origin: {srcTransform.Origin}");
+                        _logger.LogInformation($"Link origin: {linkTransform.Origin}");
+                        _logger.LogInformation($"Combined origin: {translatedOrigin}");
+                        // Create new transform with combined origin but source rotation
+                        finalTransform = Transform.CreateTranslation(translatedOrigin - srcTransform.Origin).Multiply(srcTransform);
+                        break;
+
+                    case ViewPositioningMode.TestInverseLinkTransform:
+                        _logger.LogInformation($"TEST: Using INVERSE of link transform");
+                        var inverseLinkTransform = linkTransform.Inverse;
+                        finalTransform = inverseLinkTransform.Multiply(srcTransform);
+                        _logger.LogInformation($"Inverse link origin: {inverseLinkTransform.Origin}");
+                        break;
+
+                    case ViewPositioningMode.ProjectBasePointToProjectBasePoint:
+                    case ViewPositioningMode.BySharedCoordinates:
+                    case ViewPositioningMode.NoTransform:
+                        _logger.LogInformation($"Using source transform as-is (shared coordinates)");
+                        finalTransform = srcTransform;
+                        break;
+
+                    case ViewPositioningMode.InternalOriginToInternalOrigin:
+                    case ViewPositioningMode.CenterToCenter:
+                    case ViewPositioningMode.OriginToLastPlaced:
+                    default:
+                        _logger.LogInformation($"Composing link transform with source transform");
+                        finalTransform = linkTransform.Multiply(srcTransform);
+                        break;
+                }
+
+                _logger.LogInformation($"=== FINAL TRANSFORM ===");
+                _logger.LogInformation($"Final Origin: {finalTransform.Origin}");
+                _logger.LogInformation($"Final BasisX: {finalTransform.BasisX}");
+                _logger.LogInformation($"Final BasisY: {finalTransform.BasisY}");
+                _logger.LogInformation($"Final BasisZ: {finalTransform.BasisZ}");
+                _logger.LogInformation($"Final Scale: {finalTransform.Scale}");
+
+                // Calculate actual world coordinates
+                var worldMin = finalTransform.OfPoint(min);
+                var worldMax = finalTransform.OfPoint(max);
+                _logger.LogInformation($"=== SECTION BOX FINAL ===");
+                _logger.LogInformation($"Min (relative): {min}");
+                _logger.LogInformation($"Max (relative): {max}");
+                _logger.LogInformation($"Min (world): {worldMin}");
+                _logger.LogInformation($"Max (world): {worldMax}");
 
                 // Create the section box
                 var sectionBox = new BoundingBoxXYZ
                 {
-                    Transform = transform,
+                    Transform = finalTransform,
                     Min = min,
                     Max = max
                 };
 
                 // Create the section view
                 var newSection = ViewSection.CreateSection(hostDoc, hostViewFamilyType.Id, sectionBox);
+
+                // Copy the scale immediately after creation
+                if (sourceView.Scale > 0)
+                {
+                    try
+                    {
+                        newSection.Scale = sourceView.Scale;
+                        _logger.LogInformation($"Set scale to {sourceView.Scale} for cloned section view");
+                    }
+                    catch (Exception scaleEx)
+                    {
+                        _logger.LogWarning($"Could not set scale: {scaleEx.Message}");
+                    }
+                }
 
                 // Set the view name
                 string newName = string.IsNullOrEmpty(namePrefix)
@@ -344,7 +486,7 @@ namespace LoBIM.Features.ViewCloning.Services
             }
         }
 
-        private Autodesk.Revit.DB.View CloneElevationView(Document hostDoc, Autodesk.Revit.DB.View sourceView, string namePrefix)
+        private Autodesk.Revit.DB.View CloneElevationView(Document hostDoc, Autodesk.Revit.DB.View sourceView, string namePrefix, Transform linkTransform, ViewPositioningMode positioningMode)
         {
             try
             {
@@ -362,7 +504,7 @@ namespace LoBIM.Features.ViewCloning.Services
                     return null;
                 }
 
-                // Get the view direction and origin
+                // Get the view properties for TestAbsoluteWorldCoordinates mode
                 var sourceOrigin = sourceElevation.Origin;
                 var sourceDirection = sourceElevation.ViewDirection;
                 var sourceUpDirection = sourceElevation.UpDirection;
@@ -380,20 +522,93 @@ namespace LoBIM.Features.ViewCloning.Services
                     return null;
                 }
 
-                // Create a bounding box for the elevation in the host document
-                var transform = Transform.Identity;
-                transform.Origin = sourceOrigin;
-                transform.BasisX = sourceRightDirection;
-                transform.BasisY = sourceUpDirection;
-                transform.BasisZ = sourceDirection;
+                // Determine the final transform based on positioning mode
+                Transform finalTransform;
+                var srcTransform = sourceBoundingBox.Transform;
+                XYZ min = sourceBoundingBox.Min;
+                XYZ max = sourceBoundingBox.Max;
 
-                var min = sourceBoundingBox.Min;
-                var max = sourceBoundingBox.Max;
+                _logger.LogInformation($"=== APPLYING POSITIONING MODE FOR ELEVATION: {positioningMode} ===");
+
+                switch (positioningMode)
+                {
+                    case ViewPositioningMode.TestIdentity:
+                        _logger.LogInformation($"TEST: Using Identity transform (origin at 0,0,0)");
+                        finalTransform = Transform.Identity;
+                        break;
+
+                    case ViewPositioningMode.TestSourceTransformOnly:
+                        _logger.LogInformation($"TEST: Using source cropbox transform ONLY (no link transform)");
+                        _logger.LogInformation($"Source transform origin: {srcTransform.Origin}");
+                        finalTransform = srcTransform;
+                        break;
+
+                    case ViewPositioningMode.TestAbsoluteWorldCoordinates:
+                        _logger.LogInformation($"TEST: Creating elevation using absolute world coordinates");
+                        var transformedOriginElev = linkTransform.OfPoint(sourceOrigin);
+                        var transformedDirectionElev = linkTransform.OfVector(sourceDirection);
+                        var transformedUpElev = linkTransform.OfVector(sourceUpDirection);
+                        var transformedRightElev = linkTransform.OfVector(sourceRightDirection);
+
+                        _logger.LogInformation($"Source elevation origin: {sourceOrigin}");
+                        _logger.LogInformation($"Transformed elevation origin: {transformedOriginElev}");
+
+                        finalTransform = Transform.Identity;
+                        finalTransform.Origin = transformedOriginElev;
+                        finalTransform.BasisX = transformedRightElev;
+                        finalTransform.BasisY = transformedUpElev;
+                        finalTransform.BasisZ = transformedDirectionElev;
+                        break;
+
+                    case ViewPositioningMode.TestReconstructFromOrigin:
+                        _logger.LogInformation($"TEST: Reconstructing elevation from Origin (no cropbox transform)");
+                        _logger.LogInformation($"Using elevation origin directly: {sourceOrigin}");
+
+                        finalTransform = Transform.Identity;
+                        finalTransform.Origin = sourceOrigin;  // Already in shared coordinates
+                        finalTransform.BasisX = sourceRightDirection;
+                        finalTransform.BasisY = sourceUpDirection;
+                        finalTransform.BasisZ = sourceDirection;
+                        break;
+
+                    case ViewPositioningMode.TestLinkOriginOnly:
+                        _logger.LogInformation($"TEST: Using source transform PLUS link origin offset");
+                        var translatedOrigin = srcTransform.Origin + linkTransform.Origin;
+                        _logger.LogInformation($"Source origin: {srcTransform.Origin}");
+                        _logger.LogInformation($"Link origin: {linkTransform.Origin}");
+                        _logger.LogInformation($"Combined origin: {translatedOrigin}");
+                        finalTransform = Transform.CreateTranslation(translatedOrigin - srcTransform.Origin).Multiply(srcTransform);
+                        break;
+
+                    case ViewPositioningMode.TestInverseLinkTransform:
+                        _logger.LogInformation($"TEST: Using INVERSE of link transform");
+                        var inverseLinkTransform = linkTransform.Inverse;
+                        finalTransform = inverseLinkTransform.Multiply(srcTransform);
+                        _logger.LogInformation($"Inverse link origin: {inverseLinkTransform.Origin}");
+                        break;
+
+                    case ViewPositioningMode.ProjectBasePointToProjectBasePoint:
+                    case ViewPositioningMode.BySharedCoordinates:
+                    case ViewPositioningMode.NoTransform:
+                        _logger.LogInformation($"Using source transform as-is (shared coordinates)");
+                        finalTransform = srcTransform;
+                        break;
+
+                    case ViewPositioningMode.InternalOriginToInternalOrigin:
+                    case ViewPositioningMode.CenterToCenter:
+                    case ViewPositioningMode.OriginToLastPlaced:
+                    default:
+                        _logger.LogInformation($"Composing link transform with source transform");
+                        finalTransform = linkTransform.Multiply(srcTransform);
+                        break;
+                }
+
+                _logger.LogInformation($"Elevation final transform - Origin: {finalTransform.Origin}");
 
                 // Create the elevation box
                 var elevationBox = new BoundingBoxXYZ
                 {
-                    Transform = transform,
+                    Transform = finalTransform,
                     Min = min,
                     Max = max
                 };
@@ -401,6 +616,20 @@ namespace LoBIM.Features.ViewCloning.Services
                 // Create the elevation view using the section creation method
                 // (Elevations are technically sections in Revit API)
                 var newElevation = ViewSection.CreateSection(hostDoc, hostViewFamilyType.Id, elevationBox);
+
+                // Copy the scale immediately after creation
+                if (sourceView.Scale > 0)
+                {
+                    try
+                    {
+                        newElevation.Scale = sourceView.Scale;
+                        _logger.LogInformation($"Set scale to {sourceView.Scale} for cloned elevation view");
+                    }
+                    catch (Exception scaleEx)
+                    {
+                        _logger.LogWarning($"Could not set scale: {scaleEx.Message}");
+                    }
+                }
 
                 // Set the view name
                 string newName = string.IsNullOrEmpty(namePrefix)
@@ -456,6 +685,49 @@ namespace LoBIM.Features.ViewCloning.Services
             return new3DView;
         }
 
+        private Autodesk.Revit.DB.View CloneDraftingView(Document hostDoc, Autodesk.Revit.DB.View sourceView, string namePrefix)
+        {
+            try
+            {
+                // Get the drafting view type
+                var draftingViewType = new FilteredElementCollector(hostDoc)
+                    .OfClass(typeof(ViewFamilyType))
+                    .Cast<ViewFamilyType>()
+                    .FirstOrDefault(vft => vft.ViewFamily == ViewFamily.Drafting);
+
+                if (draftingViewType == null)
+                {
+                    _logger.LogWarning($"Could not find Drafting view family type in host document");
+                    return null;
+                }
+
+                // Create drafting view
+                var newDraftingView = ViewDrafting.Create(hostDoc, draftingViewType.Id);
+
+                // Set the view name
+                string newName = string.IsNullOrEmpty(namePrefix)
+                    ? $"{sourceView.Name} (Cloned)"
+                    : $"{namePrefix}_{sourceView.Name}";
+
+                try
+                {
+                    newDraftingView.Name = newName;
+                }
+                catch
+                {
+                    newDraftingView.Name = $"{newName}_{DateTime.Now:yyyyMMdd_HHmmss}";
+                }
+
+                _logger.LogInformation($"Successfully cloned drafting view: {newDraftingView.Name}");
+                return newDraftingView;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error cloning drafting view {sourceView.Name}: {ex.Message}", ex);
+                return null;
+            }
+        }
+
         private void CopyViewProperties(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView)
         {
             try
@@ -480,6 +752,78 @@ namespace LoBIM.Features.ViewCloning.Services
             catch (Exception ex)
             {
                 _logger.LogWarning($"Error copying some view properties: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Gets the appropriate transform based on the positioning mode
+        /// </summary>
+        private Transform GetLinkTransform(RevitLinkInstance linkInstance, ViewPositioningMode positioningMode)
+        {
+            try
+            {
+                _logger.LogInformation($"Getting link transform for mode: {positioningMode}");
+
+                switch (positioningMode)
+                {
+                    case ViewPositioningMode.InternalOriginToInternalOrigin:
+                        // This is the default - uses the link's placement transform
+                        var transform1 = linkInstance.GetTransform();
+                        _logger.LogInformation($"InternalOrigin transform - Origin: {transform1.Origin}, Scale: {transform1.Scale}");
+                        return transform1;
+
+                    case ViewPositioningMode.CenterToCenter:
+                        // Get the center to center transform
+                        var transform2 = linkInstance.GetTotalTransform();
+                        _logger.LogInformation($"CenterToCenter transform - Origin: {transform2.Origin}, Scale: {transform2.Scale}");
+                        return transform2;
+
+                    case ViewPositioningMode.BySharedCoordinates:
+                        // For shared coordinates, don't transform at all
+                        // The views are already in the same coordinate system
+                        _logger.LogInformation($"BySharedCoordinates - Using Identity transform");
+                        return Transform.Identity;
+
+                    case ViewPositioningMode.ProjectBasePointToProjectBasePoint:
+                        // For Project Base Point, we need to account for the difference
+                        // between the link's project base point and the host's project base point
+                        // GetTotalTransform includes the effect of shared coordinates
+                        var transform4 = linkInstance.GetTotalTransform();
+                        _logger.LogInformation($"ProjectBasePoint transform - Origin: {transform4.Origin}, Scale: {transform4.Scale}");
+                        return transform4;
+
+                    case ViewPositioningMode.OriginToLastPlaced:
+                        // Use the placement transform (same as Internal Origin)
+                        var transform5 = linkInstance.GetTransform();
+                        _logger.LogInformation($"OriginToLastPlaced transform - Origin: {transform5.Origin}, Scale: {transform5.Scale}");
+                        return transform5;
+
+                    case ViewPositioningMode.NoTransform:
+                        // Don't apply any transformation - use the exact coordinates from the section view
+                        _logger.LogInformation($"NoTransform - Using Identity transform (no coordinate adjustment)");
+                        return Transform.Identity;
+
+                    case ViewPositioningMode.TestIdentity:
+                    case ViewPositioningMode.TestLinkOriginOnly:
+                    case ViewPositioningMode.TestInverseLinkTransform:
+                    case ViewPositioningMode.TestSourceTransformOnly:
+                    case ViewPositioningMode.TestAbsoluteWorldCoordinates:
+                    case ViewPositioningMode.TestReconstructFromOrigin:
+                        // For test modes, return the actual link transform
+                        // The test logic is applied in CloneSectionView
+                        var testTransform = linkInstance.GetTransform();
+                        _logger.LogInformation($"Test mode - returning link transform for processing");
+                        return testTransform;
+
+                    default:
+                        _logger.LogWarning($"Unknown positioning mode: {positioningMode}, using default");
+                        return linkInstance.GetTransform();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error getting link transform for mode {positioningMode}: {ex.Message}", ex);
+                return linkInstance.GetTransform(); // Fallback to default
             }
         }
     }

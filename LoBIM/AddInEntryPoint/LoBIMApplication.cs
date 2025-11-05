@@ -183,85 +183,36 @@ namespace LoBIM.AddInEntryPoint
             RibbonPanel panel = _application.CreateRibbonPanel(tabName, "General");
             _logger.LogInformation("Ribbon panel 'General' created.");
 
-            // Add Main Plugin Button
-            AddPushButton(
-                panel,
-                name: "BoltFrameMainButton",
-                text: "Bolt Frame",
-                className: "LoBIM.Features.Framing.Commands.BoltFrameCommand",
-                tooltip: "Open BoltFrame Plugin",
-                longDescription: "Configure and manage BoltFrame settings.",
-                iconName: "grid"
-            );
+            // Get feature flag service
+            var featureFlagService = DIContainerService.Container.GetInstance<IFeatureFlagService>();
+            var enabledFeatures = featureFlagService.GetEnabledFeatures();
 
-            // Add Switch View Button
-            AddPushButton(
-                panel,
-                name: "SwitchViewPanelButton",
-                text: "View Plans",
-                className: nameof(ShowSwitchViewPanelCommand),
-                tooltip: "Toggle the Switch View Panel",
-                longDescription: "Show or hide the Switch View Plans panel.",
-                iconName: "design"
-            );
+            _logger.LogInformation($"Adding {enabledFeatures.Count} enabled features to ribbon.");
 
-            // Add Limiting Distance Button
-            AddPushButton(
-                panel,
-                name: "LimitingDistanceButton",
-                text: "Limiting Distance",
-                className: "LoBIM.Features.LimitingDistance.Commands.LimitingDistanceCommand",
-                tooltip: "Calculate Limiting Distance",
-                longDescription: "Select property line and highlight perimeter walls for limiting distance calculation.",
-                iconName: "firewall"
-            );
+            bool separatorAdded = false;
 
-            // Add Data Import Button
-            AddPushButton(
-                panel,
-                name: "DataImportButton",
-                text: "Import Table",
-                className: "LoBIM.Features.DataImport.Commands.DataImportCommand",
-                tooltip: "Import CSV/Excel to Drafting View",
-                longDescription: "Import tabular data from CSV or Excel files and render as tables in Revit drafting views using detail items (text, lines, regions).",
-                iconName: "excel"
-            );
+            // Add buttons for all enabled features
+            foreach (var feature in enabledFeatures)
+            {
+                // Add separator before OpenLogs button
+                if (!separatorAdded && feature.ButtonName == "OpenLogFolderButton")
+                {
+                    panel.AddSeparator();
+                    separatorAdded = true;
+                }
 
-            // Add Sheet Management Button
-            AddPushButton(
-                panel,
-                name: "SheetManagementButton",
-                text: "Manage Sheets",
-                className: "LoBIM.Features.SheetManagement.Commands.SheetManagementCommand",
-                tooltip: "Manage and Renumber Sheets",
-                longDescription: "Organize sheets with drag-and-drop reordering, filter by parameters, and renumber sheets automatically.",
-                iconName: "folders"
-            );
+                AddPushButton(
+                    panel,
+                    name: feature.ButtonName,
+                    text: feature.Name,
+                    className: feature.ClassName,
+                    tooltip: feature.Tooltip,
+                    longDescription: feature.LongDescription,
+                    iconName: feature.IconName
+                );
 
-            // Add View Cloning Button
-            AddPushButton(
-                panel,
-                name: "ViewCloningButton",
-                text: "Clone Views",
-                className: "LoBIM.Features.ViewCloning.Commands.ViewCloningCommand",
-                tooltip: "Clone Views from Linked Files",
-                longDescription: "Clone views from linked Revit files into the current document.",
-                iconName: "copy"
-            );
-
-            // Add separator
-            panel.AddSeparator();
-
-            // Add Open Log Folder Button
-            AddPushButton(
-                panel,
-                name: "OpenLogFolderButton",
-                text: "Open Logs",
-                className: nameof(OpenLogFolderCommand),
-                tooltip: "Open Log Folder",
-                longDescription: "Opens the LoBIM log folder in Windows Explorer to view log files.",
-                iconName: "code-files"
-            );
+                _logger.LogInformation($"Added button: {feature.Name}");
+            }
         }
 
         /// <summary>
@@ -355,18 +306,26 @@ namespace LoBIM.AddInEntryPoint
         {
             try
             {
+                // Register Switch View Plans panel
                 _application.RegisterDockablePane(
                     DockablePaneGuid,
                     $"Switch View Plans | {Resources.Strings.Strings.AppTitle}",
                     CreateDockablePane()
                 );
 
-                _logger.LogInformation("Dockable pane registered successfully.");
+                // Register Log panel
+                _application.RegisterDockablePane(
+                    new DockablePaneId(DockablePaneGuids.LogPanel),
+                    $"Debug Logs | {Resources.Strings.Strings.AppTitle}",
+                    new LogDockablePaneProvider()
+                );
+
+                _logger.LogInformation("Dockable panes registered successfully.");
             }
             catch (Exception ex)
             {
-                _logger.LogError("Failed to register dockable pane.", ex);
-                TaskDialog.Show("LoBIM - Dockable Pane Error", $"Failed to register dockable pane: {ex.Message}");
+                _logger.LogError("Failed to register dockable panes.", ex);
+                TaskDialog.Show("LoBIM - Dockable Pane Error", $"Failed to register dockable panes: {ex.Message}");
             }
         }
 

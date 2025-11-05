@@ -98,23 +98,38 @@
                                 Padding="10,5"/>
                     </StackPanel>
 
-                    <!-- Name Prefix -->
-                    <StackPanel Grid.Row="1"
-                                Orientation="Horizontal"
-                                Margin="0,0,0,5">
-                        <TextBlock Text="Name Prefix:"
+                    <!-- Configuration Options -->
+                    <Grid Grid.Row="1" Margin="0,0,0,10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Name Prefix -->
+                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                   Text="Name Prefix:"
                                    VerticalAlignment="Center"
-                                   Margin="0,0,5,0"/>
-                        <TextBox Text="{Binding NamePrefix, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="200"
+                                   Margin="0,0,10,5"/>
+                        <TextBox Grid.Row="0" Grid.Column="1"
+                                 Text="{Binding NamePrefix, UpdateSourceTrigger=PropertyChanged}"
                                  Padding="5"
+                                 Margin="0,0,0,5"
                                  VerticalContentAlignment="Center"/>
-                        <TextBlock Text="(Optional - will be added to view names)"
+
+                        <!-- Positioning Mode -->
+                        <TextBlock Grid.Row="1" Grid.Column="0"
+                                   Text="Positioning:"
                                    VerticalAlignment="Center"
-                                   Margin="5,0,0,0"
-                                   FontSize="10"
-                                   Foreground="Gray"/>
-                    </StackPanel>
+                                   Margin="0,0,10,0"/>
+                        <ComboBox Grid.Row="1" Grid.Column="1"
+                                  ItemsSource="{Binding PositioningModes}"
+                                  SelectedItem="{Binding SelectedPositioningMode}"
+                                  Padding="5"/>
+                    </Grid>
 
                     <!-- Views DataGrid -->
                     <DataGrid Grid.Row="2"
@@ -199,6 +214,11 @@
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Margin="0,10,0,0">
+            <Button Content="Log Selected Section Position"
+                    Command="{Binding LogSectionMarkerPositionCommand}"
+                    Padding="15,5"
+                    Margin="0,0,5,0"
+                    ToolTip="Select a section marker in Revit and click this to log its position"/>
             <Button Content="Clone Selected Views"
                     Command="{Binding CloneSelectedViewsCommand}"
                     Padding="15,5"
