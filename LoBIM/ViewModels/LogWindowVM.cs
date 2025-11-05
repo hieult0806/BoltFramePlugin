@@ -1,14 +1,18 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Input;
 
 namespace LoBIM.ViewModels
 {
-    public class LogWindowVM : INotifyPropertyChanged, IWindowViewModel
+    public class LogWindowVM : INotifyPropertyChanged, IWindowViewModel, IDisposable
     {
         private string _logText = string.Empty;
         private bool _autoScroll = true;
@@ -17,6 +21,11 @@ namespace LoBIM.ViewModels
         private bool _caseSensitive = false;
         private readonly ObservableCollection<LogEntry> _logEntries = new ObservableCollection<LogEntry>();
         private bool _dialogResult;
+        private readonly ConcurrentQueue<LogEntry> _pendingLogEntries = new ConcurrentQueue<LogEntry>();
+        private readonly System.Threading.Timer _batchTimer;
+        private readonly object _refreshLock = new object();
+        private const int MaxLogEntries = 10000; // Limit to prevent memory issues
+        private const int BatchIntervalMs = 100; // Process logs every 100ms
 
         public event PropertyChangedEventHandler? PropertyChanged;
         public event EventHandler? RequestClose;
@@ -37,6 +46,9 @@ namespace LoBIM.ViewModels
 
             // Subscribe to the log sink
             LogSink.LogMessageReceived += OnLogMessageReceived;
+
+            // Initialize batch timer for processing logs
+            _batchTimer = new System.Threading.Timer(ProcessPendingLogs, null, BatchIntervalMs, BatchIntervalMs);
         }
 
         public string LogText
@@ -98,18 +110,58 @@ namespace LoBIM.ViewModels
 
         private void OnLogMessageReceived(object? sender, LogMessageEventArgs e)
         {
-            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            // Queue the log entry instead of immediately processing it
+            // This prevents blocking the logging thread
+            _pendingLogEntries.Enqueue(new LogEntry
             {
-                _logEntries.Add(new LogEntry
-                {
-                    Timestamp = e.Timestamp,
-                    Level = e.Level,
-                    Message = e.Message
-                });
-
-                RefreshLogText();
-                OnPropertyChanged(nameof(StatusText));
+                Timestamp = e.Timestamp,
+                Level = e.Level,
+                Message = e.Message
             });
+        }
+
+        private void ProcessPendingLogs(object? state)
+        {
+            if (_pendingLogEntries.IsEmpty)
+                return;
+
+            // Process logs in batches to avoid excessive UI updates
+            var logsToProcess = new List<LogEntry>();
+            while (logsToProcess.Count < 100 && _pendingLogEntries.TryDequeue(out var logEntry))
+            {
+                logsToProcess.Add(logEntry);
+            }
+
+            if (logsToProcess.Count == 0)
+                return;
+
+            // Update UI on dispatcher thread, but use BeginInvoke for async operation
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    lock (_refreshLock)
+                    {
+                        foreach (var log in logsToProcess)
+                        {
+                            _logEntries.Add(log);
+
+                            // Trim old entries if we exceed the max
+                            if (_logEntries.Count > MaxLogEntries)
+                            {
+                                _logEntries.RemoveAt(0);
+                            }
+                        }
+
+                        RefreshLogText();
+                        OnPropertyChanged(nameof(StatusText));
+                    }
+                }
+                catch (Exception)
+                {
+                    // Silently handle any UI update errors
+                }
+            }), System.Windows.Threading.DispatcherPriority.Background);
         }
 
         private void RefreshLogText()
@@ -156,6 +208,12 @@ namespace LoBIM.ViewModels
         protected void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        public void Dispose()
+        {
+            _batchTimer?.Dispose();
+            LogSink.LogMessageReceived -= OnLogMessageReceived;
         }
     }
 
