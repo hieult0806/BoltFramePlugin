@@ -1,0 +1,160 @@
+<Window x:Class="LoBIM.Features.LimitingDistance.Views.LimitingDistanceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        xmlns:views="clr-namespace:LoBIM.Features.LimitingDistance.Views"
+        xmlns:ld="clr-namespace:LoBIM.Features.LimitingDistance.Views.UserControls"
+        mc:Ignorable="d"
+        Title="Limiting Distance Calculator"
+        WindowStartupLocation="Manual"
+        Loaded="Window_Loaded">
+    <Window.Resources>
+        <!-- Style for selected DataGrid row -->
+        <Style x:Key="HighlightedRowStyle"
+               TargetType="DataGridRow">
+            <Setter Property="Background"
+                    Value="Transparent"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected"
+                         Value="True">
+                    <Setter Property="Background"
+                            Value="#FF4CAF50"/>
+                    <Setter Property="Foreground"
+                            Value="White"/>
+                    <Setter Property="FontWeight"
+                            Value="Bold"/>
+                </Trigger>
+                <MultiTrigger>
+                    <MultiTrigger.Conditions>
+                        <Condition Property="IsSelected"
+                                   Value="True"/>
+                        <Condition Property="IsMouseOver"
+                                   Value="True"/>
+                    </MultiTrigger.Conditions>
+                    <Setter Property="Background"
+                            Value="#FF2196F3"/>
+                    <Setter Property="Foreground"
+                            Value="White"/>
+                    <Setter Property="FontWeight"
+                            Value="Bold"/>
+                </MultiTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+    <Grid Background="#FFECECEC">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header Section -->
+        <Border Grid.Row="0"
+                Background="#FF2C3E50"
+                Padding="15">
+            <StackPanel>
+                <TextBlock Text="Limiting Distance Calculator"
+                           FontSize="18"
+                           FontWeight="Bold"
+                           Foreground="White"/>
+                <TextBlock Text="Select a property line and highlight perimeter walls"
+                           FontSize="12"
+                           Foreground="#FFBDC3C7"
+                           Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Tab Control for Main Content -->
+        <TabControl Grid.Row="1"
+                    Margin="10">
+            <TabItem Header="Wall Analysis">
+                <!-- Main Content - Split Left/Right -->
+                <Grid Margin="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel>
+                        <!-- Property Line Selection -->
+                        <GroupBox Header="Property Line Selection"
+                                  Margin="0,0,0,10"
+                                  Padding="10">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="Select Property Line"
+                                        Command="{Binding SelectPropertyLineCommand}"
+                                        Height="32"
+                                        Width="180"
+                                        Margin="0,0,10,0"/>
+                                <Button Content="3D View"
+                                        Command="{Binding HighlightWallsCommand}"
+                                        Height="32"
+                                        Width="180"
+                                        Background="#FF3498DB"
+                                        Foreground="White"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                    <TabControl Grid.Column="0"
+                                Grid.Row="1">
+                        <!-- Walls Tab -->
+                        <TabItem Header="Walls">
+                            <ld:PerimeterWallsControl/>
+                        </TabItem>
+                        <!-- Summary Tab -->
+                        <TabItem Header="Summary">
+                            <ld:DistanceGroupsSummaryControl/>
+                        </TabItem>
+                        <!-- View Tracker Tab -->
+                        <TabItem Header="View Tracker">
+                            <ld:ViewTrackerControl/>
+                        </TabItem>
+                    </TabControl>
+
+                </Grid>
+            </TabItem>
+
+            <!-- Configuration Tab -->
+            <TabItem Header="Configuration">
+                <ld:ConfigurationControl/>
+            </TabItem>
+
+            <!-- Project Setup Tab -->
+            <TabItem Header="Project Setup">
+                <ld:ProjectSetupControl/>
+            </TabItem>
+
+            <!-- Dev Tab -->
+            <TabItem Header="Dev">
+                <ld:DevTabControl/>
+            </TabItem>
+        </TabControl>
+
+        <!-- Footer Section -->
+        <Border Grid.Row="2"
+                Background="#FFE5E5E5"
+                Padding="15">
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center">
+                <Button Content="Create Wall Projections"
+                        Command="{Binding CreateWallProjectionsCommand}"
+                        Width="180"
+                        Height="32"
+                        FontWeight="Bold"
+                        Margin="0,0,10,0"
+                        Background="#FF27AE60"
+                        Foreground="White"/>
+                <Button Content="Close"
+                        Command="{Binding CloseCommand}"
+                        Width="90"
+                        Height="32"
+                        FontWeight="Bold"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

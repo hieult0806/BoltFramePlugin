@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>LoBIM</Name>
+    <Assembly>d:\GameDevelopments\BoltFramePlugin\LoBIM\bin\Debug\net8.0-windows\LoBIM.dll</Assembly>
+    <AddInId>A7C9F8E2-4D3B-4A1C-9F7E-8B2D5C6A3E9F</AddInId>
+    <FullClassName>LoBIM.AddInEntryPoint.LoBIMApplication</FullClassName>
+    <VendorId>LoBIM</VendorId>
+    <VendorDescription>LoBIM - Low-Rise Building Information Modeling</VendorDescription>
+  </AddIn>
+</RevitAddIns>

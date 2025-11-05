@@ -1,2 +1,0 @@
-# Start-Process "C:\Program Files\Autodesk\Revit 2026\Revit.exe" -ArgumentList "D:\GameDevelopments\BoltFramePlugin\Bed.rvt"
-Start-Process "C:\Program Files\Autodesk\Revit 2026\Revit.exe" -ArgumentList "C:\Users\hieul\OneDrive\Documents\ebf.rvt"
