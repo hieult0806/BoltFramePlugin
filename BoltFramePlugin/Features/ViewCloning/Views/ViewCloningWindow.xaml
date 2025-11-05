@@ -122,17 +122,24 @@
                               AutoGenerateColumns="False"
                               CanUserAddRows="False"
                               CanUserDeleteRows="False"
-                              SelectionMode="Extended"
+                              SelectionMode="Single"
                               GridLinesVisibility="Horizontal"
                               AlternatingRowBackground="#FFF5F5F5"
                               HeadersVisibility="Column"
-                              IsReadOnly="False">
+                              IsReadOnly="False"
+                              SelectionUnit="CellOrRowHeader">
 
                         <DataGrid.Columns>
                             <!-- Selection Checkbox -->
-                            <DataGridCheckBoxColumn Header="Clone"
-                                                    Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
-                                                    Width="60"/>
+                            <DataGridTemplateColumn Header="Clone" Width="60">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
                             <!-- View Name -->
                             <DataGridTextColumn Header="View Name"
