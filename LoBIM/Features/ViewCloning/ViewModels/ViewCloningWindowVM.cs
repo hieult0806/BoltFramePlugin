@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
+using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Services;
@@ -296,44 +297,40 @@ namespace LoBIM.Features.ViewCloning.ViewModels
                     }
 
                     StatusMessage = $"Logged position info for section: {view.Name}";
-                    TaskDialog.Show("Success", $"Logged position information for section '{view.Name}'. Check the log file for details.");
+                    _logger.LogInformation($"Logged position information for section '{view.Name}'. Check the log file for details.");
                 }
                 else
                 {
                     _logger.LogWarning($"Could not find a view. Please open a view first.");
-                    TaskDialog.Show("No View",
-                        "Please open a view in Revit and click this button again.\n\n" +
-                        "The active view must be a valid view.");
+                    StatusMessage = "No active view found";
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Error logging section marker position: {ex.Message}", ex);
-                TaskDialog.Show("Error", $"Failed to log position: {ex.Message}");
+                StatusMessage = $"Error: {ex.Message}";
             }
         }
 
-        private void OnCloningCompleted(int successCount)
+        private void OnCloningCompleted(List<ElementId> clonedViewIds)
         {
             try
             {
                 var totalCount = SelectedLinkedFile?.Views.Count(v => v.IsSelected && !v.IsCloned) ?? 0;
+                var successCount = clonedViewIds?.Count ?? 0;
 
-                StatusMessage = $"Successfully cloned {successCount} out of {totalCount} views";
-
-                // Refresh the UI
-                OnPropertyChanged(nameof(AvailableViews));
-
+                // Update status message with result
                 if (successCount > 0)
                 {
-                    TaskDialog.Show("Success",
-                        $"Successfully cloned {successCount} view(s) from {SelectedLinkedFile?.FileName}");
+                    StatusMessage = $"Successfully cloned {successCount} of {totalCount} view(s) from {SelectedLinkedFile?.FileName}. Opened last cloned view.";
                 }
                 else
                 {
-                    TaskDialog.Show("Warning",
-                        "No views were cloned. Check the log for details.");
+                    StatusMessage = "No views were cloned. Check the log for details.";
                 }
+
+                // Refresh the UI
+                OnPropertyChanged(nameof(AvailableViews));
 
                 _logger.LogInformation($"Cloning completed: {successCount} views cloned");
             }

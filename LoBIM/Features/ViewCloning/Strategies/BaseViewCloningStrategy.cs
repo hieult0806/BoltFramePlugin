@@ -2,6 +2,7 @@ using Autodesk.Revit.DB;
 using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Services;
 using System;
+using System.Linq;
 
 namespace LoBIM.Features.ViewCloning.Strategies
 {
@@ -127,6 +128,106 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 {
                     _logger.LogWarning($"Could not set scale: {ex.Message}");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Copies crop region from source view to target view
+        /// Handles both custom crop shapes (for section/plan views) and rectangular crop boxes
+        /// </summary>
+        /// <param name="sourceView">Source view to copy from</param>
+        /// <param name="targetView">Target view to copy to</param>
+        /// <param name="supportsCustomShapes">Whether the view type supports custom crop shapes (false for 3D views)</param>
+        protected void CopyCropRegion(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView, bool supportsCustomShapes = true)
+        {
+            try
+            {
+                _logger.LogInformation($"=== COPYING CROP REGION ===");
+
+                // Check if source has crop box enabled
+                if (!sourceView.CropBoxActive)
+                {
+                    _logger.LogInformation($"Source view does not have crop box active - skipping crop region copy");
+                    return;
+                }
+
+                _logger.LogInformation($"Source has crop box active - copying crop region");
+
+                // Enable crop box on target
+                targetView.CropBoxActive = true;
+                targetView.CropBoxVisible = sourceView.CropBoxVisible;
+
+                if (supportsCustomShapes)
+                {
+                    // Try to copy custom crop shape first
+                    if (TryCopyCustomCropShape(sourceView, targetView))
+                    {
+                        _logger.LogInformation($"Successfully copied custom crop region");
+                        return;
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation($"View type only supports rectangular crop boxes");
+                }
+
+                // Fall back to rectangular crop box
+                CopyRectangularCropBox(sourceView, targetView);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not copy crop region: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Attempts to copy custom crop shape from source to target view
+        /// </summary>
+        /// <returns>True if custom shape was copied, false otherwise</returns>
+        private bool TryCopyCustomCropShape(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView)
+        {
+            try
+            {
+                var sourceCropManager = sourceView.GetCropRegionShapeManager();
+                var sourceCropShape = sourceCropManager.GetCropShape();
+
+                if (sourceCropShape != null && sourceCropShape.Count > 0)
+                {
+                    _logger.LogInformation($"Source crop region has {sourceCropShape.Count} curve loops - copying custom shape");
+
+                    var targetCropManager = targetView.GetCropRegionShapeManager();
+                    targetCropManager.SetCropShape(sourceCropShape.First());
+
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not copy custom crop shape: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Copies rectangular crop box from source to target view
+        /// </summary>
+        private void CopyRectangularCropBox(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView)
+        {
+            try
+            {
+                var sourceCropBox = sourceView.CropBox;
+                if (sourceCropBox != null)
+                {
+                    _logger.LogInformation($"Source has default rectangular crop region");
+                    targetView.CropBox = sourceCropBox;
+                    _logger.LogInformation($"Copied crop box: Min={sourceCropBox.Min}, Max={sourceCropBox.Max}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not copy rectangular crop box: {ex.Message}");
             }
         }
     }

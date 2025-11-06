@@ -241,9 +241,9 @@ namespace LoBIM.Features.ViewCloning.Services
             return null;
         }
 
-        public int CloneViews(Document hostDoc, List<LinkedViewInfo> viewsToClone, string namePrefix = "", ViewPositioningMode positioningMode = ViewPositioningMode.InternalOriginToInternalOrigin)
+        public List<ElementId> CloneViews(Document hostDoc, List<LinkedViewInfo> viewsToClone, string namePrefix = "", ViewPositioningMode positioningMode = ViewPositioningMode.InternalOriginToInternalOrigin)
         {
-            int successCount = 0;
+            var clonedViewIds = new List<ElementId>();
 
             using (var transaction = new Transaction(hostDoc, "Clone Views from Linked Files"))
             {
@@ -252,17 +252,17 @@ namespace LoBIM.Features.ViewCloning.Services
                 foreach (var viewInfo in viewsToClone)
                 {
                     var result = CloneView(hostDoc, viewInfo, namePrefix, positioningMode);
-                    if (result != null)
+                    if (result != null && result != ElementId.InvalidElementId)
                     {
-                        successCount++;
+                        clonedViewIds.Add(result);
                     }
                 }
 
                 transaction.Commit();
             }
 
-            _logger.LogInformation($"Cloned {successCount} out of {viewsToClone.Count} views");
-            return successCount;
+            _logger.LogInformation($"Cloned {clonedViewIds.Count} out of {viewsToClone.Count} views");
+            return clonedViewIds;
         }
 
         /// <summary>

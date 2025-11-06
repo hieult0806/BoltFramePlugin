@@ -41,7 +41,7 @@ namespace LoBIM.Features.ViewCloning.Services
         /// <param name="viewsToClone">List of views to clone</param>
         /// <param name="namePrefix">Optional prefix for cloned view names</param>
         /// <param name="positioningMode">How to position the cloned views</param>
-        /// <returns>Number of successfully cloned views</returns>
-        int CloneViews(Document hostDoc, List<LinkedViewInfo> viewsToClone, string namePrefix = "", ViewPositioningMode positioningMode = ViewPositioningMode.InternalOriginToInternalOrigin);
+        /// <returns>List of ElementIds of successfully cloned views</returns>
+        List<ElementId> CloneViews(Document hostDoc, List<LinkedViewInfo> viewsToClone, string namePrefix = "", ViewPositioningMode positioningMode = ViewPositioningMode.InternalOriginToInternalOrigin);
     }
 }

@@ -105,8 +105,8 @@ namespace LoBIM.Features.ViewCloning.Strategies
             CopyScale(sourcePlan, newPlan);
             ApplyViewName(newPlan, sourceViewName, namePrefix);
 
-            // Copy crop region if source has one
-            CopyCropRegion(sourcePlan, newPlan, hostDoc);
+            // Copy crop region if source has one (plan views support custom shapes)
+            CopyCropRegion(sourcePlan, newPlan, supportsCustomShapes: true);
 
             _logger.LogInformation($"Successfully cloned regular plan view: {newPlan.Name}");
 
@@ -296,66 +296,6 @@ namespace LoBIM.Features.ViewCloning.Strategies
             _logger.LogInformation($"Successfully cloned plan callout: {newPlan.Name}");
 
             return newPlan;
-        }
-
-        /// <summary>
-        /// Copies the crop region from source plan to cloned plan
-        /// </summary>
-        private void CopyCropRegion(ViewPlan sourcePlan, ViewPlan targetPlan, Document hostDoc)
-        {
-            try
-            {
-                _logger.LogInformation($"=== COPYING CROP REGION ===");
-
-                // Check if source has crop box enabled
-                if (!sourcePlan.CropBoxActive)
-                {
-                    _logger.LogInformation($"Source plan does not have crop box active - skipping crop region copy");
-                    return;
-                }
-
-                _logger.LogInformation($"Source has crop box active - copying crop region");
-
-                // Enable crop box on target
-                targetPlan.CropBoxActive = true;
-                targetPlan.CropBoxVisible = sourcePlan.CropBoxVisible;
-
-                // Get source crop region shape
-                var sourceCropManager = sourcePlan.GetCropRegionShapeManager();
-                var sourceCropShape = sourceCropManager.GetCropShape();
-
-                if (sourceCropShape != null && sourceCropShape.Count > 0)
-                {
-                    _logger.LogInformation($"Source crop region has {sourceCropShape.Count} curve loops");
-
-                    // Get target crop region manager
-                    var targetCropManager = targetPlan.GetCropRegionShapeManager();
-
-                    // Copy the crop shape
-                    // Note: The crop shape coordinates should already be in the correct position
-                    // because plan views are positioned at their level elevation automatically
-                    targetCropManager.SetCropShape(sourceCropShape.First());
-
-                    _logger.LogInformation($"Successfully copied crop region to target plan");
-                }
-                else
-                {
-                    _logger.LogInformation($"Source has default rectangular crop region");
-
-                    // Copy the rectangular crop box
-                    var sourceCropBox = sourcePlan.CropBox;
-                    if (sourceCropBox != null)
-                    {
-                        targetPlan.CropBox = sourceCropBox;
-                        _logger.LogInformation($"Copied crop box from source");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Could not copy crop region: {ex.Message}");
-                _logger.LogInformation($"Target plan will use default crop region");
-            }
         }
     }
 }

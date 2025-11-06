@@ -83,8 +83,8 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 // Copy section box if active
                 CopySectionBox(source3DView, cloned3DView, linkInstance, positioningMode);
 
-                // Copy crop region (custom crop shapes or rectangular crop box)
-                CopyCropRegion(source3DView, cloned3DView);
+                // Copy crop region (3D views only support rectangular crop boxes)
+                CopyCropRegion(source3DView, cloned3DView, supportsCustomShapes: false);
 
                 // Copy display style
                 CopyDisplayStyle(source3DView, cloned3DView);
@@ -261,47 +261,6 @@ namespace LoBIM.Features.ViewCloning.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning($"Could not copy display style: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Copies the crop region from source 3D view to cloned 3D view
-        /// Handles both custom crop shapes and rectangular crop boxes
-        /// </summary>
-        private void CopyCropRegion(View3D source3DView, View3D cloned3DView)
-        {
-            try
-            {
-                _logger.LogInformation($"=== COPYING CROP REGION ===");
-
-                // Check if source has crop box enabled
-                if (!source3DView.CropBoxActive)
-                {
-                    _logger.LogInformation($"Source 3D view does not have crop box active - skipping crop region copy");
-                    return;
-                }
-
-                _logger.LogInformation($"Source has crop box active - copying crop region");
-
-                // Enable crop box on target
-                cloned3DView.CropBoxActive = true;
-                cloned3DView.CropBoxVisible = source3DView.CropBoxVisible;
-
-                // Note: 3D views only support rectangular crop boxes, not custom crop shapes
-                // Even if the source has a custom shape, we can only copy the rectangular bounding box
-                _logger.LogInformation($"3D views only support rectangular crop boxes - copying crop box");
-
-                // Copy the rectangular crop box
-                var sourceCropBox = source3DView.CropBox;
-                if (sourceCropBox != null)
-                {
-                    cloned3DView.CropBox = sourceCropBox;
-                    _logger.LogInformation($"Copied crop box: Min={sourceCropBox.Min}, Max={sourceCropBox.Max}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Could not copy crop region: {ex.Message}");
             }
         }
     }
