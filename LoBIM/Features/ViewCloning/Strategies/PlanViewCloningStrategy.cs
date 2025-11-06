@@ -171,23 +171,27 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 return null;
             }
 
-            // Calculate callout world origin (transform through parent's coordinate system)
+            // Get callout and parent transforms
             var parentTransform = parentCropBox.Transform;
             var srcTransform = calloutBoundingBox.Transform;
 
             _logger.LogInformation($"=== CALLOUT COORDINATE TRANSFORMATION ===");
-            _logger.LogInformation($"Transforming callout POSITION through parent view coordinate system");
+            _logger.LogInformation($"Analyzing callout POSITION relative to parent view");
 
-            // The Min/Max of the cropbox define the callout's position in parent's view space
-            XYZ calloutMin = calloutBoundingBox.Min;
-            XYZ calloutMax = calloutBoundingBox.Max;
-            XYZ calloutCenter = (calloutMin + calloutMax) * 0.5;
+            // CRITICAL INSIGHT: For plan callouts, the cropbox origin is ALREADY in world coordinates
+            // Similar to section callouts, we should NOT transform it through the parent
+            // The callout's cropbox defines its absolute position in the model
 
-            // Transform through parent's coordinate system
-            XYZ calloutWorldOrigin = parentTransform.OfPoint(calloutCenter);
+            _logger.LogInformation($"=== ANALYSIS: CALLOUT VS PARENT ===");
+            _logger.LogInformation($"Original callout origin: {calloutPlan.Origin}");
+            _logger.LogInformation($"Parent view origin: {parentView.Origin}");
+            _logger.LogInformation($"Callout cropbox origin: {srcTransform.Origin}");
+            _logger.LogInformation($"Parent cropbox origin: {parentTransform.Origin}");
 
-            _logger.LogInformation($"Callout center in parent coords: {calloutCenter}");
-            _logger.LogInformation($"Callout world origin (transformed): {calloutWorldOrigin}");
+            // Use the callout's cropbox origin directly (already in world coordinates)
+            XYZ calloutWorldOrigin = srcTransform.Origin;
+
+            _logger.LogInformation($"Using callout cropbox origin directly: {calloutWorldOrigin}");
 
             // Apply positioning mode
             Transform linkTransform = GetLinkTransform(linkInstance, positioningMode);
