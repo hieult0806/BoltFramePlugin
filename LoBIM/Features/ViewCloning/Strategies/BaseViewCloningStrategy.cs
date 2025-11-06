@@ -64,23 +64,51 @@ namespace LoBIM.Features.ViewCloning.Strategies
         }
 
         /// <summary>
-        /// Applies a name to the cloned view, handling naming conflicts
+        /// Applies a name to the cloned view, handling naming conflicts and prohibited characters
         /// </summary>
         protected void ApplyViewName(Autodesk.Revit.DB.View view, string sourceViewName, string namePrefix)
         {
+            // Sanitize the source view name by removing prohibited characters
+            // Revit prohibits: \ : { } [ ] | ; < > ? ` ~
+            string sanitizedName = SanitizeViewName(sourceViewName);
+
             string newName = string.IsNullOrEmpty(namePrefix)
-                ? $"{sourceViewName} (Cloned)"
-                : $"{namePrefix}_{sourceViewName}";
+                ? $"{sanitizedName} (Cloned)"
+                : $"{namePrefix}_{sanitizedName}";
 
             try
             {
                 view.Name = newName;
+                _logger.LogInformation($"Set view name to: {newName}");
             }
-            catch
+            catch (Exception ex)
             {
                 // If name conflict, append timestamp
-                view.Name = $"{newName}_{DateTime.Now:yyyyMMdd_HHmmss}";
+                string fallbackName = $"{newName}_{DateTime.Now:yyyyMMdd_HHmmss}";
+                view.Name = fallbackName;
+                _logger.LogWarning($"Name conflict, using fallback name: {fallbackName}. Error: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Removes prohibited characters from view names
+        /// Revit prohibits: \ : { } [ ] | ; < > ? ` ~
+        /// </summary>
+        private string SanitizeViewName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return name;
+
+            // Replace prohibited characters with empty string or safe alternatives
+            char[] prohibitedChars = new[] { '\\', ':', '{', '}', '[', ']', '|', ';', '<', '>', '?', '`', '~' };
+
+            foreach (char c in prohibitedChars)
+            {
+                name = name.Replace(c.ToString(), "");
+            }
+
+            // Trim any extra spaces that might result from removal
+            return name.Trim();
         }
 
         /// <summary>

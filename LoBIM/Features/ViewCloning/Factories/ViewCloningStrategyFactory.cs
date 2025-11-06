@@ -14,6 +14,7 @@ namespace LoBIM.Features.ViewCloning.Factories
     {
         private readonly SectionViewCloningStrategy _sectionStrategy;
         private readonly PlanViewCloningStrategy _planStrategy;
+        private readonly View3DViewCloningStrategy _view3DStrategy;
         private readonly ILoggingService _logger;
 
         public ViewCloningStrategyFactory(ILoggingService logger)
@@ -26,6 +27,9 @@ namespace LoBIM.Features.ViewCloning.Factories
 
             // ViewPlan handles: FloorPlan, CeilingPlan, EngineeringPlan (both regular and callouts)
             _planStrategy = new PlanViewCloningStrategy(logger);
+
+            // View3D handles: 3D views
+            _view3DStrategy = new View3DViewCloningStrategy(logger);
         }
 
         /// <summary>
@@ -67,8 +71,9 @@ namespace LoBIM.Features.ViewCloning.Factories
             }
             else if (view is View3D)
             {
-                _logger.LogWarning($"3D view cloning not yet implemented");
-                strategy = null;
+                // View3D covers: 3D views (Isometric, Perspective)
+                _logger.LogInformation($"Routing to View3DViewCloningStrategy (handles 3D views)");
+                strategy = _view3DStrategy;
             }
             else
             {
@@ -92,7 +97,8 @@ namespace LoBIM.Features.ViewCloning.Factories
                 ViewType.FloorPlan,
                 ViewType.CeilingPlan,
                 ViewType.EngineeringPlan,
-                ViewType.Detail
+                ViewType.Detail,
+                ViewType.ThreeD
             };
         }
     }

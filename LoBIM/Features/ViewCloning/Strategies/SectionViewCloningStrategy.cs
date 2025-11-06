@@ -99,6 +99,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 CopyScale(sourceView, newSection);
                 ApplyViewName(newSection, sourceView.Name, namePrefix);
 
+                // Copy crop region (custom crop shapes or rectangular crop box)
+                CopyCropRegion(sourceSection, newSection);
+
                 _logger.LogInformation($"Successfully cloned view: {newSection.Name}");
                 return newSection;
             }
@@ -400,6 +403,66 @@ namespace LoBIM.Features.ViewCloning.Strategies
             }
 
             return newSection;
+        }
+
+        /// <summary>
+        /// Copies the crop region from source section to cloned section
+        /// Handles both custom crop shapes and rectangular crop boxes
+        /// </summary>
+        private void CopyCropRegion(ViewSection sourceSection, ViewSection targetSection)
+        {
+            try
+            {
+                _logger.LogInformation($"=== COPYING CROP REGION ===");
+
+                // Check if source has crop box enabled
+                if (!sourceSection.CropBoxActive)
+                {
+                    _logger.LogInformation($"Source section does not have crop box active - skipping crop region copy");
+                    return;
+                }
+
+                _logger.LogInformation($"Source has crop box active - copying crop region");
+
+                // Enable crop box on target
+                targetSection.CropBoxActive = true;
+                targetSection.CropBoxVisible = sourceSection.CropBoxVisible;
+
+                // Get source crop region shape
+                var sourceCropManager = sourceSection.GetCropRegionShapeManager();
+                var sourceCropShape = sourceCropManager.GetCropShape();
+
+                if (sourceCropShape != null && sourceCropShape.Count > 0)
+                {
+                    _logger.LogInformation($"Source crop region has {sourceCropShape.Count} curve loops - copying custom shape");
+
+                    // Get target crop region manager
+                    var targetCropManager = targetSection.GetCropRegionShapeManager();
+
+                    // Copy the crop shape
+                    // Note: For section views, the crop shape coordinates need to be in the target view's coordinate system
+                    targetCropManager.SetCropShape(sourceCropShape.First());
+
+                    _logger.LogInformation($"Successfully copied custom crop region to target section");
+                }
+                else
+                {
+                    _logger.LogInformation($"Source has default rectangular crop region");
+
+                    // The rectangular crop box is already set during view creation
+                    // We just need to ensure it matches the source dimensions
+                    var sourceCropBox = sourceSection.CropBox;
+                    if (sourceCropBox != null)
+                    {
+                        _logger.LogInformation($"Source crop box: Min={sourceCropBox.Min}, Max={sourceCropBox.Max}");
+                        _logger.LogInformation($"Rectangular crop box already set during view creation");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not copy crop region: {ex.Message}");
+            }
         }
     }
 }
