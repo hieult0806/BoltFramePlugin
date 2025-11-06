@@ -242,13 +242,13 @@ namespace LoBIM.Features.ViewCloning.ViewModels
             {
                 var doc = _document.Document;
 
-                Autodesk.Revit.DB.ViewSection viewSection = null;
+                Autodesk.Revit.DB.View view = null;
 
                 // First, try to use the active view if it's a section
-                if (_document.ActiveView is Autodesk.Revit.DB.ViewSection activeSection)
+                if (_document.ActiveView is Autodesk.Revit.DB.View activeView)
                 {
-                    _logger.LogInformation($"Using active section view: {activeSection.Name}");
-                    viewSection = activeSection;
+                    _logger.LogInformation($"Using active view: {activeView.Name}");
+                    view = activeView;
                 }
                 else
                 {
@@ -264,22 +264,25 @@ namespace LoBIM.Features.ViewCloning.ViewModels
                             _logger.LogInformation($"Selected Element Category: {element?.Category?.Name}");
                             _logger.LogInformation($"Selected Element Id: {element?.Id.Value}");
 
-                            viewSection = element as Autodesk.Revit.DB.ViewSection;
+                            view = element as Autodesk.Revit.DB.View;
                         }
                     }
                 }
 
-                if (viewSection != null)
+                if (view != null)
                 {
-                    _logger.LogInformation($"=== SECTION VIEW INFORMATION ===");
-                    _logger.LogInformation($"Section View Name: {viewSection.Name}");
-                    _logger.LogInformation($"Section View Id: {viewSection.Id.Value}");
-                    _logger.LogInformation($"Section Origin: {viewSection.Origin}");
-                    _logger.LogInformation($"Section Direction: {viewSection.ViewDirection}");
-                    _logger.LogInformation($"Section Up Direction: {viewSection.UpDirection}");
-                    _logger.LogInformation($"Section Right Direction: {viewSection.RightDirection}");
+                    _logger.LogInformation($"=== VIEW INFORMATION ===");
+                    _logger.LogInformation($"View Type: {view.GetType().Name}");
+                    _logger.LogInformation($"View Category: {view.Category?.Name}");
+                    _logger.LogInformation($"View IsCallout: {view.IsCallout}");
+                    _logger.LogInformation($"View Name: {view.Name}");
+                    _logger.LogInformation($"View Id: {view.Id.Value}");
+                    _logger.LogInformation($"Origin: {view.Origin}");
+                    _logger.LogInformation($"Direction: {view.ViewDirection}");
+                    _logger.LogInformation($"Up Direction: {view.UpDirection}");
+                    _logger.LogInformation($"Right Direction: {view.RightDirection}");
 
-                    var cropBox = viewSection.CropBox;
+                    var cropBox = view.CropBox;
                     if (cropBox != null)
                     {
                         _logger.LogInformation($"=== CROPBOX INFORMATION ===");
@@ -292,15 +295,15 @@ namespace LoBIM.Features.ViewCloning.ViewModels
                         _logger.LogInformation($"CropBox Max: {cropBox.Max}");
                     }
 
-                    StatusMessage = $"Logged position info for section: {viewSection.Name}";
-                    TaskDialog.Show("Success", $"Logged position information for section '{viewSection.Name}'. Check the log file for details.");
+                    StatusMessage = $"Logged position info for section: {view.Name}";
+                    TaskDialog.Show("Success", $"Logged position information for section '{view.Name}'. Check the log file for details.");
                 }
                 else
                 {
-                    _logger.LogWarning($"Could not find a section view. Please open a section view first.");
-                    TaskDialog.Show("No Section View",
-                        "Please open a section view in Revit and click this button again.\n\n" +
-                        "The active view must be a section view.");
+                    _logger.LogWarning($"Could not find a view. Please open a view first.");
+                    TaskDialog.Show("No View",
+                        "Please open a view in Revit and click this button again.\n\n" +
+                        "The active view must be a valid view.");
                 }
             }
             catch (Exception ex)
