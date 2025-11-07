@@ -5,6 +5,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
@@ -20,6 +21,14 @@ namespace LoBIM.Features.SheetManagement.Views
         public SheetManagementWindow(UIDocument document)
         {
             InitializeComponent();
+
+            var revitWindow = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
+            if (revitWindow != IntPtr.Zero)
+            {
+                var helper = new WindowInteropHelper(this);
+                helper.Owner = revitWindow;
+            }
+
             DataContext = new SheetManagementWindowVM(document);
 
             // Subscribe to window closing event
@@ -28,6 +37,15 @@ namespace LoBIM.Features.SheetManagement.Views
                 if (DataContext is SheetManagementWindowVM vm)
                 {
                     vm.RequestClose -= OnRequestClose;
+                }
+            };
+
+            // Focus back to Revit when window closes
+            Closed += (s, e) =>
+            {
+                if (revitWindow != IntPtr.Zero)
+                {
+                    SetForegroundWindow(revitWindow);
                 }
             };
 
@@ -135,6 +153,9 @@ namespace LoBIM.Features.SheetManagement.Views
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern bool GetCursorPos(ref Win32Point lpPoint);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         private struct Win32Point

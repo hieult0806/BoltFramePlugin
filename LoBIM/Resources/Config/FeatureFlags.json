@@ -62,6 +62,15 @@
       "Tooltip": "Open Log Folder",
       "LongDescription": "Opens the LoBIM log folder in Windows Explorer to view log files.",
       "IconName": "code-files"
+    },
+    "About": {
+      "Enabled": true,
+      "Name": "About",
+      "ButtonName": "AboutButton",
+      "ClassName": "AboutCommand",
+      "Tooltip": "About LoBIM",
+      "LongDescription": "View information about LoBIM, including version details and development credits.",
+      "IconName": "document"
     }
   }
 }
