@@ -99,8 +99,11 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 CopyScale(sourceView, newSection);
                 ApplyViewName(newSection, sourceView.Name, namePrefix);
 
-                // Copy crop region (custom crop shapes or rectangular crop box)
-                CopyCropRegion(sourceSection, newSection, supportsCustomShapes: true);
+                // NOTE: For section views, we do NOT call CopyCropRegion because:
+                // - The crop box (bounding box) defines the section's position and orientation
+                // - It was already set correctly during ViewSection.CreateSection()
+                // - Copying the crop box would overwrite the position we carefully calculated
+                // - Custom crop shapes will be copied separately if needed
 
                 _logger.LogInformation($"Successfully cloned view: {newSection.Name}");
                 return newSection;
@@ -291,8 +294,12 @@ namespace LoBIM.Features.ViewCloning.Strategies
             BoundingBoxXYZ sourceBoundingBox,
             Transform finalTransform)
         {
-            // Determine the view family (Section or Elevation)
-            ViewFamily viewFamily = viewType == ViewType.Elevation ? ViewFamily.Elevation : ViewFamily.Section;
+            // IMPORTANT: Both Section and Elevation views are created using ViewSection.CreateSection()
+            // which requires a ViewFamilyType with ViewFamily.Section
+            // Elevations are NOT created with ViewFamily.Elevation - that's just for display purposes
+            ViewFamily viewFamily = ViewFamily.Section;
+
+            _logger.LogInformation($"View type: {viewType}, using ViewFamily: {viewFamily}");
 
             // Find matching view family type in host document
             var hostViewFamilyType = new FilteredElementCollector(hostDoc)

@@ -1,7 +1,7 @@
 {
   "Features": {
     "BoltFrame": {
-      "Enabled": true,
+      "Enabled": false,
       "Name": "Bolt Frame",
       "ButtonName": "BoltFrameMainButton",
       "ClassName": "LoBIM.Features.Framing.Commands.BoltFrameCommand",
@@ -10,7 +10,7 @@
       "IconName": "grid"
     },
     "SwitchViewPanel": {
-      "Enabled": true,
+      "Enabled": false,
       "Name": "View Plans",
       "ButtonName": "SwitchViewPanelButton",
       "ClassName": "ShowSwitchViewPanelCommand",
@@ -19,7 +19,7 @@
       "IconName": "design"
     },
     "LimitingDistance": {
-      "Enabled": true,
+      "Enabled": false,
       "Name": "Limiting Distance",
       "ButtonName": "LimitingDistanceButton",
       "ClassName": "LoBIM.Features.LimitingDistance.Commands.LimitingDistanceCommand",

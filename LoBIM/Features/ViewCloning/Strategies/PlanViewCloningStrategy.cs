@@ -2,6 +2,7 @@ using Autodesk.Revit.DB;
 using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Services;
 using System;
+using System.Linq;
 
 namespace LoBIM.Features.ViewCloning.Strategies
 {
@@ -80,20 +81,32 @@ namespace LoBIM.Features.ViewCloning.Strategies
             _logger.LogInformation($"Cloning regular plan view: {sourceViewName}");
             _logger.LogInformation($"Note: Plan views use simple duplication - positioning mode has limited effect");
 
-            // For plan views, we need to find a matching level in the host
-            var sourceLevel = hostDoc.GetElement(sourcePlan.GenLevel.Id) as Level;
+            // For plan views, we need to find a matching level in the host by NAME
+            // (We cannot use the level ID from the linked document)
+            var sourceLevelFromLinkedDoc = sourcePlan.GenLevel;
+            var sourceLevelName = sourceLevelFromLinkedDoc.Name;
 
-            if (sourceLevel == null)
+            _logger.LogInformation($"Source plan uses level: {sourceLevelName}");
+            _logger.LogInformation($"Searching for matching level in host document by name...");
+
+            // Find matching level in host document by name
+            var hostLevel = new FilteredElementCollector(hostDoc)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .FirstOrDefault(l => l.Name.Equals(sourceLevelName, StringComparison.OrdinalIgnoreCase));
+
+            if (hostLevel == null)
             {
-                _logger.LogWarning($"Could not find matching level in host document for plan view: {sourceViewName}");
+                _logger.LogWarning($"Could not find matching level '{sourceLevelName}' in host document for plan view: {sourceViewName}");
                 _logger.LogInformation($"Plan view cloning requires matching levels between linked and host documents");
+                _logger.LogInformation($"Available levels in host: {string.Join(", ", new FilteredElementCollector(hostDoc).OfClass(typeof(Level)).Cast<Level>().Select(l => l.Name))}");
                 return null;
             }
 
-            _logger.LogInformation($"Found matching level: {sourceLevel.Name}");
+            _logger.LogInformation($"Found matching level in host: {hostLevel.Name} (ID: {hostLevel.Id})");
 
             // Create a new plan view in the host document
-            ViewPlan newPlan = ViewPlan.Create(hostDoc, sourcePlan.GetTypeId(), sourceLevel.Id);
+            ViewPlan newPlan = ViewPlan.Create(hostDoc, sourcePlan.GetTypeId(), hostLevel.Id);
 
             if (newPlan == null)
             {
@@ -225,17 +238,30 @@ namespace LoBIM.Features.ViewCloning.Strategies
                     break;
             }
 
-            // For plan callouts, we still need a matching level
-            var sourceLevel = hostDoc.GetElement(calloutPlan.GenLevel.Id) as Level;
+            // For plan callouts, we still need a matching level in the host by NAME
+            var sourceLevelFromLinkedDoc = calloutPlan.GenLevel;
+            var sourceLevelName = sourceLevelFromLinkedDoc.Name;
 
-            if (sourceLevel == null)
+            _logger.LogInformation($"Source callout uses level: {sourceLevelName}");
+            _logger.LogInformation($"Searching for matching level in host document by name...");
+
+            // Find matching level in host document by name
+            var hostLevel = new FilteredElementCollector(hostDoc)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .FirstOrDefault(l => l.Name.Equals(sourceLevelName, StringComparison.OrdinalIgnoreCase));
+
+            if (hostLevel == null)
             {
-                _logger.LogWarning($"Could not find matching level in host document for plan callout");
+                _logger.LogWarning($"Could not find matching level '{sourceLevelName}' in host document for plan callout");
+                _logger.LogInformation($"Available levels in host: {string.Join(", ", new FilteredElementCollector(hostDoc).OfClass(typeof(Level)).Cast<Level>().Select(l => l.Name))}");
                 return null;
             }
 
+            _logger.LogInformation($"Found matching level in host: {hostLevel.Name} (ID: {hostLevel.Id})");
+
             // Create a new plan view in the host document
-            ViewPlan newPlan = ViewPlan.Create(hostDoc, calloutPlan.GetTypeId(), sourceLevel.Id);
+            ViewPlan newPlan = ViewPlan.Create(hostDoc, calloutPlan.GetTypeId(), hostLevel.Id);
 
             if (newPlan == null)
             {
