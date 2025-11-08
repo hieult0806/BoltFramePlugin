@@ -157,6 +157,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 targetView.CropBoxActive = true;
                 targetView.CropBoxVisible = sourceView.CropBoxVisible;
 
+                // Copy annotation crop settings
+                CopyAnnotationCrop(sourceView, targetView);
+
                 if (supportsCustomShapes)
                 {
                     // Try to copy custom crop shape first
@@ -198,6 +201,44 @@ namespace LoBIM.Features.ViewCloning.Strategies
                     var targetCropManager = targetView.GetCropRegionShapeManager();
                     targetCropManager.SetCropShape(sourceCropShape.First());
 
+                    // CRITICAL FIX: Update the crop box bounding box to match the custom shape extent
+                    // Without this, the crop box stays huge and viewports will be incorrectly sized
+                    try
+                    {
+                        var sourceCropCurves = sourceCropShape[0];
+
+                        // Calculate tight bounding box around the custom crop shape
+                        double minX = double.MaxValue, minY = double.MaxValue;
+                        double maxX = double.MinValue, maxY = double.MinValue;
+
+                        foreach (Curve curve in sourceCropCurves)
+                        {
+                            var pt0 = curve.GetEndPoint(0);
+                            var pt1 = curve.GetEndPoint(1);
+
+                            minX = Math.Min(minX, Math.Min(pt0.X, pt1.X));
+                            minY = Math.Min(minY, Math.Min(pt0.Y, pt1.Y));
+                            maxX = Math.Max(maxX, Math.Max(pt0.X, pt1.X));
+                            maxY = Math.Max(maxY, Math.Max(pt0.Y, pt1.Y));
+                        }
+
+                        // Update the target view's crop box to this tight bounding box
+                        var currentCropBox = targetView.CropBox;
+                        var tightCropBox = new BoundingBoxXYZ
+                        {
+                            Min = new XYZ(minX, minY, currentCropBox.Min.Z),
+                            Max = new XYZ(maxX, maxY, currentCropBox.Max.Z),
+                            Transform = currentCropBox.Transform
+                        };
+
+                        targetView.CropBox = tightCropBox;
+                        _logger.LogInformation($"Updated crop box to tight bounds: ({minX:F2}, {minY:F2}) to ({maxX:F2}, {maxY:F2})");
+                    }
+                    catch (Exception cropBoxEx)
+                    {
+                        _logger.LogWarning($"Could not update crop box bounds after copying custom shape: {cropBoxEx.Message}");
+                    }
+
                     return true;
                 }
 
@@ -228,6 +269,30 @@ namespace LoBIM.Features.ViewCloning.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning($"Could not copy rectangular crop box: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Copies annotation crop settings from source to target view
+        /// </summary>
+        private void CopyAnnotationCrop(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView)
+        {
+            try
+            {
+                // Copy annotation crop active parameter
+                var sourceAnnotCropParam = sourceView.get_Parameter(BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE);
+                var targetAnnotCropParam = targetView.get_Parameter(BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE);
+
+                if (sourceAnnotCropParam != null && targetAnnotCropParam != null)
+                {
+                    var isAnnotCropActive = sourceAnnotCropParam.AsInteger();
+                    targetAnnotCropParam.Set(isAnnotCropActive);
+                    _logger.LogInformation($"Copied annotation crop active: {(isAnnotCropActive == 1 ? "True" : "False")}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not copy annotation crop settings: {ex.Message}");
             }
         }
     }

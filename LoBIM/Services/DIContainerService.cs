@@ -47,6 +47,9 @@ namespace LoBIM.Services
             // View Cloning Services
             container.RegisterSingleton<LoBIM.Features.ViewCloning.Services.IViewCloningService, LoBIM.Features.ViewCloning.Services.ViewCloningService>();
 
+            // Sheet Cloning Services
+            container.RegisterSingleton<LoBIM.Features.SheetCloning.Services.ISheetCloningService, LoBIM.Features.SheetCloning.Services.SheetCloningService>();
+
             // Register your services and ViewModels
             container.RegisterInstance<IWindowManager>(new WindowManager());
             // Add other registrations as needed

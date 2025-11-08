@@ -54,6 +54,15 @@
       "LongDescription": "Clone views from linked Revit files into the current document.",
       "IconName": "copy"
     },
+    "SheetCloning": {
+      "Enabled": true,
+      "Name": "Clone Sheets",
+      "ButtonName": "SheetCloningButton",
+      "ClassName": "LoBIM.Features.SheetCloning.Commands.SheetCloningCommand",
+      "Tooltip": "Clone Sheets from Linked Files",
+      "LongDescription": "Clone sheets from linked Revit files into the current document with titleblocks and parameters.",
+      "IconName": "copy"
+    },
     "OpenLogs": {
       "Enabled": true,
       "Name": "Open Logs",
