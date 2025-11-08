@@ -275,24 +275,43 @@ namespace LoBIM.Features.ViewCloning.Strategies
         /// <summary>
         /// Copies annotation crop settings from source to target view
         /// </summary>
-        private void CopyAnnotationCrop(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView)
+        protected void CopyAnnotationCrop(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView)
         {
             try
             {
+                _logger.LogInformation($"=== COPYING ANNOTATION CROP ===");
+
                 // Copy annotation crop active parameter
                 var sourceAnnotCropParam = sourceView.get_Parameter(BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE);
                 var targetAnnotCropParam = targetView.get_Parameter(BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE);
 
+                _logger.LogInformation($"Source annotation crop parameter: {(sourceAnnotCropParam != null ? "Found" : "NULL")}");
+                _logger.LogInformation($"Target annotation crop parameter: {(targetAnnotCropParam != null ? "Found" : "NULL")}");
+
                 if (sourceAnnotCropParam != null && targetAnnotCropParam != null)
                 {
                     var isAnnotCropActive = sourceAnnotCropParam.AsInteger();
-                    targetAnnotCropParam.Set(isAnnotCropActive);
-                    _logger.LogInformation($"Copied annotation crop active: {(isAnnotCropActive == 1 ? "True" : "False")}");
+                    _logger.LogInformation($"Source annotation crop value: {isAnnotCropActive}");
+
+                    if (!targetAnnotCropParam.IsReadOnly)
+                    {
+                        targetAnnotCropParam.Set(isAnnotCropActive);
+                        _logger.LogInformation($"Successfully set annotation crop active to: {(isAnnotCropActive == 1 ? "True" : "False")}");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Target annotation crop parameter is read-only");
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning($"Annotation crop parameter not available on source or target view");
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning($"Could not copy annotation crop settings: {ex.Message}");
+                _logger.LogError($"Exception details: {ex}");
             }
         }
     }

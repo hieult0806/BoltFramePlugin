@@ -105,6 +105,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 // - Copying the crop box would overwrite the position we carefully calculated
                 // - Custom crop shapes will be copied separately if needed
 
+                // However, we still need to copy annotation crop settings
+                CopyAnnotationCrop(sourceView, newSection);
+
                 _logger.LogInformation($"Successfully cloned view: {newSection.Name}");
                 return newSection;
             }

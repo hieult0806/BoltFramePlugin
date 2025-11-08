@@ -290,12 +290,32 @@ namespace LoBIM.Features.SheetCloning.Services
 
                         _logger?.LogInformation($"Cloning view: {sourceView.Name} (Type: {sourceView.ViewType})");
 
+                        // Get the RevitLinkInstance for this linked document
+                        RevitLinkInstance linkInstance = null;
+                        try
+                        {
+                            linkInstance = new FilteredElementCollector(hostDoc)
+                                .OfClass(typeof(RevitLinkInstance))
+                                .Cast<RevitLinkInstance>()
+                                .FirstOrDefault(link => link.GetLinkDocument()?.Title == linkedDoc.Title);
+
+                            if (linkInstance == null)
+                            {
+                                _logger?.LogWarning($"Could not find RevitLinkInstance for linked document: {linkedDoc.Title}");
+                            }
+                        }
+                        catch (Exception linkEx)
+                        {
+                            _logger?.LogWarning($"Error finding link instance: {linkEx.Message}");
+                        }
+
                         // Create LinkedViewInfo for the view cloning service
                         // We need to create a LinkedFileInfo for the ParentLink property
                         var parentLink = new LinkedFileInfo
                         {
                             LinkedDocument = linkedDoc,
-                            FileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title)
+                            FileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title),
+                            LinkInstance = linkInstance  // Set the link instance
                         };
 
                         var linkedViewInfo = new LinkedViewInfo

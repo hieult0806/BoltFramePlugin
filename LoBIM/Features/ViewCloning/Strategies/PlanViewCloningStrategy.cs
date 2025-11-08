@@ -306,11 +306,51 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 cropManager.SetCropShape(curveLoop);
 
                 _logger.LogInformation($"Successfully set crop region for plan callout");
+
+                // CRITICAL FIX: Update crop box to tight bounds after setting custom crop shape
+                // This ensures the viewport size matches the actual crop shape extent
+                // We use the curveLoop we just created instead of getting it back from the manager
+                try
+                {
+                    // Calculate tight bounding box around the crop shape we just created
+                    double minX = double.MaxValue, minY = double.MaxValue;
+                    double maxX = double.MinValue, maxY = double.MinValue;
+
+                    foreach (Curve curve in curveLoop)
+                    {
+                        var pt0 = curve.GetEndPoint(0);
+                        var pt1 = curve.GetEndPoint(1);
+
+                        minX = Math.Min(minX, Math.Min(pt0.X, pt1.X));
+                        minY = Math.Min(minY, Math.Min(pt0.Y, pt1.Y));
+                        maxX = Math.Max(maxX, Math.Max(pt0.X, pt1.X));
+                        maxY = Math.Max(maxY, Math.Max(pt0.Y, pt1.Y));
+                    }
+
+                    // Update crop box to tight bounds
+                    var currentCropBox = newPlan.CropBox;
+                    var tightCropBox = new BoundingBoxXYZ
+                    {
+                        Min = new XYZ(minX, minY, currentCropBox.Min.Z),
+                        Max = new XYZ(maxX, maxY, currentCropBox.Max.Z),
+                        Transform = currentCropBox.Transform
+                    };
+
+                    newPlan.CropBox = tightCropBox;
+                    _logger.LogInformation($"Updated callout crop box to tight bounds: ({minX:F2}, {minY:F2}) to ({maxX:F2}, {maxY:F2})");
+                }
+                catch (Exception tightBoxEx)
+                {
+                    _logger.LogWarning($"Could not update crop box to tight bounds: {tightBoxEx.Message}");
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning($"Could not set crop region for plan callout: {ex.Message}");
             }
+
+            // Copy annotation crop settings
+            CopyAnnotationCrop(calloutPlan, newPlan);
 
             // Copy properties
             CopyScale(calloutPlan, newPlan);
