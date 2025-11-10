@@ -182,7 +182,9 @@
                               BorderBrush="#CCCCCC"
                               BorderThickness="1"
                               RowHeight="32"
-                              SelectionUnit="FullRow">
+                              SelectionUnit="FullRow"
+                              MouseDoubleClick="SheetsDataGrid_MouseDoubleClick"
+                              PreviewMouseLeftButtonDown="SheetsDataGrid_PreviewMouseLeftButtonDown">
 
                         <DataGrid.Columns>
                             <!-- Selection Checkbox -->

@@ -22,6 +22,8 @@ namespace LoBIM.Features.ViewCloning.ViewModels
         private readonly LoBIM.Features.ViewCloning.EventHandlers.CloneViewsEventHandler _cloneViewsHandler;
         private readonly ExternalEvent _openViewEvent;
         private readonly LoBIM.Features.ViewCloning.EventHandlers.OpenViewEventHandler _openViewHandler;
+        private readonly ExternalEvent _highlightViewEvent;
+        private readonly LoBIM.Features.ViewCloning.EventHandlers.HighlightViewEventHandler _highlightViewHandler;
 
         private ObservableCollection<LinkedFileInfo> _linkedFiles;
         public ObservableCollection<LinkedFileInfo> LinkedFiles
@@ -61,6 +63,12 @@ namespace LoBIM.Features.ViewCloning.ViewModels
                 _selectedView = value;
                 OnPropertyChanged(nameof(SelectedView));
                 OnPropertyChanged(nameof(CanShowInProjectBrowser));
+
+                // Auto-highlight cloned view in Project Browser on single click
+                if (_selectedView != null && _selectedView.IsCloned && _selectedView.ClonedViewId != null)
+                {
+                    HighlightViewInProjectBrowser();
+                }
             }
         }
 
@@ -146,6 +154,10 @@ namespace LoBIM.Features.ViewCloning.ViewModels
             // Initialize ExternalEvent for opening views
             _openViewHandler = new LoBIM.Features.ViewCloning.EventHandlers.OpenViewEventHandler();
             _openViewEvent = ExternalEvent.Create(_openViewHandler);
+
+            // Initialize ExternalEvent for highlighting views in Project Browser
+            _highlightViewHandler = new LoBIM.Features.ViewCloning.EventHandlers.HighlightViewEventHandler(_logger);
+            _highlightViewEvent = ExternalEvent.Create(_highlightViewHandler);
 
             // Initialize commands
             RefreshLinkedFilesCommand = new RelayCommand(RefreshLinkedFiles);
@@ -320,6 +332,50 @@ namespace LoBIM.Features.ViewCloning.ViewModels
                 StatusMessage = $"Error opening view: {viewName}";
                 _logger.LogError($"Error opening view: {viewName}");
             }
+        }
+
+        /// <summary>
+        /// Highlights the selected view in the Project Browser without opening it
+        /// Triggered automatically when a cloned view is selected (single click)
+        /// </summary>
+        private void HighlightViewInProjectBrowser()
+        {
+            try
+            {
+                if (SelectedView == null || !SelectedView.IsCloned || SelectedView.ClonedViewId == null)
+                {
+                    return;
+                }
+
+                // Use ExternalEvent to highlight the view
+                _highlightViewHandler.SetParameters(_document, SelectedView.ClonedViewId, OnHighlightViewCompleted);
+                _highlightViewEvent.Raise();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error highlighting view: {ex.Message}", ex);
+            }
+        }
+
+        private void OnHighlightViewCompleted(bool success, string viewName)
+        {
+            if (success)
+            {
+                _logger.LogInformation($"Highlighted view '{viewName}' in Project Browser");
+            }
+            else
+            {
+                _logger.LogError($"Error highlighting view: {viewName}");
+            }
+        }
+
+        /// <summary>
+        /// Opens the selected view as the active view
+        /// Triggered by double-click on DataGrid row
+        /// </summary>
+        public void OpenSelectedView()
+        {
+            ShowInProjectBrowser(null);
         }
 
         private void LogSectionMarkerPosition(object parameter)

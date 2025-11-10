@@ -27,6 +27,8 @@ namespace LoBIM.Features.SheetCloning.ViewModels
         private readonly CloneSheetsEventHandler _cloneSheetsHandler;
         private readonly ExternalEvent _openSheetEvent;
         private readonly OpenSheetEventHandler _openSheetHandler;
+        private readonly ExternalEvent _highlightSheetEvent;
+        private readonly HighlightSheetEventHandler _highlightSheetHandler;
 
         private ObservableCollection<LinkedFileInfo> _linkedFiles;
         public ObservableCollection<LinkedFileInfo> LinkedFiles
@@ -80,6 +82,12 @@ namespace LoBIM.Features.SheetCloning.ViewModels
                 _selectedSheet = value;
                 OnPropertyChanged(nameof(SelectedSheet));
                 OnPropertyChanged(nameof(CanShowInProjectBrowser));
+
+                // Auto-highlight cloned sheet in Project Browser on single click
+                if (_selectedSheet != null && _selectedSheet.IsCloned && _selectedSheet.ClonedSheetId != null)
+                {
+                    HighlightSheetInProjectBrowser();
+                }
             }
         }
 
@@ -146,6 +154,10 @@ namespace LoBIM.Features.SheetCloning.ViewModels
             // Initialize ExternalEvent for opening sheets
             _openSheetHandler = new OpenSheetEventHandler();
             _openSheetEvent = ExternalEvent.Create(_openSheetHandler);
+
+            // Initialize ExternalEvent for highlighting sheets in Project Browser
+            _highlightSheetHandler = new HighlightSheetEventHandler(_logger);
+            _highlightSheetEvent = ExternalEvent.Create(_highlightSheetHandler);
 
             // Initialize commands
             RefreshLinkedFilesCommand = new RelayCommand(RefreshLinkedFiles);
@@ -350,6 +362,50 @@ namespace LoBIM.Features.SheetCloning.ViewModels
                 StatusMessage = $"Error opening sheet: {sheetNumber}";
                 _logger.LogError($"Error opening sheet: {sheetNumber}");
             }
+        }
+
+        /// <summary>
+        /// Highlights the selected sheet in the Project Browser without opening it
+        /// Triggered automatically when a cloned sheet is selected (single click)
+        /// </summary>
+        private void HighlightSheetInProjectBrowser()
+        {
+            try
+            {
+                if (SelectedSheet == null || !SelectedSheet.IsCloned || SelectedSheet.ClonedSheetId == null)
+                {
+                    return;
+                }
+
+                // Use ExternalEvent to highlight the sheet
+                _highlightSheetHandler.SetParameters(_document, SelectedSheet.ClonedSheetId, OnHighlightSheetCompleted);
+                _highlightSheetEvent.Raise();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error highlighting sheet: {ex.Message}", ex);
+            }
+        }
+
+        private void OnHighlightSheetCompleted(bool success, string sheetNumber)
+        {
+            if (success)
+            {
+                _logger.LogInformation($"Highlighted sheet '{sheetNumber}' in Project Browser");
+            }
+            else
+            {
+                _logger.LogError($"Error highlighting sheet: {sheetNumber}");
+            }
+        }
+
+        /// <summary>
+        /// Opens the selected sheet as the active view
+        /// Triggered by double-click on DataGrid row
+        /// </summary>
+        public void OpenSelectedSheet()
+        {
+            ShowInProjectBrowser(null);
         }
 
         private void CloneSelectedSheets(object parameter)

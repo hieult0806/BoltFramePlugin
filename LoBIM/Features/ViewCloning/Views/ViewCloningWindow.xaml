@@ -144,7 +144,9 @@
                               AlternatingRowBackground="#FFF5F5F5"
                               HeadersVisibility="Column"
                               IsReadOnly="False"
-                              SelectionUnit="FullRow">
+                              SelectionUnit="FullRow"
+                              MouseDoubleClick="ViewsDataGrid_MouseDoubleClick"
+                              PreviewMouseLeftButtonDown="ViewsDataGrid_PreviewMouseLeftButtonDown">
 
                         <DataGrid.Columns>
                             <!-- Selection Checkbox -->
