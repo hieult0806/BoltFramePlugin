@@ -76,9 +76,24 @@ namespace LoBIM.ViewModels
             get => _filterLevel;
             set
             {
+                if (_filterLevel == value) return; // Prevent unnecessary refresh
+
                 _filterLevel = value;
                 OnPropertyChanged(nameof(FilterLevel));
-                RefreshLogText();
+
+                // Debug: Log the state before refresh
+                System.Diagnostics.Debug.WriteLine($"FilterLevel changed to: {value}, Current log entries count: {_logEntries.Count}");
+
+                // Refresh on UI thread with lock to prevent race conditions
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    lock (_refreshLock)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Before RefreshLogText: {_logEntries.Count} entries");
+                        RefreshLogText();
+                        System.Diagnostics.Debug.WriteLine($"After RefreshLogText: {_logEntries.Count} entries, LogText length: {LogText?.Length ?? 0}");
+                    }
+                });
             }
         }
 
@@ -89,7 +104,14 @@ namespace LoBIM.ViewModels
             {
                 _regexFilter = value;
                 OnPropertyChanged(nameof(RegexFilter));
-                RefreshLogText();
+                // Refresh on UI thread with lock to prevent race conditions
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    lock (_refreshLock)
+                    {
+                        RefreshLogText();
+                    }
+                });
             }
         }
 
@@ -100,7 +122,14 @@ namespace LoBIM.ViewModels
             {
                 _caseSensitive = value;
                 OnPropertyChanged(nameof(CaseSensitive));
-                RefreshLogText();
+                // Refresh on UI thread with lock to prevent race conditions
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    lock (_refreshLock)
+                    {
+                        RefreshLogText();
+                    }
+                });
             }
         }
 
@@ -166,36 +195,45 @@ namespace LoBIM.ViewModels
 
         private void RefreshLogText()
         {
-            var filteredLogs = _logEntries.AsEnumerable();
-
-            // Filter by log level
-            if (FilterLevel != "All")
+            try
             {
-                filteredLogs = filteredLogs.Where(l => l.Level == FilterLevel);
-            }
+                // Create a snapshot of log entries to prevent modification during enumeration
+                var logSnapshot = _logEntries.ToList();
+                var filteredLogs = logSnapshot.AsEnumerable();
 
-            // Filter by regex pattern
-            if (!string.IsNullOrEmpty(RegexFilter))
-            {
-                try
+                // Filter by log level
+                if (FilterLevel != "All")
                 {
-                    var regexOptions = CaseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
-                    var regex = new Regex(RegexFilter, regexOptions);
-                    filteredLogs = filteredLogs.Where(l => regex.IsMatch(l.Message));
+                    filteredLogs = filteredLogs.Where(l => l.Level == FilterLevel);
                 }
-                catch (ArgumentException)
+
+                // Filter by regex pattern
+                if (!string.IsNullOrEmpty(RegexFilter))
                 {
-                    // Invalid regex pattern, skip regex filtering
+                    try
+                    {
+                        var regexOptions = CaseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
+                        var regex = new Regex(RegexFilter, regexOptions);
+                        filteredLogs = filteredLogs.Where(l => regex.IsMatch(l.Message));
+                    }
+                    catch (ArgumentException)
+                    {
+                        // Invalid regex pattern, skip regex filtering
+                    }
                 }
-            }
 
-            var sb = new StringBuilder();
-            foreach (var log in filteredLogs)
+                var sb = new StringBuilder();
+                foreach (var log in filteredLogs)
+                {
+                    sb.AppendLine($"[{log.Timestamp:HH:mm:ss.fff}] [{log.Level}] {log.Message}");
+                }
+
+                LogText = sb.ToString();
+            }
+            catch (Exception)
             {
-                sb.AppendLine($"[{log.Timestamp:HH:mm:ss.fff}] [{log.Level}] {log.Message}");
+                // Silently handle any filtering errors to prevent crashes
             }
-
-            LogText = sb.ToString();
         }
 
         private void ClearLogs()
