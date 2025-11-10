@@ -6,7 +6,7 @@
         mc:Ignorable="d"
         Title="Clone Sheets from Linked Files"
         Height="650"
-        Width="1000"
+        Width="1200"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize">
 
@@ -167,7 +167,9 @@
 
                     <!-- Sheets DataGrid -->
                     <DataGrid Grid.Row="2"
+                              x:Name="SheetsDataGrid"
                               ItemsSource="{Binding AvailableSheets}"
+                              SelectedItem="{Binding SelectedSheet}"
                               AutoGenerateColumns="False"
                               CanUserAddRows="False"
                               CanUserDeleteRows="False"
@@ -179,7 +181,8 @@
                               IsReadOnly="False"
                               BorderBrush="#CCCCCC"
                               BorderThickness="1"
-                              RowHeight="32">
+                              RowHeight="32"
+                              SelectionUnit="FullRow">
 
                         <DataGrid.Columns>
                             <!-- Selection Checkbox -->
@@ -194,9 +197,9 @@
                             </DataGridTemplateColumn>
 
                             <!-- Sheet Number -->
-                            <DataGridTextColumn Header="Sheet Number"
+                            <DataGridTextColumn Header="Sheet No."
                                               Binding="{Binding SheetNumber}"
-                                              Width="150"
+                                              Width="60"
                                               IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -210,7 +213,7 @@
                             <!-- Sheet Name -->
                             <DataGridTextColumn Header="Sheet Name"
                                               Binding="{Binding SheetName}"
-                                              Width="*"
+                                              Width="150"
                                               IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -223,7 +226,7 @@
                             <!-- Viewport Count -->
                             <DataGridTextColumn Header="Views"
                                               Binding="{Binding ViewportCountDisplay}"
-                                              Width="100"
+                                              Width="80"
                                               IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -237,10 +240,42 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
 
+                            <!-- Status -->
+                            <DataGridTextColumn Header="Status"
+                                              Binding="{Binding StatusText}"
+                                              Width="80"
+                                              IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="Green"/>
+                                        <Setter Property="FontWeight" Value="Bold"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="5,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Source Tracking -->
+                            <DataGridTextColumn Header="Source"
+                                              Binding="{Binding SourceTrackingText}"
+                                              Width="*"
+                                              IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="Blue"/>
+                                        <Setter Property="FontStyle" Value="Italic"/>
+                                        <Setter Property="FontSize" Value="11"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="5,0"/>
+                                        <Setter Property="ToolTip" Value="{Binding SourceTrackingText}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
                             <!-- Source File -->
-                            <DataGridTextColumn Header="Source File"
+                            <DataGridTextColumn Header="Linked File"
                                               Binding="{Binding SourceFileName}"
-                                              Width="200"
+                                              Width="150"
                                               IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
@@ -290,6 +325,12 @@
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Margin="0,15,0,0">
+            <Button Content="Show in Project Browser"
+                    Command="{Binding ShowInProjectBrowserCommand}"
+                    Padding="15,10"
+                    Margin="0,0,10,0"
+                    FontSize="12"
+                    ToolTip="Highlight the selected cloned sheet in the Project Browser"/>
             <Button Content="Clone Selected Sheets"
                     Command="{Binding CloneSelectedSheetsCommand}"
                     Padding="20,10"

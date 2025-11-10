@@ -12,7 +12,10 @@ namespace LoBIM.Features.SheetCloning.Services
         /// <summary>
         /// Gets all sheets from a linked document
         /// </summary>
-        List<LinkedSheetInfo> GetSheetsFromLinkedFile(Document linkedDoc, string fileName);
+        /// <param name="hostDoc">The host document to check for existing cloned sheets</param>
+        /// <param name="linkedDoc">The linked document to get sheets from</param>
+        /// <param name="fileName">The file name of the linked document</param>
+        List<LinkedSheetInfo> GetSheetsFromLinkedFile(Document hostDoc, Document linkedDoc, string fileName);
 
         /// <summary>
         /// Clones selected sheets from linked files to the host document

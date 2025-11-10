@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Factories;
+using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
 
 namespace LoBIM.Features.ViewCloning.Services
@@ -54,6 +55,9 @@ namespace LoBIM.Features.ViewCloning.Services
 
                         // Get views from the linked document
                         linkInfo.Views = GetViewsFromLinkedFile(linkedDoc, linkInfo);
+
+                        // Check which views already exist in the host document with source tracking
+                        PopulateSourceTrackingInfo(doc, linkInfo);
 
                         linkedFiles.Add(linkInfo);
 
@@ -245,6 +249,19 @@ namespace LoBIM.Features.ViewCloning.Services
         {
             var clonedViewIds = new List<ElementId>();
 
+            // Ensure source tracking parameters exist BEFORE starting the transaction
+            // This must be done outside of any transaction since parameter creation requires its own transaction
+            try
+            {
+                // Create a temporary strategy instance to access the public parameter creation method
+                var tempStrategy = new PlanViewCloningStrategy(_logger);
+                tempStrategy.EnsureSourceTrackingParameters(hostDoc);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not ensure source tracking parameters before cloning: {ex.Message}");
+            }
+
             using (var transaction = new Transaction(hostDoc, "Clone Views from Linked Files"))
             {
                 transaction.Start();
@@ -263,6 +280,72 @@ namespace LoBIM.Features.ViewCloning.Services
 
             _logger.LogInformation($"Cloned {clonedViewIds.Count} out of {viewsToClone.Count} views");
             return clonedViewIds;
+        }
+
+        /// <summary>
+        /// Populates source tracking information for views by checking the host document
+        /// for views that were cloned from the linked file
+        /// </summary>
+        private void PopulateSourceTrackingInfo(Document hostDoc, LinkedFileInfo linkInfo)
+        {
+            try
+            {
+                // Get all views in the host document
+                var hostViews = new FilteredElementCollector(hostDoc)
+                    .OfClass(typeof(Autodesk.Revit.DB.View))
+                    .Cast<Autodesk.Revit.DB.View>()
+                    .Where(v => !v.IsTemplate)
+                    .ToList();
+
+                string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkInfo.FileName);
+
+                // Check each view in the linked file to see if it exists in the host
+                foreach (var linkedViewInfo in linkInfo.Views)
+                {
+                    foreach (var hostView in hostViews)
+                    {
+                        try
+                        {
+                            // Check source tracking parameters
+                            var sourceFileParam = hostView.LookupParameter("LoBIM_SourceFile");
+                            var sourceViewParam = hostView.LookupParameter("LoBIM_SourceView");
+                            var sourceIdParam = hostView.LookupParameter("LoBIM_SourceViewId");
+
+                            if (sourceFileParam != null && sourceViewParam != null && sourceIdParam != null)
+                            {
+                                string sourceFile = sourceFileParam.AsString();
+                                string sourceViewName = sourceViewParam.AsString();
+                                string sourceViewId = sourceIdParam.AsString();
+
+                                // Check if this host view was cloned from the current linked view
+                                if (!string.IsNullOrEmpty(sourceFile) &&
+                                    !string.IsNullOrEmpty(sourceViewName) &&
+                                    sourceFile.Contains(linkedFileName) &&
+                                    sourceViewName == linkedViewInfo.ViewName)
+                                {
+                                    // This view in the host was cloned from this linked view
+                                    linkedViewInfo.SourceFileName = sourceFile;
+                                    linkedViewInfo.SourceViewName = sourceViewName;
+                                    linkedViewInfo.SourceViewId = sourceViewId;
+                                    linkedViewInfo.IsCloned = true;
+                                    linkedViewInfo.ClonedViewId = hostView.Id;
+
+                                    _logger.LogInformation($"Found existing cloned view: {hostView.Name} from {sourceFile} > {sourceViewName}");
+                                    break; // Found the match, no need to check other host views for this linked view
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning($"Error checking source tracking for view {hostView.Name}: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error populating source tracking info: {ex.Message}", ex);
+            }
         }
 
         /// <summary>

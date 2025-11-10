@@ -108,6 +108,10 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 // However, we still need to copy annotation crop settings
                 CopyAnnotationCrop(sourceView, newSection);
 
+                // Store source view information for tracking
+                string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
+                StoreSourceViewInfo(sourceView, newSection, linkedFileName);
+
                 _logger.LogInformation($"Successfully cloned view: {newSection.Name}");
                 return newSection;
             }

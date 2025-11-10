@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LoBIM.Features.SheetCloning.Helpers;
 using LoBIM.Features.SheetCloning.Models;
 using LoBIM.Features.SheetCloning.Services;
+using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
 
 namespace LoBIM.Features.SheetCloning.EventHandlers
@@ -49,6 +51,23 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
             try
             {
                 _logger?.LogInformation($"Starting sheet cloning process for {_sheetsToClone.Count} sheets");
+
+                // Ensure source tracking parameters exist BEFORE starting the transaction
+                // This must be done outside of any transaction since parameter creation requires its own transaction
+                try
+                {
+                    // Ensure view source tracking parameters
+                    var strategy = new PlanViewCloningStrategy(_logger);
+                    strategy.EnsureSourceTrackingParameters(_uidoc.Document);
+
+                    // Ensure sheet source tracking parameters
+                    var sheetTrackingHelper = new SheetSourceTrackingHelper(_logger);
+                    sheetTrackingHelper.EnsureSourceTrackingParameters(_uidoc.Document);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning($"Could not ensure source tracking parameters before sheet cloning: {ex.Message}");
+                }
 
                 int successCount = 0;
 

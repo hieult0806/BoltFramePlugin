@@ -6,10 +6,12 @@ using System.Windows.Input;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LoBIM.Features.SheetCloning.EventHandlers;
+using LoBIM.Features.SheetCloning.Helpers;
 using LoBIM.Features.SheetCloning.Models;
 using LoBIM.Features.SheetCloning.Services;
 using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Services;
+using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
 using LoBIM.ViewModels;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
@@ -23,6 +25,8 @@ namespace LoBIM.Features.SheetCloning.ViewModels
         private readonly ILoggingService _logger;
         private readonly ExternalEvent _cloneSheetsEvent;
         private readonly CloneSheetsEventHandler _cloneSheetsHandler;
+        private readonly ExternalEvent _openSheetEvent;
+        private readonly OpenSheetEventHandler _openSheetHandler;
 
         private ObservableCollection<LinkedFileInfo> _linkedFiles;
         public ObservableCollection<LinkedFileInfo> LinkedFiles
@@ -67,6 +71,20 @@ namespace LoBIM.Features.SheetCloning.ViewModels
 
         public bool HasSheets => AvailableSheets?.Count > 0;
 
+        private LinkedSheetInfo? _selectedSheet;
+        public LinkedSheetInfo? SelectedSheet
+        {
+            get => _selectedSheet;
+            set
+            {
+                _selectedSheet = value;
+                OnPropertyChanged(nameof(SelectedSheet));
+                OnPropertyChanged(nameof(CanShowInProjectBrowser));
+            }
+        }
+
+        public bool CanShowInProjectBrowser => SelectedSheet != null && SelectedSheet.IsCloned && SelectedSheet.ClonedSheetId != null;
+
         private bool _isLoading;
         public bool IsLoading
         {
@@ -106,6 +124,7 @@ namespace LoBIM.Features.SheetCloning.ViewModels
         public ICommand SelectAllSheetsCommand { get; }
         public ICommand DeselectAllSheetsCommand { get; }
         public ICommand CloneSelectedSheetsCommand { get; }
+        public ICommand ShowInProjectBrowserCommand { get; }
         public ICommand CloseCommand { get; }
 
         private List<LinkedSheetInfo> _allSheets;
@@ -124,15 +143,49 @@ namespace LoBIM.Features.SheetCloning.ViewModels
             _cloneSheetsHandler = new CloneSheetsEventHandler(_logger, _sheetCloningService);
             _cloneSheetsEvent = ExternalEvent.Create(_cloneSheetsHandler);
 
+            // Initialize ExternalEvent for opening sheets
+            _openSheetHandler = new OpenSheetEventHandler();
+            _openSheetEvent = ExternalEvent.Create(_openSheetHandler);
+
             // Initialize commands
             RefreshLinkedFilesCommand = new RelayCommand(RefreshLinkedFiles);
             SelectAllSheetsCommand = new RelayCommand(SelectAllSheets);
             DeselectAllSheetsCommand = new RelayCommand(DeselectAllSheets);
             CloneSelectedSheetsCommand = new RelayCommand(CloneSelectedSheets, CanCloneSheets);
+            ShowInProjectBrowserCommand = new RelayCommand(ShowInProjectBrowser, param => CanShowInProjectBrowser);
             CloseCommand = new RelayCommand(Close);
+
+            // Ensure source tracking parameters exist when window opens
+            EnsureSourceTrackingParameters();
 
             // Load linked files on startup
             RefreshLinkedFiles(null);
+        }
+
+        /// <summary>
+        /// Ensures source tracking parameters exist in the document
+        /// This needs to be called outside of any transaction
+        /// </summary>
+        private void EnsureSourceTrackingParameters()
+        {
+            try
+            {
+                _logger.LogInformation("Ensuring source tracking parameters exist...");
+
+                // Ensure view source tracking parameters
+                var viewStrategy = new PlanViewCloningStrategy(_logger);
+                viewStrategy.EnsureSourceTrackingParameters(_document.Document);
+
+                // Ensure sheet source tracking parameters
+                var sheetTrackingHelper = new SheetSourceTrackingHelper(_logger);
+                sheetTrackingHelper.EnsureSourceTrackingParameters(_document.Document);
+
+                _logger.LogInformation("Source tracking parameters ready");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not ensure source tracking parameters: {ex.Message}");
+            }
         }
 
         private void RefreshLinkedFiles(object parameter)
@@ -186,11 +239,18 @@ namespace LoBIM.Features.SheetCloning.ViewModels
                 StatusMessage = $"Loading sheets from {SelectedLinkedFile.FileName}...";
 
                 var sheets = _sheetCloningService.GetSheetsFromLinkedFile(
+                    _document.Document,
                     SelectedLinkedFile.LinkedDocument,
                     SelectedLinkedFile.FileName);
 
                 _allSheets = sheets;
                 AvailableSheets = new ObservableCollection<LinkedSheetInfo>(sheets);
+
+                // Debug: Log sheet info
+                foreach (var sheet in sheets)
+                {
+                    _logger.LogInformation($"Sheet: {sheet.SheetNumber} - IsCloned: {sheet.IsCloned}, StatusText: '{sheet.StatusText}', SourceTrackingText: '{sheet.SourceTrackingText}'");
+                }
 
                 StatusMessage = $"Found {sheets.Count} sheet(s) in {SelectedLinkedFile.FileName}";
             }
@@ -255,6 +315,43 @@ namespace LoBIM.Features.SheetCloning.ViewModels
             return AvailableSheets != null && AvailableSheets.Any(s => s.IsSelected);
         }
 
+        private void ShowInProjectBrowser(object parameter)
+        {
+            try
+            {
+                if (SelectedSheet == null || !SelectedSheet.IsCloned || SelectedSheet.ClonedSheetId == null)
+                {
+                    StatusMessage = "Please select a cloned sheet to show in Project Browser";
+                    return;
+                }
+
+                // Use ExternalEvent to open the sheet
+                _openSheetHandler.SetParameters(_document, SelectedSheet.ClonedSheetId, OnOpenSheetCompleted);
+                _openSheetEvent.Raise();
+
+                StatusMessage = "Opening sheet...";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error showing sheet: {ex.Message}";
+                _logger.LogError($"Error showing sheet: {ex.Message}", ex);
+            }
+        }
+
+        private void OnOpenSheetCompleted(bool success, string sheetNumber)
+        {
+            if (success)
+            {
+                StatusMessage = $"Opened sheet '{sheetNumber}'";
+                _logger.LogInformation($"Opened sheet '{sheetNumber}' (Source: {SelectedSheet?.SourceTrackingFileName} > {SelectedSheet?.SourceTrackingSheetNumber})");
+            }
+            else
+            {
+                StatusMessage = $"Error opening sheet: {sheetNumber}";
+                _logger.LogError($"Error opening sheet: {sheetNumber}");
+            }
+        }
+
         private void CloneSelectedSheets(object parameter)
         {
             try
@@ -301,11 +398,8 @@ namespace LoBIM.Features.SheetCloning.ViewModels
                 StatusMessage = $"Successfully cloned {successCount} sheet(s)";
                 TaskDialog.Show("Success", $"Successfully cloned {successCount} sheet(s).");
 
-                // Deselect cloned sheets
-                foreach (var sheet in AvailableSheets.Where(s => s.IsSelected))
-                {
-                    sheet.IsSelected = false;
-                }
+                // Reload sheets from the selected file to refresh source tracking info
+                LoadSheetsFromSelectedFile();
             }
             else
             {

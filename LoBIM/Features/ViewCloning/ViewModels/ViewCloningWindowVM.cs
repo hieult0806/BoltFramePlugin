@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Services;
+using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
 using LoBIM.ViewModels;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
@@ -19,6 +20,8 @@ namespace LoBIM.Features.ViewCloning.ViewModels
         private readonly ILoggingService _logger;
         private readonly ExternalEvent _cloneViewsEvent;
         private readonly LoBIM.Features.ViewCloning.EventHandlers.CloneViewsEventHandler _cloneViewsHandler;
+        private readonly ExternalEvent _openViewEvent;
+        private readonly LoBIM.Features.ViewCloning.EventHandlers.OpenViewEventHandler _openViewHandler;
 
         private ObservableCollection<LinkedFileInfo> _linkedFiles;
         public ObservableCollection<LinkedFileInfo> LinkedFiles
@@ -48,6 +51,20 @@ namespace LoBIM.Features.ViewCloning.ViewModels
         }
 
         public bool HasSelectedLink => SelectedLinkedFile != null;
+
+        private LinkedViewInfo? _selectedView;
+        public LinkedViewInfo? SelectedView
+        {
+            get => _selectedView;
+            set
+            {
+                _selectedView = value;
+                OnPropertyChanged(nameof(SelectedView));
+                OnPropertyChanged(nameof(CanShowInProjectBrowser));
+            }
+        }
+
+        public bool CanShowInProjectBrowser => SelectedView != null && SelectedView.IsCloned && SelectedView.ClonedViewId != null;
 
         public ObservableCollection<LinkedViewInfo> AvailableViews
         {
@@ -112,6 +129,7 @@ namespace LoBIM.Features.ViewCloning.ViewModels
         public ICommand DeselectAllViewsCommand { get; }
         public ICommand CloneSelectedViewsCommand { get; }
         public ICommand LogSectionMarkerPositionCommand { get; }
+        public ICommand ShowInProjectBrowserCommand { get; }
         public ICommand CloseCommand { get; }
 
         public ViewCloningWindowVM(UIDocument uidoc) : base(uidoc)
@@ -125,16 +143,46 @@ namespace LoBIM.Features.ViewCloning.ViewModels
             _cloneViewsHandler = new LoBIM.Features.ViewCloning.EventHandlers.CloneViewsEventHandler();
             _cloneViewsEvent = ExternalEvent.Create(_cloneViewsHandler);
 
+            // Initialize ExternalEvent for opening views
+            _openViewHandler = new LoBIM.Features.ViewCloning.EventHandlers.OpenViewEventHandler();
+            _openViewEvent = ExternalEvent.Create(_openViewHandler);
+
             // Initialize commands
             RefreshLinkedFilesCommand = new RelayCommand(RefreshLinkedFiles);
             SelectAllViewsCommand = new RelayCommand(SelectAllViews);
             DeselectAllViewsCommand = new RelayCommand(DeselectAllViews);
             CloneSelectedViewsCommand = new RelayCommand(CloneSelectedViews, CanCloneViews);
             LogSectionMarkerPositionCommand = new RelayCommand(LogSectionMarkerPosition);
+            ShowInProjectBrowserCommand = new RelayCommand(ShowInProjectBrowser, param => CanShowInProjectBrowser);
             CloseCommand = new RelayCommand(Close);
+
+            // Ensure source tracking parameters exist when window opens
+            EnsureSourceTrackingParameters();
 
             // Load linked files on startup
             RefreshLinkedFiles(null);
+        }
+
+        /// <summary>
+        /// Ensures source tracking parameters exist in the document
+        /// This needs to be called outside of any transaction
+        /// </summary>
+        private void EnsureSourceTrackingParameters()
+        {
+            try
+            {
+                _logger.LogInformation("Ensuring view source tracking parameters exist...");
+
+                // Ensure view source tracking parameters
+                var viewStrategy = new PlanViewCloningStrategy(_logger);
+                viewStrategy.EnsureSourceTrackingParameters(_document.Document);
+
+                _logger.LogInformation("View source tracking parameters ready");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not ensure view source tracking parameters: {ex.Message}");
+            }
         }
 
         private void RefreshLinkedFiles(object parameter)
@@ -237,6 +285,43 @@ namespace LoBIM.Features.ViewCloning.ViewModels
             }
         }
 
+        private void ShowInProjectBrowser(object parameter)
+        {
+            try
+            {
+                if (SelectedView == null || !SelectedView.IsCloned || SelectedView.ClonedViewId == null)
+                {
+                    StatusMessage = "Please select a cloned view to show in Project Browser";
+                    return;
+                }
+
+                // Use ExternalEvent to open the view
+                _openViewHandler.SetParameters(_document, SelectedView.ClonedViewId, OnOpenViewCompleted);
+                _openViewEvent.Raise();
+
+                StatusMessage = "Opening view...";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error showing view: {ex.Message}";
+                _logger.LogError($"Error showing view: {ex.Message}", ex);
+            }
+        }
+
+        private void OnOpenViewCompleted(bool success, string viewName)
+        {
+            if (success)
+            {
+                StatusMessage = $"Opened view '{viewName}'";
+                _logger.LogInformation($"Opened view '{viewName}' (Source: {SelectedView?.SourceFileName} > {SelectedView?.SourceViewName})");
+            }
+            else
+            {
+                StatusMessage = $"Error opening view: {viewName}";
+                _logger.LogError($"Error opening view: {viewName}");
+            }
+        }
+
         private void LogSectionMarkerPosition(object parameter)
         {
             try
@@ -323,14 +408,14 @@ namespace LoBIM.Features.ViewCloning.ViewModels
                 if (successCount > 0)
                 {
                     StatusMessage = $"Successfully cloned {successCount} of {totalCount} view(s) from {SelectedLinkedFile?.FileName}. Opened last cloned view.";
+
+                    // Reload linked files to refresh source tracking info
+                    RefreshLinkedFiles(null);
                 }
                 else
                 {
                     StatusMessage = "No views were cloned. Check the log for details.";
                 }
-
-                // Refresh the UI
-                OnPropertyChanged(nameof(AvailableViews));
 
                 _logger.LogInformation($"Cloning completed: {successCount} views cloned");
             }

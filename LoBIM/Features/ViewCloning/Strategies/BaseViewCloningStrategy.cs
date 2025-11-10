@@ -314,5 +314,183 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 _logger.LogError($"Exception details: {ex}");
             }
         }
+
+        /// <summary>
+        /// Stores source view information in the cloned view's custom project parameters
+        /// This allows tracking which view was cloned from which source
+        /// NOTE: This must be called within an active transaction
+        /// </summary>
+        protected void StoreSourceViewInfo(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View clonedView, string linkedFileName)
+        {
+            try
+            {
+                _logger.LogInformation($"=== STORING SOURCE VIEW METADATA ===");
+
+                Document doc = clonedView.Document;
+
+                // Check if parameters exist, if not log a warning
+                // Parameters must be created outside of transactions (e.g., on document open)
+                var sourceFileParam = clonedView.LookupParameter("LoBIM_SourceFile");
+                var sourceViewParam = clonedView.LookupParameter("LoBIM_SourceView");
+                var sourceIdParam = clonedView.LookupParameter("LoBIM_SourceViewId");
+
+                if (sourceFileParam == null || sourceViewParam == null || sourceIdParam == null)
+                {
+                    _logger.LogWarning($"Source tracking parameters not found. Creating them now (requires separate transaction)...");
+                    // Try to create parameters - this will fail if we're in a transaction
+                    EnsureSourceTrackingParameters(doc);
+
+                    // Re-lookup parameters after creation attempt
+                    sourceFileParam = clonedView.LookupParameter("LoBIM_SourceFile");
+                    sourceViewParam = clonedView.LookupParameter("LoBIM_SourceView");
+                    sourceIdParam = clonedView.LookupParameter("LoBIM_SourceViewId");
+                }
+
+                // Store source file name
+                if (sourceFileParam != null && !sourceFileParam.IsReadOnly)
+                {
+                    sourceFileParam.Set(linkedFileName);
+                    _logger.LogInformation($"Stored source file: {linkedFileName}");
+                }
+                else
+                {
+                    _logger.LogWarning($"LoBIM_SourceFile parameter not found or read-only");
+                }
+
+                // Store source view name
+                if (sourceViewParam != null && !sourceViewParam.IsReadOnly)
+                {
+                    sourceViewParam.Set(sourceView.Name);
+                    _logger.LogInformation($"Stored source view name: {sourceView.Name}");
+                }
+                else
+                {
+                    _logger.LogWarning($"LoBIM_SourceView parameter not found or read-only");
+                }
+
+                // Store source view ID
+                if (sourceIdParam != null && !sourceIdParam.IsReadOnly)
+                {
+                    sourceIdParam.Set(sourceView.Id.ToString());
+                    _logger.LogInformation($"Stored source view ID: {sourceView.Id}");
+                }
+                else
+                {
+                    _logger.LogWarning($"LoBIM_SourceViewId parameter not found or read-only");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not store source view info: {ex.Message}");
+                _logger.LogError($"Exception details: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Ensures that the custom project parameters for source tracking exist
+        /// Creates them if they don't exist
+        /// This method must be called OUTSIDE of any active transaction
+        /// </summary>
+        public void EnsureSourceTrackingParameters(Document doc)
+        {
+            try
+            {
+                // Check if parameters already exist by looking at one view
+                var testView = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Autodesk.Revit.DB.View))
+                    .Cast<Autodesk.Revit.DB.View>()
+                    .FirstOrDefault(v => !v.IsTemplate);
+
+                if (testView == null)
+                {
+                    _logger.LogWarning($"No views found to check for parameters");
+                    return;
+                }
+
+                bool hasSourceFile = testView.LookupParameter("LoBIM_SourceFile") != null;
+                bool hasSourceView = testView.LookupParameter("LoBIM_SourceView") != null;
+                bool hasSourceId = testView.LookupParameter("LoBIM_SourceViewId") != null;
+
+                // If all parameters exist, no need to create them
+                if (hasSourceFile && hasSourceView && hasSourceId)
+                {
+                    return;
+                }
+
+                _logger.LogInformation($"Creating source tracking project parameters...");
+
+                using (Transaction trans = new Transaction(doc, "Create LoBIM Source Tracking Parameters"))
+                {
+                    trans.Start();
+
+                    CategorySet categories = doc.Application.Create.NewCategorySet();
+                    categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_Views));
+
+                    DefinitionFile defFile = doc.Application.OpenSharedParameterFile();
+                    DefinitionGroup defGroup = null;
+
+                    // Try to get or create definition group
+                    if (defFile != null)
+                    {
+                        defGroup = defFile.Groups.get_Item("LoBIM") ?? defFile.Groups.Create("LoBIM");
+                    }
+
+                    // Create parameters
+                    if (!hasSourceFile)
+                    {
+                        CreateProjectParameterFromSharedParam(doc, defGroup, "LoBIM_SourceFile",
+                            SpecTypeId.String.Text, categories, GroupTypeId.IdentityData);
+                    }
+
+                    if (!hasSourceView)
+                    {
+                        CreateProjectParameterFromSharedParam(doc, defGroup, "LoBIM_SourceView",
+                            SpecTypeId.String.Text, categories, GroupTypeId.IdentityData);
+                    }
+
+                    if (!hasSourceId)
+                    {
+                        CreateProjectParameterFromSharedParam(doc, defGroup, "LoBIM_SourceViewId",
+                            SpecTypeId.String.Text, categories, GroupTypeId.IdentityData);
+                    }
+
+                    trans.Commit();
+                    _logger.LogInformation($"Successfully created source tracking parameters");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not ensure source tracking parameters: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Creates a project parameter from a shared parameter definition
+        /// </summary>
+        private void CreateProjectParameterFromSharedParam(Document doc, DefinitionGroup defGroup,
+            string paramName, ForgeTypeId paramType, CategorySet categories, ForgeTypeId group)
+        {
+            try
+            {
+                Definition def = defGroup?.Definitions.get_Item(paramName);
+
+                if (def == null && defGroup != null)
+                {
+                    ExternalDefinitionCreationOptions options = new ExternalDefinitionCreationOptions(paramName, paramType);
+                    def = defGroup.Definitions.Create(options);
+                }
+
+                if (def != null)
+                {
+                    InstanceBinding binding = doc.Application.Create.NewInstanceBinding(categories);
+                    doc.ParameterBindings.Insert(def, binding, group);
+                    _logger.LogInformation($"Created parameter: {paramName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not create parameter {paramName}: {ex.Message}");
+            }
+        }
     }
 }

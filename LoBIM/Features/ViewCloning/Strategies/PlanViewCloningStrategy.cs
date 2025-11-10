@@ -59,7 +59,7 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 else
                 {
                     _logger.LogInformation($"=== REGULAR PLAN (NON-CALLOUT) ===");
-                    return CloneRegularPlan(hostDoc, sourcePlan, sourceView.Name, namePrefix);
+                    return CloneRegularPlan(hostDoc, sourcePlan, linkedDoc, sourceView.Name, namePrefix);
                 }
             }
             catch (Exception ex)
@@ -75,6 +75,7 @@ namespace LoBIM.Features.ViewCloning.Strategies
         private ViewPlan CloneRegularPlan(
             Document hostDoc,
             ViewPlan sourcePlan,
+            Document linkedDoc,
             string sourceViewName,
             string namePrefix)
         {
@@ -120,6 +121,10 @@ namespace LoBIM.Features.ViewCloning.Strategies
 
             // Copy crop region if source has one (plan views support custom shapes)
             CopyCropRegion(sourcePlan, newPlan, supportsCustomShapes: true);
+
+            // Store source view information for tracking
+            string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
+            StoreSourceViewInfo(sourcePlan, newPlan, linkedFileName);
 
             _logger.LogInformation($"Successfully cloned regular plan view: {newPlan.Name}");
 
@@ -355,6 +360,10 @@ namespace LoBIM.Features.ViewCloning.Strategies
             // Copy properties
             CopyScale(calloutPlan, newPlan);
             ApplyViewName(newPlan, calloutPlan.Name, namePrefix);
+
+            // Store source view information for tracking
+            string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
+            StoreSourceViewInfo(calloutPlan, newPlan, linkedFileName);
 
             _logger.LogInformation($"=== CREATED PLAN CALLOUT PROPERTIES ===");
             _logger.LogInformation($"Created Origin: {newPlan.Origin}");

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using LoBIM.Features.SheetCloning.Helpers;
 using LoBIM.Features.SheetCloning.Models;
 using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Services;
@@ -17,17 +18,19 @@ namespace LoBIM.Features.SheetCloning.Services
     {
         private readonly ILoggingService _logger;
         private readonly IViewCloningService _viewCloningService;
+        private readonly SheetSourceTrackingHelper _sourceTrackingHelper;
 
         public SheetCloningService(ILoggingService logger, IViewCloningService viewCloningService)
         {
             _logger = logger;
             _viewCloningService = viewCloningService;
+            _sourceTrackingHelper = new SheetSourceTrackingHelper(logger);
         }
 
         /// <summary>
         /// Gets all sheets from a linked document
         /// </summary>
-        public List<LinkedSheetInfo> GetSheetsFromLinkedFile(Document linkedDoc, string fileName)
+        public List<LinkedSheetInfo> GetSheetsFromLinkedFile(Document hostDoc, Document linkedDoc, string fileName)
         {
             var sheets = new List<LinkedSheetInfo>();
 
@@ -54,6 +57,9 @@ namespace LoBIM.Features.SheetCloning.Services
                     });
                 }
 
+                // Check which sheets already exist in the host document with source tracking
+                PopulateSheetSourceTrackingInfo(hostDoc, sheets, fileName);
+
                 _logger?.LogInformation($"Found {sheets.Count} sheets in {fileName}");
             }
             catch (Exception ex)
@@ -62,6 +68,85 @@ namespace LoBIM.Features.SheetCloning.Services
             }
 
             return sheets.OrderBy(s => s.SheetNumber).ToList();
+        }
+
+        /// <summary>
+        /// Populates source tracking information for sheets by checking the host document
+        /// for sheets that were cloned from the linked file
+        /// </summary>
+        private void PopulateSheetSourceTrackingInfo(Document hostDoc, List<LinkedSheetInfo> linkedSheets, string linkedFileName)
+        {
+            try
+            {
+                _logger?.LogInformation($"=== CHECKING FOR EXISTING CLONED SHEETS ===");
+                _logger?.LogInformation($"Linked file: {linkedFileName}");
+
+                // Get all sheets in the host document
+                var hostSheets = new FilteredElementCollector(hostDoc)
+                    .OfClass(typeof(ViewSheet))
+                    .Cast<ViewSheet>()
+                    .Where(s => !s.IsTemplate)
+                    .ToList();
+
+                _logger?.LogInformation($"Found {hostSheets.Count} sheets in host document");
+
+                // Check first sheet to see if parameters exist
+                if (hostSheets.Count > 0)
+                {
+                    var testSheet = hostSheets[0];
+                    var testParam = testSheet.LookupParameter("LoBIM_SourceFile");
+                    _logger?.LogInformation($"LoBIM_SourceFile parameter exists on sheets: {testParam != null}");
+                }
+
+                // Check each sheet in the linked file to see if it exists in the host
+                foreach (var linkedSheetInfo in linkedSheets)
+                {
+                    foreach (var hostSheet in hostSheets)
+                    {
+                        try
+                        {
+                            // Check source tracking parameters
+                            var sourceFileParam = hostSheet.LookupParameter("LoBIM_SourceFile");
+                            var sourceSheetParam = hostSheet.LookupParameter("LoBIM_SourceSheet");
+                            var sourceIdParam = hostSheet.LookupParameter("LoBIM_SourceSheetId");
+
+                            if (sourceFileParam != null && sourceSheetParam != null && sourceIdParam != null)
+                            {
+                                string sourceFile = sourceFileParam.AsString();
+                                string sourceSheetNumber = sourceSheetParam.AsString();
+                                string sourceSheetId = sourceIdParam.AsString();
+
+                                // Check if this host sheet was cloned from the current linked sheet
+                                if (!string.IsNullOrEmpty(sourceFile) &&
+                                    !string.IsNullOrEmpty(sourceSheetNumber) &&
+                                    sourceFile.Contains(linkedFileName) &&
+                                    sourceSheetNumber == linkedSheetInfo.SheetNumber)
+                                {
+                                    // This sheet in the host was cloned from this linked sheet
+                                    linkedSheetInfo.SourceTrackingFileName = sourceFile;
+                                    linkedSheetInfo.SourceTrackingSheetNumber = sourceSheetNumber;
+                                    linkedSheetInfo.SourceTrackingSheetId = sourceSheetId;
+                                    linkedSheetInfo.IsCloned = true;
+                                    linkedSheetInfo.ClonedSheetId = hostSheet.Id;
+
+                                    _logger?.LogInformation($"✓ Found existing cloned sheet: {hostSheet.SheetNumber} from {sourceFile} > {sourceSheetNumber}");
+                                    break; // Found the match, no need to check other host sheets for this linked sheet
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogWarning($"Error checking source tracking for sheet {hostSheet.SheetNumber}: {ex.Message}");
+                        }
+                    }
+                }
+
+                _logger?.LogInformation($"=== END CHECKING FOR EXISTING CLONED SHEETS ===");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"Error populating sheet source tracking info: {ex.Message}", ex);
+            }
         }
 
         /// <summary>
@@ -145,6 +230,10 @@ namespace LoBIM.Features.SheetCloning.Services
 
             // Copy parameters
             CopySheetParameters(sourceSheet, newSheet);
+
+            // Store source tracking information
+            string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
+            _sourceTrackingHelper.StoreSourceSheetInfo(sourceSheet, newSheet, linkedFileName);
 
             // Clone viewports (views placed on sheet)
             CloneViewports(hostDoc, sourceSheet, newSheet, linkedDoc, titleblockId);

@@ -89,6 +89,10 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 // Copy display style
                 CopyDisplayStyle(source3DView, cloned3DView);
 
+                // Store source view information for tracking
+                string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
+                StoreSourceViewInfo(source3DView, cloned3DView, linkedFileName);
+
                 _logger.LogInformation($"Successfully cloned 3D view: {cloned3DView.Name}");
                 return cloned3DView;
             }
