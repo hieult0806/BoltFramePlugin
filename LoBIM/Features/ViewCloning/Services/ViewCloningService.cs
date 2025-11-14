@@ -85,16 +85,40 @@ namespace LoBIM.Features.ViewCloning.Services
 
             try
             {
-                // Get all views from the linked document (excluding templates and sheets)
-                var viewCollector = new FilteredElementCollector(linkedDoc)
+                // Get all views from the linked document
+                var allViews = new FilteredElementCollector(linkedDoc)
                     .OfClass(typeof(Autodesk.Revit.DB.View))
                     .Cast<Autodesk.Revit.DB.View>()
+                    .ToList();
+
+                _logger.LogInformation($"=== ANALYZING VIEWS IN {linkedDoc.Title} ===");
+                _logger.LogInformation($"Total views found: {allViews.Count}");
+
+                // Group by ViewType to see what we have
+                var viewTypeGroups = allViews.GroupBy(v => v.ViewType).OrderByDescending(g => g.Count());
+                foreach (var group in viewTypeGroups)
+                {
+                    var templates = group.Count(v => v.IsTemplate);
+                    var nonTemplates = group.Count(v => !v.IsTemplate);
+                    _logger.LogInformation($"  {group.Key}: {group.Count()} total ({nonTemplates} views, {templates} templates)");
+                }
+
+                // Filter to only views that should be cloned
+                // Exclude: templates, sheets, internal views, legends, schedules
+                var viewCollector = allViews
                     .Where(v => !v.IsTemplate &&
                                 v.ViewType != ViewType.DrawingSheet &&
                                 v.ViewType != ViewType.ProjectBrowser &&
                                 v.ViewType != ViewType.SystemBrowser &&
+                                v.ViewType != ViewType.Internal &&
+                                v.ViewType != ViewType.Legend &&
+                                v.ViewType != ViewType.Schedule &&
+                                v.ViewType != ViewType.Report &&
+                                v.ViewType != ViewType.Undefined &&
                                 v.CanBePrinted) // Only printable views
                     .ToList();
+
+                _logger.LogInformation($"After filtering: {viewCollector.Count} cloneable views");
 
                 foreach (var view in viewCollector)
                 {
@@ -136,7 +160,7 @@ namespace LoBIM.Features.ViewCloning.Services
             return views;
         }
 
-        public ElementId? CloneView(Document hostDoc, LinkedViewInfo viewInfo, string namePrefix = "", ViewPositioningMode positioningMode = ViewPositioningMode.InternalOriginToInternalOrigin)
+        public ElementId? CloneView(Document hostDoc, LinkedViewInfo viewInfo, string namePrefix = "", ViewPositioningMode positioningMode = ViewPositioningMode.InternalOriginToInternalOrigin, Dictionary<string, ElementId>? clonedViewsCache = null)
         {
             try
             {
@@ -145,6 +169,17 @@ namespace LoBIM.Features.ViewCloning.Services
                 var linkInstance = viewInfo.ParentLink.LinkInstance;
 
                 _logger.LogInformation($"Cloning view: {sourceView.Name} from {linkedDoc.Title} using positioning mode: {positioningMode}");
+
+                // Create cache key using linked file name + source view ID to uniquely identify this view
+                string cacheKey = $"{System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title)}_{sourceView.Id.Value}";
+
+                // Check if this view was already cloned in this session
+                if (clonedViewsCache != null && clonedViewsCache.ContainsKey(cacheKey))
+                {
+                    var existingViewId = clonedViewsCache[cacheKey];
+                    _logger.LogInformation($"View '{sourceView.Name}' was already cloned in this session (ID: {existingViewId.Value}) - reusing existing clone");
+                    return existingViewId;
+                }
 
                 // CRITICAL: For ALL callout views, ensure parent view exists first
                 // Callouts can be any view type (ViewSection, ViewPlan, etc.)
@@ -163,39 +198,50 @@ namespace LoBIM.Features.ViewCloning.Services
                         {
                             _logger.LogInformation($"Parent view found: {parentView.Name} (ID: {calloutParentId.Value}, Type: {parentView.GetType().Name})");
 
-                            // Check if parent already exists in host document
-                            string expectedParentName = namePrefix + parentView.Name;
-                            bool parentExistsInHost = new FilteredElementCollector(hostDoc)
-                                .OfClass(typeof(Autodesk.Revit.DB.View))
-                                .Cast<Autodesk.Revit.DB.View>()
-                                .Any(v => v.Name == expectedParentName || v.Name == parentView.Name);
+                            // Check cache first for parent view
+                            string parentCacheKey = $"{System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title)}_{parentView.Id.Value}";
+                            bool parentExistsInCache = clonedViewsCache != null && clonedViewsCache.ContainsKey(parentCacheKey);
 
-                            if (!parentExistsInHost)
+                            if (parentExistsInCache)
                             {
-                                _logger.LogInformation($"Parent view does not exist in host document - cloning parent first");
-
-                                // Create LinkedViewInfo for parent and clone it recursively
-                                var parentViewInfo = new LinkedViewInfo
-                                {
-                                    View = parentView,
-                                    ViewName = parentView.Name,
-                                    ViewType = parentView.ViewType.ToString(),
-                                    ParentLink = viewInfo.ParentLink
-                                };
-
-                                var parentClonedId = CloneView(hostDoc, parentViewInfo, namePrefix, positioningMode);
-                                if (parentClonedId != null)
-                                {
-                                    _logger.LogInformation($"Parent view cloned successfully with ID: {parentClonedId.Value}");
-                                }
-                                else
-                                {
-                                    _logger.LogWarning($"Failed to clone parent view - callout positioning may be incorrect");
-                                }
+                                _logger.LogInformation($"Parent view already cloned in this session (cached)");
                             }
                             else
                             {
-                                _logger.LogInformation($"Parent view already exists in host document");
+                                // Check if parent already exists in host document
+                                string expectedParentName = namePrefix + parentView.Name;
+                                bool parentExistsInHost = new FilteredElementCollector(hostDoc)
+                                    .OfClass(typeof(Autodesk.Revit.DB.View))
+                                    .Cast<Autodesk.Revit.DB.View>()
+                                    .Any(v => v.Name == expectedParentName || v.Name == parentView.Name);
+
+                                if (!parentExistsInHost)
+                                {
+                                    _logger.LogInformation($"Parent view does not exist in host document - cloning parent first");
+
+                                    // Create LinkedViewInfo for parent and clone it recursively (passing cache)
+                                    var parentViewInfo = new LinkedViewInfo
+                                    {
+                                        View = parentView,
+                                        ViewName = parentView.Name,
+                                        ViewType = parentView.ViewType.ToString(),
+                                        ParentLink = viewInfo.ParentLink
+                                    };
+
+                                    var parentClonedId = CloneView(hostDoc, parentViewInfo, namePrefix, positioningMode, clonedViewsCache);
+                                    if (parentClonedId != null)
+                                    {
+                                        _logger.LogInformation($"Parent view cloned successfully with ID: {parentClonedId.Value}");
+                                    }
+                                    else
+                                    {
+                                        _logger.LogWarning($"Failed to clone parent view - callout positioning may be incorrect");
+                                    }
+                                }
+                                else
+                                {
+                                    _logger.LogInformation($"Parent view already exists in host document");
+                                }
                             }
                         }
                         else
@@ -232,6 +278,13 @@ namespace LoBIM.Features.ViewCloning.Services
                 {
                     viewInfo.IsCloned = true;
                     viewInfo.ClonedViewId = newView.Id;
+
+                    // Add to cache to prevent duplicate cloning
+                    if (clonedViewsCache != null)
+                    {
+                        clonedViewsCache[cacheKey] = newView.Id;
+                        _logger.LogInformation($"Added view '{sourceView.Name}' to cloning cache");
+                    }
 
                     _logger.LogInformation($"Successfully cloned view: {newView.Name} (ID: {newView.Id.Value})");
                     return newView.Id;

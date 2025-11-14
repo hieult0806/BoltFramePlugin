@@ -23,7 +23,16 @@ namespace LoBIM.Features.SheetCloning.Services
         /// <param name="hostDoc">The host document</param>
         /// <param name="sheets">List of sheets to clone</param>
         /// <param name="linkedDocuments">Dictionary mapping source file names to linked documents</param>
+        /// <param name="createdSheetNumbers">Optional set of sheet numbers already created in this session</param>
         /// <returns>Number of sheets successfully cloned</returns>
-        int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments);
+        int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null);
+
+        /// <summary>
+        /// Finds a sheet that's blocking Revit's auto-numbering and temporarily renames it.
+        /// Must be called in a separate transaction BEFORE the main cloning transaction.
+        /// </summary>
+        /// <param name="hostDoc">The host document</param>
+        /// <returns>The sheet that was renamed, or null if no blocker was found</returns>
+        ViewSheet FindAndClearAutoNumberBlocker(Document hostDoc);
     }
 }

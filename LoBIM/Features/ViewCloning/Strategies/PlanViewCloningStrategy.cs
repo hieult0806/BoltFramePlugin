@@ -90,21 +90,16 @@ namespace LoBIM.Features.ViewCloning.Strategies
             _logger.LogInformation($"Source plan uses level: {sourceLevelName}");
             _logger.LogInformation($"Searching for matching level in host document by name...");
 
-            // Find matching level in host document by name
-            var hostLevel = new FilteredElementCollector(hostDoc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .FirstOrDefault(l => l.Name.Equals(sourceLevelName, StringComparison.OrdinalIgnoreCase));
+            // Get or create matching level in host document
+            var hostLevel = GetOrCreateLevel(hostDoc, linkedDoc, sourceLevelFromLinkedDoc);
 
             if (hostLevel == null)
             {
-                _logger.LogWarning($"Could not find matching level '{sourceLevelName}' in host document for plan view: {sourceViewName}");
-                _logger.LogInformation($"Plan view cloning requires matching levels between linked and host documents");
-                _logger.LogInformation($"Available levels in host: {string.Join(", ", new FilteredElementCollector(hostDoc).OfClass(typeof(Level)).Cast<Level>().Select(l => l.Name))}");
+                _logger.LogError($"Could not find or create matching level '{sourceLevelName}' in host document for plan view: {sourceViewName}");
                 return null;
             }
 
-            _logger.LogInformation($"Found matching level in host: {hostLevel.Name} (ID: {hostLevel.Id})");
+            _logger.LogInformation($"Using level in host: {hostLevel.Name} (ID: {hostLevel.Id}, Elevation: {hostLevel.Elevation})");
 
             // Create a new plan view in the host document
             ViewPlan newPlan = ViewPlan.Create(hostDoc, sourcePlan.GetTypeId(), hostLevel.Id);
@@ -250,20 +245,16 @@ namespace LoBIM.Features.ViewCloning.Strategies
             _logger.LogInformation($"Source callout uses level: {sourceLevelName}");
             _logger.LogInformation($"Searching for matching level in host document by name...");
 
-            // Find matching level in host document by name
-            var hostLevel = new FilteredElementCollector(hostDoc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .FirstOrDefault(l => l.Name.Equals(sourceLevelName, StringComparison.OrdinalIgnoreCase));
+            // Get or create matching level in host document
+            var hostLevel = GetOrCreateLevel(hostDoc, linkedDoc, sourceLevelFromLinkedDoc);
 
             if (hostLevel == null)
             {
-                _logger.LogWarning($"Could not find matching level '{sourceLevelName}' in host document for plan callout");
-                _logger.LogInformation($"Available levels in host: {string.Join(", ", new FilteredElementCollector(hostDoc).OfClass(typeof(Level)).Cast<Level>().Select(l => l.Name))}");
+                _logger.LogError($"Could not find or create matching level '{sourceLevelName}' in host document for plan callout");
                 return null;
             }
 
-            _logger.LogInformation($"Found matching level in host: {hostLevel.Name} (ID: {hostLevel.Id})");
+            _logger.LogInformation($"Using level in host: {hostLevel.Name} (ID: {hostLevel.Id}, Elevation: {hostLevel.Elevation})");
 
             // Create a new plan view in the host document
             ViewPlan newPlan = ViewPlan.Create(hostDoc, calloutPlan.GetTypeId(), hostLevel.Id);
@@ -371,6 +362,169 @@ namespace LoBIM.Features.ViewCloning.Strategies
             _logger.LogInformation($"Successfully cloned plan callout: {newPlan.Name}");
 
             return newPlan;
+        }
+
+        /// <summary>
+        /// Gets or creates a matching level in the host document
+        /// If the level doesn't exist in the host, it will be created with matching name and elevation
+        /// </summary>
+        private Level GetOrCreateLevel(Document hostDoc, Document linkedDoc, Level sourceLevel)
+        {
+            var sourceLevelName = sourceLevel.Name;
+            var sourceLevelElevation = sourceLevel.Elevation;
+
+            _logger.LogInformation($"=== GETTING OR CREATING LEVEL ===");
+            _logger.LogInformation($"Source level: '{sourceLevelName}', Elevation: {sourceLevelElevation}");
+
+            // STEP 1: Try to find matching level in host document by name
+            var hostLevels = new FilteredElementCollector(hostDoc)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .ToList();
+
+            _logger.LogInformation($"Found {hostLevels.Count} levels in host document");
+            _logger.LogInformation($"Available levels in host: {string.Join(", ", hostLevels.Select(l => $"{l.Name} ({l.Elevation:F2})"))}");
+
+            // Try exact name match first
+            var matchingLevel = hostLevels.FirstOrDefault(l =>
+                l.Name.Equals(sourceLevelName, StringComparison.OrdinalIgnoreCase));
+
+            if (matchingLevel != null)
+            {
+                _logger.LogInformation($"Found existing level with exact name match: '{matchingLevel.Name}' (Elevation: {matchingLevel.Elevation})");
+
+                // Check if elevation matches
+                const double ELEVATION_TOLERANCE = 0.001; // ~1mm tolerance
+                if (Math.Abs(matchingLevel.Elevation - sourceLevelElevation) > ELEVATION_TOLERANCE)
+                {
+                    _logger.LogWarning($"Level '{matchingLevel.Name}' exists but elevation differs: Host={matchingLevel.Elevation}, Source={sourceLevelElevation}");
+                    _logger.LogWarning($"Using existing level anyway - elevation difference may affect view positioning");
+                }
+
+                return matchingLevel;
+            }
+
+            // STEP 2: Try to find by elevation (in case level was renamed)
+            matchingLevel = hostLevels.FirstOrDefault(l =>
+            {
+                const double ELEVATION_TOLERANCE = 0.001; // ~1mm tolerance
+                return Math.Abs(l.Elevation - sourceLevelElevation) <= ELEVATION_TOLERANCE;
+            });
+
+            if (matchingLevel != null)
+            {
+                _logger.LogInformation($"Found existing level with matching elevation: '{matchingLevel.Name}' at {matchingLevel.Elevation} (source was '{sourceLevelName}')");
+                _logger.LogInformation($"Using existing level '{matchingLevel.Name}' even though name differs from source");
+                return matchingLevel;
+            }
+
+            // STEP 3: Level doesn't exist - create it
+            _logger.LogInformation($"No matching level found in host. Creating new level '{sourceLevelName}' at elevation {sourceLevelElevation}...");
+
+            try
+            {
+                // Check if the name conflicts (shouldn't happen since we already checked, but be safe)
+                var nameToUse = sourceLevelName;
+                int suffix = 1;
+                while (hostLevels.Any(l => l.Name.Equals(nameToUse, StringComparison.OrdinalIgnoreCase)))
+                {
+                    nameToUse = $"{sourceLevelName}_{suffix}";
+                    suffix++;
+                    _logger.LogInformation($"Name conflict detected, trying: '{nameToUse}'");
+                }
+
+                // Create the new level
+                Level newLevel = Level.Create(hostDoc, sourceLevelElevation);
+
+                if (newLevel == null)
+                {
+                    _logger.LogError($"Failed to create level at elevation {sourceLevelElevation}");
+                    return null;
+                }
+
+                // Set the name
+                try
+                {
+                    newLevel.Name = nameToUse;
+                    _logger.LogInformation($"Successfully created level '{newLevel.Name}' at elevation {newLevel.Elevation}");
+                }
+                catch (Exception nameEx)
+                {
+                    _logger.LogWarning($"Created level but failed to set name to '{nameToUse}': {nameEx.Message}");
+                    _logger.LogInformation($"Using Revit's auto-generated name: '{newLevel.Name}'");
+                }
+
+                // Copy additional properties from source level
+                try
+                {
+                    CopyLevelProperties(sourceLevel, newLevel);
+                }
+                catch (Exception propEx)
+                {
+                    _logger.LogWarning($"Could not copy all level properties: {propEx.Message}");
+                }
+
+                _logger.LogInformation($"Successfully created and configured level '{newLevel.Name}' (ID: {newLevel.Id})");
+                return newLevel;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error creating level '{sourceLevelName}': {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Copies properties from source level to target level
+        /// </summary>
+        private void CopyLevelProperties(Level sourceLevel, Level targetLevel)
+        {
+            try
+            {
+                _logger.LogInformation($"Copying level properties from '{sourceLevel.Name}' to '{targetLevel.Name}'...");
+
+                // Copy parameters that are not read-only
+                foreach (Parameter sourceParam in sourceLevel.Parameters)
+                {
+                    if (sourceParam.IsReadOnly)
+                        continue;
+
+                    var targetParam = targetLevel.LookupParameter(sourceParam.Definition.Name);
+                    if (targetParam == null || targetParam.IsReadOnly)
+                        continue;
+
+                    try
+                    {
+                        switch (sourceParam.StorageType)
+                        {
+                            case StorageType.String:
+                                var stringValue = sourceParam.AsString();
+                                if (!string.IsNullOrEmpty(stringValue))
+                                    targetParam.Set(stringValue);
+                                break;
+                            case StorageType.Integer:
+                                targetParam.Set(sourceParam.AsInteger());
+                                break;
+                            case StorageType.Double:
+                                targetParam.Set(sourceParam.AsDouble());
+                                break;
+                            case StorageType.ElementId:
+                                // Skip ElementId parameters as they may not be valid in host doc
+                                break;
+                        }
+                    }
+                    catch (Exception paramEx)
+                    {
+                        _logger.LogDebug($"Could not copy parameter '{sourceParam.Definition.Name}': {paramEx.Message}");
+                    }
+                }
+
+                _logger.LogInformation($"Level properties copied successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Error copying level properties: {ex.Message}");
+            }
         }
     }
 }

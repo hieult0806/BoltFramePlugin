@@ -71,23 +71,66 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
 
                 int successCount = 0;
 
-                using (Transaction trans = new Transaction(_uidoc.Document, "Clone Sheets"))
+                // Track sheet numbers across all transactions to avoid conflicts
+                var createdSheetNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // Clone each sheet in its own transaction to avoid commit conflicts
+                // This ensures each sheet is fully committed before the next one starts
+                foreach (var sheetInfo in _sheetsToClone)
                 {
-                    trans.Start();
-
-                    try
+                    using (Transaction trans = new Transaction(_uidoc.Document, $"Clone Sheet {sheetInfo.SheetNumber}"))
                     {
-                        successCount = _sheetCloningService.CloneSheets(_uidoc.Document, _sheetsToClone, _linkedDocuments);
+                        trans.Start();
 
-                        trans.Commit();
-                        _logger?.LogInformation($"Successfully cloned {successCount} out of {_sheetsToClone.Count} sheets");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogError($"Error during sheet cloning transaction: {ex.Message}", ex);
-                        trans.RollBack();
+                        try
+                        {
+                            // Create a single-item list for this sheet
+                            var singleSheetList = new List<LinkedSheetInfo> { sheetInfo };
+
+                            int result = _sheetCloningService.CloneSheets(_uidoc.Document, singleSheetList, _linkedDocuments, createdSheetNumbers);
+
+                            if (result > 0)
+                            {
+                                _logger?.LogInformation($"About to commit transaction for sheet {sheetInfo.SheetNumber}");
+                                _logger?.LogInformation($"Transaction status: HasStarted={trans.HasStarted()}, HasEnded={trans.HasEnded()}");
+
+                                // Commit the transaction
+                                var commitStatus = trans.Commit();
+
+                                _logger?.LogInformation($"Transaction commit returned: {commitStatus}");
+                                _logger?.LogInformation($"Transaction status after commit: HasStarted={trans.HasStarted()}, HasEnded={trans.HasEnded()}");
+
+                                // Verify the sheet actually exists in the document after commit
+                                var verifySheet = new FilteredElementCollector(_uidoc.Document)
+                                    .OfClass(typeof(ViewSheet))
+                                    .Cast<ViewSheet>()
+                                    .Where(s => !s.IsTemplate)
+                                    .ToList();
+
+                                _logger?.LogInformation($"Total sheets in document after commit: {verifySheet.Count}");
+                                _logger?.LogInformation($"Sheet numbers after commit: {string.Join(", ", verifySheet.Select(s => s.SheetNumber).Take(20))}");
+
+                                successCount++;
+                                _logger?.LogInformation($"Successfully committed sheet {sheetInfo.SheetNumber}");
+                            }
+                            else
+                            {
+                                trans.RollBack();
+                                _logger?.LogWarning($"Failed to clone sheet {sheetInfo.SheetNumber}, rolling back");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogError($"Error cloning sheet {sheetInfo.SheetNumber}: {ex.Message}", ex);
+                            if (trans.HasStarted() && !trans.HasEnded())
+                            {
+                                trans.RollBack();
+                            }
+                        }
                     }
                 }
+
+                _logger?.LogInformation($"Successfully cloned {successCount} out of {_sheetsToClone.Count} sheets");
 
                 _onComplete?.Invoke(successCount);
             }
