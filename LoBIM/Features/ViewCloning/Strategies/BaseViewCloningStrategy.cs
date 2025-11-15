@@ -35,27 +35,49 @@ namespace LoBIM.Features.ViewCloning.Strategies
         {
             try
             {
-                _logger.LogInformation($"Getting link transform for mode: {positioningMode}");
+                _logger.LogInformation($"=== GET LINK TRANSFORM ===");
+                _logger.LogInformation($"Positioning mode: {positioningMode}");
 
-                switch (positioningMode)
+                // First, let's see what the link's actual transform is
+                var linkTransform = linkInstance.GetTransform();
+                _logger.LogInformation($"Link instance transform:");
+                _logger.LogInformation($"  Origin: ({linkTransform.Origin.X:F4}, {linkTransform.Origin.Y:F4}, {linkTransform.Origin.Z:F4})");
+                _logger.LogInformation($"  BasisX: ({linkTransform.BasisX.X:F4}, {linkTransform.BasisX.Y:F4}, {linkTransform.BasisX.Z:F4})");
+                _logger.LogInformation($"  BasisY: ({linkTransform.BasisY.X:F4}, {linkTransform.BasisY.Y:F4}, {linkTransform.BasisY.Z:F4})");
+                _logger.LogInformation($"  BasisZ: ({linkTransform.BasisZ.X:F4}, {linkTransform.BasisZ.Y:F4}, {linkTransform.BasisZ.Z:F4})");
+
+                // Check if it's identity
+                bool isIdentity = linkTransform.IsIdentity;
+                _logger.LogInformation($"  Is Identity: {isIdentity}");
+
+                // CRITICAL FIX: We ALWAYS need to apply the link transform
+                // The link transform tells us where the linked content is positioned in the host
+                // regardless of which coordinate system was used to place it
+
+                _logger.LogInformation($"Mode: {positioningMode}");
+                _logger.LogInformation($"✓ ALWAYS applying link transform (this is correct!)");
+                _logger.LogInformation($"");
+                _logger.LogInformation($"EXPLANATION:");
+                _logger.LogInformation($"  - View crop regions are in the LINKED document's coordinate system");
+                _logger.LogInformation($"  - linkInstance.GetTransform() tells us where the linked doc is in the host");
+                _logger.LogInformation($"  - We MUST apply this transform to position views correctly");
+                _logger.LogInformation($"");
+
+                if (isIdentity)
                 {
-                    case ViewPositioningMode.ProjectBasePointToProjectBasePoint:
-                    case ViewPositioningMode.BySharedCoordinates:
-                        // For shared coordinates, the linked file uses the same coordinate system
-                        // No transformation needed - views are already positioned correctly
-                        _logger.LogInformation($"Shared coordinates mode - Using Identity transform (no adjustment)");
-                        _logger.LogInformation($"Linked file and host file share the same coordinate system");
-                        return Transform.Identity;
-
-                    case ViewPositioningMode.InternalOriginToInternalOrigin:
-                    default:
-                        // Use the link's placement transform based on how it was placed in the host
-                        // This accounts for any offset/rotation applied when the link was inserted
-                        var transform = linkInstance.GetTransform();
-                        _logger.LogInformation($"InternalOrigin mode - Using link placement transform");
-                        _logger.LogInformation($"Link transform - Origin: {transform.Origin}, Rotation: {transform.BasisX}, {transform.BasisY}, {transform.BasisZ}");
-                        return transform;
+                    _logger.LogInformation($"ℹ️ Link transform is Identity (no offset/rotation)");
+                    _logger.LogInformation($"ℹ️ Linked content is at same position as host content");
                 }
+                else
+                {
+                    _logger.LogInformation($"ℹ️ Link has offset: ({linkTransform.Origin.X:F4}, {linkTransform.Origin.Y:F4}, {linkTransform.Origin.Z:F4})");
+                    _logger.LogInformation($"ℹ️ Views will be shifted by this amount to match linked content position");
+                }
+
+                // ALWAYS return the link transform
+                // This is correct for ALL positioning modes because the view coordinates
+                // are always relative to the linked document, not the host document
+                return linkTransform;
             }
             catch (Exception ex)
             {
@@ -137,8 +159,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
         /// </summary>
         /// <param name="sourceView">Source view to copy from</param>
         /// <param name="targetView">Target view to copy to</param>
+        /// <param name="transform">Transform to apply to crop region coordinates (for positioning modes)</param>
         /// <param name="supportsCustomShapes">Whether the view type supports custom crop shapes (false for 3D views)</param>
-        protected void CopyCropRegion(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView, bool supportsCustomShapes = true)
+        protected void CopyCropRegion(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView, Transform transform = null, bool supportsCustomShapes = true)
         {
             try
             {
@@ -153,6 +176,17 @@ namespace LoBIM.Features.ViewCloning.Strategies
 
                 _logger.LogInformation($"Source has crop box active - copying crop region");
 
+                // Use identity transform if none provided
+                if (transform == null)
+                {
+                    transform = Transform.Identity;
+                    _logger.LogInformation($"No transform provided - using Identity transform");
+                }
+                else
+                {
+                    _logger.LogInformation($"Applying transform to crop region - Origin: {transform.Origin}");
+                }
+
                 // Enable crop box on target
                 targetView.CropBoxActive = true;
                 targetView.CropBoxVisible = sourceView.CropBoxVisible;
@@ -163,9 +197,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 if (supportsCustomShapes)
                 {
                     // Try to copy custom crop shape first
-                    if (TryCopyCustomCropShape(sourceView, targetView))
+                    if (TryCopyCustomCropShape(sourceView, targetView, transform))
                     {
-                        _logger.LogInformation($"Successfully copied custom crop region");
+                        _logger.LogInformation($"Successfully copied custom crop region with transform");
                         return;
                     }
                 }
@@ -175,7 +209,7 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 }
 
                 // Fall back to rectangular crop box
-                CopyRectangularCropBox(sourceView, targetView);
+                CopyRectangularCropBox(sourceView, targetView, transform);
             }
             catch (Exception ex)
             {
@@ -187,7 +221,7 @@ namespace LoBIM.Features.ViewCloning.Strategies
         /// Attempts to copy custom crop shape from source to target view
         /// </summary>
         /// <returns>True if custom shape was copied, false otherwise</returns>
-        private bool TryCopyCustomCropShape(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView)
+        private bool TryCopyCustomCropShape(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView, Transform transform)
         {
             try
             {
@@ -198,20 +232,30 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 {
                     _logger.LogInformation($"Source crop region has {sourceCropShape.Count} curve loops - copying custom shape");
 
+                    // Transform the crop shape curves to the target coordinate system
+                    var sourceCropCurves = sourceCropShape[0];
+                    var transformedCurveLoop = new CurveLoop();
+
+                    foreach (Curve curve in sourceCropCurves)
+                    {
+                        // Transform the curve endpoints
+                        var transformedCurve = curve.CreateTransformed(transform);
+                        transformedCurveLoop.Append(transformedCurve);
+                    }
+
                     var targetCropManager = targetView.GetCropRegionShapeManager();
-                    targetCropManager.SetCropShape(sourceCropShape.First());
+                    targetCropManager.SetCropShape(transformedCurveLoop);
 
                     // CRITICAL FIX: Update the crop box bounding box to match the custom shape extent
                     // Without this, the crop box stays huge and viewports will be incorrectly sized
+                    // Use the TRANSFORMED curves for calculating bounds
                     try
                     {
-                        var sourceCropCurves = sourceCropShape[0];
-
-                        // Calculate tight bounding box around the custom crop shape
+                        // Calculate tight bounding box around the transformed custom crop shape
                         double minX = double.MaxValue, minY = double.MaxValue;
                         double maxX = double.MinValue, maxY = double.MinValue;
 
-                        foreach (Curve curve in sourceCropCurves)
+                        foreach (Curve curve in transformedCurveLoop)
                         {
                             var pt0 = curve.GetEndPoint(0);
                             var pt1 = curve.GetEndPoint(1);
@@ -232,7 +276,7 @@ namespace LoBIM.Features.ViewCloning.Strategies
                         };
 
                         targetView.CropBox = tightCropBox;
-                        _logger.LogInformation($"Updated crop box to tight bounds: ({minX:F2}, {minY:F2}) to ({maxX:F2}, {maxY:F2})");
+                        _logger.LogInformation($"Updated crop box to tight bounds (transformed): ({minX:F2}, {minY:F2}) to ({maxX:F2}, {maxY:F2})");
                     }
                     catch (Exception cropBoxEx)
                     {
@@ -252,9 +296,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
         }
 
         /// <summary>
-        /// Copies rectangular crop box from source to target view
+        /// Copies rectangular crop box from source to target view, applying the specified transform
         /// </summary>
-        private void CopyRectangularCropBox(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView)
+        private void CopyRectangularCropBox(Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View targetView, Transform transform)
         {
             try
             {
@@ -262,8 +306,24 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 if (sourceCropBox != null)
                 {
                     _logger.LogInformation($"Source has default rectangular crop region");
-                    targetView.CropBox = sourceCropBox;
-                    _logger.LogInformation($"Copied crop box: Min={sourceCropBox.Min}, Max={sourceCropBox.Max}");
+                    _logger.LogInformation($"Source crop box: Min={sourceCropBox.Min}, Max={sourceCropBox.Max}");
+
+                    // Transform the crop box min/max points to the target coordinate system
+                    XYZ transformedMin = transform.OfPoint(sourceCropBox.Min);
+                    XYZ transformedMax = transform.OfPoint(sourceCropBox.Max);
+
+                    _logger.LogInformation($"Transformed crop box: Min={transformedMin}, Max={transformedMax}");
+
+                    // Create a new crop box with transformed coordinates
+                    var transformedCropBox = new BoundingBoxXYZ
+                    {
+                        Min = transformedMin,
+                        Max = transformedMax,
+                        Transform = sourceCropBox.Transform
+                    };
+
+                    targetView.CropBox = transformedCropBox;
+                    _logger.LogInformation($"Applied transformed crop box to target view");
                 }
             }
             catch (Exception ex)

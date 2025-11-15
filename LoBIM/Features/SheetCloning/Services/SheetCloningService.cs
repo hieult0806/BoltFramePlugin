@@ -152,7 +152,7 @@ namespace LoBIM.Features.SheetCloning.Services
         /// <summary>
         /// Clones selected sheets from linked files to the host document
         /// </summary>
-        public int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null)
+        public int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null, ViewPositioningMode viewPositioningMode = ViewPositioningMode.ProjectBasePointToProjectBasePoint)
         {
             int successCount = 0;
             // Track sheet numbers created in this session to avoid conflicts
@@ -164,6 +164,10 @@ namespace LoBIM.Features.SheetCloning.Services
 
             // Track cloned views to avoid duplicating views when cloning multiple sheets
             var clonedViewsCache = new Dictionary<string, ElementId>(StringComparer.OrdinalIgnoreCase);
+
+            _logger?.LogInformation($"=== SHEET CLONING SESSION START ===");
+            _logger?.LogInformation($"View positioning mode: {viewPositioningMode}");
+            _logger?.LogInformation($"Sheets to clone: {sheets.Count}");
 
             try
             {
@@ -184,7 +188,7 @@ namespace LoBIM.Features.SheetCloning.Services
 
                     try
                     {
-                        var clonedSheet = CloneSingleSheet(hostDoc, sourceSheet, linkedDoc, createdSheetNumbers, clonedViewsCache);
+                        var clonedSheet = CloneSingleSheet(hostDoc, sourceSheet, linkedDoc, createdSheetNumbers, clonedViewsCache, viewPositioningMode);
                         if (clonedSheet != null)
                         {
                             // Note: The sheet number is already added to createdSheetNumbers inside CloneSingleSheet
@@ -204,13 +208,16 @@ namespace LoBIM.Features.SheetCloning.Services
                 _logger?.LogError($"Error during sheet cloning: {ex.Message}", ex);
             }
 
+            _logger?.LogInformation($"=== SHEET CLONING SESSION END ===");
+            _logger?.LogInformation($"Successfully cloned {successCount} out of {sheets.Count} sheets");
+
             return successCount;
         }
 
         /// <summary>
         /// Clones a single sheet from linked document to host document
         /// </summary>
-        private ViewSheet CloneSingleSheet(Document hostDoc, ViewSheet sourceSheet, Document linkedDoc, HashSet<string> createdSheetNumbers, Dictionary<string, ElementId> clonedViewsCache)
+        private ViewSheet CloneSingleSheet(Document hostDoc, ViewSheet sourceSheet, Document linkedDoc, HashSet<string> createdSheetNumbers, Dictionary<string, ElementId> clonedViewsCache, ViewPositioningMode viewPositioningMode)
         {
             // STEP 1: Calculate the unique sheet number BEFORE creating the sheet
             _logger?.LogInformation($"=== Calculating unique sheet number for '{sourceSheet.SheetNumber}' ===");
@@ -368,10 +375,10 @@ namespace LoBIM.Features.SheetCloning.Services
             }
 
             // Clone viewports (views placed on sheet)
-            _logger?.LogInformation($"Cloning viewports...");
+            _logger?.LogInformation($"Cloning viewports with positioning mode: {viewPositioningMode}...");
             try
             {
-                CloneViewports(hostDoc, sourceSheet, newSheet, linkedDoc, titleblockId, clonedViewsCache);
+                CloneViewports(hostDoc, sourceSheet, newSheet, linkedDoc, titleblockId, clonedViewsCache, viewPositioningMode);
             }
             catch (Exception ex)
             {
@@ -1067,7 +1074,7 @@ namespace LoBIM.Features.SheetCloning.Services
         /// <summary>
         /// Clones all viewports (views placed on sheet) from source sheet to target sheet
         /// </summary>
-        private void CloneViewports(Document hostDoc, ViewSheet sourceSheet, ViewSheet targetSheet, Document linkedDoc, ElementId targetTitleblockId, Dictionary<string, ElementId> clonedViewsCache)
+        private void CloneViewports(Document hostDoc, ViewSheet sourceSheet, ViewSheet targetSheet, Document linkedDoc, ElementId targetTitleblockId, Dictionary<string, ElementId> clonedViewsCache, ViewPositioningMode viewPositioningMode)
         {
             try
             {
@@ -1141,12 +1148,13 @@ namespace LoBIM.Features.SheetCloning.Services
                             ParentLink = parentLink
                         };
 
-                        // Clone the view using the ViewCloningService - it returns ElementId? but we handle as object
+                        // Clone the view using the ViewCloningService with the specified positioning mode
+                        _logger?.LogInformation($"Cloning view '{sourceView.Name}' with positioning mode: {viewPositioningMode}");
                         var clonedViewIdResult = _viewCloningService.CloneView(
                             hostDoc,
                             linkedViewInfo,
                             "",
-                            ViewPositioningMode.InternalOriginToInternalOrigin,
+                            viewPositioningMode,
                             clonedViewsCache);
 
                         // The CloneView returns ElementId? - we check if it returned something

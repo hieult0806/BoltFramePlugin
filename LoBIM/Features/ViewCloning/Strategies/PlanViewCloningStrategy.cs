@@ -59,7 +59,7 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 else
                 {
                     _logger.LogInformation($"=== REGULAR PLAN (NON-CALLOUT) ===");
-                    return CloneRegularPlan(hostDoc, sourcePlan, linkedDoc, sourceView.Name, namePrefix);
+                    return CloneRegularPlan(hostDoc, sourcePlan, linkedDoc, linkInstance, sourceView.Name, namePrefix, positioningMode);
                 }
             }
             catch (Exception ex)
@@ -76,11 +76,13 @@ namespace LoBIM.Features.ViewCloning.Strategies
             Document hostDoc,
             ViewPlan sourcePlan,
             Document linkedDoc,
+            RevitLinkInstance linkInstance,
             string sourceViewName,
-            string namePrefix)
+            string namePrefix,
+            ViewPositioningMode positioningMode)
         {
             _logger.LogInformation($"Cloning regular plan view: {sourceViewName}");
-            _logger.LogInformation($"Note: Plan views use simple duplication - positioning mode has limited effect");
+            _logger.LogInformation($"Positioning mode: {positioningMode}");
 
             // For plan views, we need to find a matching level in the host by NAME
             // (We cannot use the level ID from the linked document)
@@ -114,8 +116,12 @@ namespace LoBIM.Features.ViewCloning.Strategies
             CopyScale(sourcePlan, newPlan);
             ApplyViewName(newPlan, sourceViewName, namePrefix);
 
+            // Get the link transform based on positioning mode
+            Transform linkTransform = GetLinkTransform(linkInstance, positioningMode);
+
             // Copy crop region if source has one (plan views support custom shapes)
-            CopyCropRegion(sourcePlan, newPlan, supportsCustomShapes: true);
+            // Pass the transform so crop regions are positioned correctly
+            CopyCropRegion(sourcePlan, newPlan, linkTransform, supportsCustomShapes: true);
 
             // Store source view information for tracking
             string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);

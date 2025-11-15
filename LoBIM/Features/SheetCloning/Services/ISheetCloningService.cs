@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using LoBIM.Features.SheetCloning.Models;
+using LoBIM.Features.ViewCloning.Models;
 
 namespace LoBIM.Features.SheetCloning.Services
 {
@@ -24,8 +25,9 @@ namespace LoBIM.Features.SheetCloning.Services
         /// <param name="sheets">List of sheets to clone</param>
         /// <param name="linkedDocuments">Dictionary mapping source file names to linked documents</param>
         /// <param name="createdSheetNumbers">Optional set of sheet numbers already created in this session</param>
+        /// <param name="viewPositioningMode">Positioning mode for views placed on sheets (defaults to ProjectBasePointToProjectBasePoint)</param>
         /// <returns>Number of sheets successfully cloned</returns>
-        int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null);
+        int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null, ViewPositioningMode viewPositioningMode = ViewPositioningMode.ProjectBasePointToProjectBasePoint);
 
         /// <summary>
         /// Finds a sheet that's blocking Revit's auto-numbering and temporarily renames it.
