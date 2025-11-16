@@ -49,6 +49,7 @@ namespace LoBIM.Services
 
             // View Cloning Services
             container.RegisterSingleton<LoBIM.Features.ViewCloning.Services.IViewCloningService, LoBIM.Features.ViewCloning.Services.ViewCloningService>();
+            container.RegisterSingleton<LoBIM.Features.ViewCloning.Services.IViewTemplateTransferService, LoBIM.Features.ViewCloning.Services.ViewTemplateTransferService>();
 
             // Sheet Cloning Services
             container.RegisterSingleton<LoBIM.Features.SheetCloning.Services.ISheetCloningService, LoBIM.Features.SheetCloning.Services.SheetCloningService>();

@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using LoBIM.Features.ViewCloning.Models;
+using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Services;
 using System;
 using System.Linq;
@@ -11,8 +12,11 @@ namespace LoBIM.Features.ViewCloning.Strategies
     /// </summary>
     public class View3DViewCloningStrategy : BaseViewCloningStrategy
     {
-        public View3DViewCloningStrategy(ILoggingService logger, LoBIM.Services.Parameters.IProjectParameterService parameterService)
-            : base(logger, parameterService)
+        public View3DViewCloningStrategy(
+            ILoggingService logger,
+            LoBIM.Services.Parameters.IProjectParameterService parameterService,
+            IViewTemplateTransferService viewTemplateService)
+            : base(logger, parameterService, viewTemplateService)
         {
         }
 
@@ -93,6 +97,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 // Store source view information for tracking
                 string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
                 StoreSourceViewInfo(source3DView, cloned3DView, linkedFileName);
+
+                // Copy View Template if source has one (transfer if needed)
+                CopyViewTemplate(hostDoc, source3DView, cloned3DView, linkedDoc);
 
                 _logger.LogInformation($"Successfully cloned 3D view: {cloned3DView.Name}");
                 return cloned3DView;

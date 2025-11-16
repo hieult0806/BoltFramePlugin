@@ -5,6 +5,7 @@ using Autodesk.Revit.UI;
 using LoBIM.Features.SheetCloning.Helpers;
 using LoBIM.Features.SheetCloning.Models;
 using LoBIM.Features.SheetCloning.Services;
+using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
 using LoBIM.Services.Parameters;
@@ -59,8 +60,11 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
                 // This must be done outside of any transaction since parameter creation requires its own transaction
                 try
                 {
+                    // Get view template service from DI
+                    var viewTemplateService = DIContainerService.Container.GetInstance<IViewTemplateTransferService>();
+
                     // Ensure view source tracking parameters
-                    var strategy = new PlanViewCloningStrategy(_logger, _parameterService);
+                    var strategy = new PlanViewCloningStrategy(_logger, _parameterService, viewTemplateService);
                     strategy.EnsureSourceTrackingParameters(_uidoc.Document);
 
                     // Ensure sheet source tracking parameters

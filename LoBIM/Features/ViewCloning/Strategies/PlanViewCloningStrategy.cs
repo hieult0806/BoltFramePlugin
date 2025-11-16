@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using LoBIM.Features.ViewCloning.Models;
+using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Services;
 using System;
 using System.Linq;
@@ -12,8 +13,11 @@ namespace LoBIM.Features.ViewCloning.Strategies
     /// </summary>
     public class PlanViewCloningStrategy : BaseViewCloningStrategy
     {
-        public PlanViewCloningStrategy(ILoggingService logger, LoBIM.Services.Parameters.IProjectParameterService parameterService)
-            : base(logger, parameterService)
+        public PlanViewCloningStrategy(
+            ILoggingService logger,
+            LoBIM.Services.Parameters.IProjectParameterService parameterService,
+            IViewTemplateTransferService viewTemplateService)
+            : base(logger, parameterService, viewTemplateService)
         {
         }
 
@@ -127,6 +131,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
             // Store source view information for tracking
             string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
             StoreSourceViewInfo(sourcePlan, newPlan, linkedFileName);
+
+            // Copy View Template if source has one (transfer if needed)
+            CopyViewTemplate(hostDoc, sourcePlan, newPlan, linkedDoc);
 
             _logger.LogInformation($"Successfully cloned regular plan view: {newPlan.Name}");
 
@@ -362,6 +369,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
             // Store source view information for tracking
             string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
             StoreSourceViewInfo(calloutPlan, newPlan, linkedFileName);
+
+            // Copy View Template if source has one (transfer if needed)
+            CopyViewTemplate(hostDoc, calloutPlan, newPlan, linkedDoc);
 
             _logger.LogInformation($"=== CREATED PLAN CALLOUT PROPERTIES ===");
             _logger.LogInformation($"Created Origin: {newPlan.Origin}");

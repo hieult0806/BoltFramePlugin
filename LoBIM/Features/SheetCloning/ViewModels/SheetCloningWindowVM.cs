@@ -187,9 +187,10 @@ namespace LoBIM.Features.SheetCloning.ViewModels
                 _logger.LogInformation("Ensuring source tracking parameters exist...");
 
                 var parameterService = DIContainerService.Container.GetInstance<IProjectParameterService>();
+                var viewTemplateService = DIContainerService.Container.GetInstance<LoBIM.Features.ViewCloning.Services.IViewTemplateTransferService>();
 
                 // Ensure view source tracking parameters
-                var viewStrategy = new PlanViewCloningStrategy(_logger, parameterService);
+                var viewStrategy = new PlanViewCloningStrategy(_logger, parameterService, viewTemplateService);
                 viewStrategy.EnsureSourceTrackingParameters(_document.Document);
 
                 // Ensure sheet source tracking parameters

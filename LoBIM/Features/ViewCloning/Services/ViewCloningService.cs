@@ -18,13 +18,18 @@ namespace LoBIM.Features.ViewCloning.Services
     {
         private readonly ILoggingService _logger;
         private readonly IProjectParameterService _parameterService;
+        private readonly IViewTemplateTransferService _viewTemplateService;
         private readonly ViewCloningStrategyFactory _strategyFactory;
 
-        public ViewCloningService(ILoggingService logger, IProjectParameterService parameterService)
+        public ViewCloningService(
+            ILoggingService logger,
+            IProjectParameterService parameterService,
+            IViewTemplateTransferService viewTemplateService)
         {
             _logger = logger;
             _parameterService = parameterService;
-            _strategyFactory = new ViewCloningStrategyFactory(logger, parameterService);
+            _viewTemplateService = viewTemplateService;
+            _strategyFactory = new ViewCloningStrategyFactory(logger, parameterService, viewTemplateService);
         }
 
         public List<LinkedFileInfo> GetLinkedFiles(Document doc)
@@ -310,7 +315,7 @@ namespace LoBIM.Features.ViewCloning.Services
             try
             {
                 // Create a temporary strategy instance to access the public parameter creation method
-                var tempStrategy = new PlanViewCloningStrategy(_logger, _parameterService);
+                var tempStrategy = new PlanViewCloningStrategy(_logger, _parameterService, _viewTemplateService);
                 tempStrategy.EnsureSourceTrackingParameters(hostDoc);
             }
             catch (Exception ex)

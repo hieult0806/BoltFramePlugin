@@ -155,7 +155,7 @@ namespace LoBIM.Features.SheetCloning.Services
         /// <summary>
         /// Clones selected sheets from linked files to the host document
         /// </summary>
-        public int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null, ViewPositioningMode viewPositioningMode = ViewPositioningMode.ProjectBasePointToProjectBasePoint)
+        public int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null, ViewPositioningMode viewPositioningMode = ViewPositioningMode.InternalOriginToInternalOrigin)
         {
             int successCount = 0;
             // Track sheet numbers created in this session to avoid conflicts

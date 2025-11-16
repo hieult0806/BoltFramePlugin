@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using LoBIM.Features.ViewCloning.Models;
+using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Services;
 using LoBIM.Services.Parameters;
 using System;
@@ -14,11 +15,16 @@ namespace LoBIM.Features.ViewCloning.Strategies
     {
         protected readonly ILoggingService _logger;
         protected readonly IProjectParameterService _parameterService;
+        protected readonly IViewTemplateTransferService _viewTemplateService;
 
-        protected BaseViewCloningStrategy(ILoggingService logger, IProjectParameterService parameterService)
+        protected BaseViewCloningStrategy(
+            ILoggingService logger,
+            IProjectParameterService parameterService,
+            IViewTemplateTransferService viewTemplateService)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _parameterService = parameterService ?? throw new ArgumentNullException(nameof(parameterService));
+            _viewTemplateService = viewTemplateService ?? throw new ArgumentNullException(nameof(viewTemplateService));
         }
 
         public abstract bool CanHandle(ViewType viewType);
@@ -402,6 +408,42 @@ namespace LoBIM.Features.ViewCloning.Strategies
             catch (Exception ex)
             {
                 _logger.LogWarning($"Could not store source view info: {ex.Message}");
+                _logger.LogError($"Exception details: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Copies the View Template from source view to cloned view
+        /// If the template doesn't exist in the host document, it will be transferred
+        /// NOTE: This must be called within an active transaction
+        /// </summary>
+        /// <param name="hostDoc">The host document</param>
+        /// <param name="sourceView">The source view from the linked document</param>
+        /// <param name="clonedView">The cloned view in the host document</param>
+        /// <param name="linkedDoc">The linked document containing the source view</param>
+        protected void CopyViewTemplate(Document hostDoc, Autodesk.Revit.DB.View sourceView, Autodesk.Revit.DB.View clonedView, Document linkedDoc)
+        {
+            try
+            {
+                _logger.LogInformation($"=== COPYING VIEW TEMPLATE ===");
+                _logger.LogInformation($"Source view: {sourceView.Name}");
+                _logger.LogInformation($"Target view: {clonedView.Name}");
+
+                // Use the view template service to apply the template
+                bool success = _viewTemplateService.ApplyViewTemplateIfExists(hostDoc, sourceView, clonedView, linkedDoc);
+
+                if (success)
+                {
+                    _logger.LogInformation($"Successfully copied and applied View Template");
+                }
+                else
+                {
+                    _logger.LogInformation($"No View Template to copy or application failed");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Could not copy View Template: {ex.Message}");
                 _logger.LogError($"Exception details: {ex}");
             }
         }

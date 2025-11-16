@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using LoBIM.Features.ViewCloning.Models;
+using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Services;
 using System;
 using System.Linq;
@@ -12,8 +13,11 @@ namespace LoBIM.Features.ViewCloning.Strategies
     /// </summary>
     public class SectionViewCloningStrategy : BaseViewCloningStrategy
     {
-        public SectionViewCloningStrategy(ILoggingService logger, LoBIM.Services.Parameters.IProjectParameterService parameterService)
-            : base(logger, parameterService)
+        public SectionViewCloningStrategy(
+            ILoggingService logger,
+            LoBIM.Services.Parameters.IProjectParameterService parameterService,
+            IViewTemplateTransferService viewTemplateService)
+            : base(logger, parameterService, viewTemplateService)
         {
         }
 
@@ -64,11 +68,23 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 var sourceUpDirection = sourceSection.UpDirection;
                 var sourceRightDirection = sourceSection.RightDirection;
 
-                _logger.LogInformation($"=== SOURCE VIEW DETAILS ===");
-                _logger.LogInformation($"Source Origin: {sourceOrigin}");
-                _logger.LogInformation($"Source Direction: {sourceDirection}");
-                _logger.LogInformation($"Source Up: {sourceUpDirection}");
-                _logger.LogInformation($"Source Right: {sourceRightDirection}");
+                _logger.LogInformation($"");
+                _logger.LogInformation($"╔══════════════════════════════════════════════════════════════════");
+                _logger.LogInformation($"║ SOURCE VIEW DETAILS (from Linked Document)");
+                _logger.LogInformation($"╠══════════════════════════════════════════════════════════════════");
+                _logger.LogInformation($"║ View Name: {sourceView.Name}");
+                _logger.LogInformation($"║ Source Origin:         ({sourceOrigin.X:F4}, {sourceOrigin.Y:F4}, {sourceOrigin.Z:F4})");
+                _logger.LogInformation($"║ Source Direction:      ({sourceDirection.X:F4}, {sourceDirection.Y:F4}, {sourceDirection.Z:F4})");
+                _logger.LogInformation($"║ Source Up:             ({sourceUpDirection.X:F4}, {sourceUpDirection.Y:F4}, {sourceUpDirection.Z:F4})");
+                _logger.LogInformation($"║ Source Right:          ({sourceRightDirection.X:F4}, {sourceRightDirection.Y:F4}, {sourceRightDirection.Z:F4})");
+                _logger.LogInformation($"║ CropBox Origin:        ({srcTransform.Origin.X:F4}, {srcTransform.Origin.Y:F4}, {srcTransform.Origin.Z:F4})");
+                _logger.LogInformation($"║ CropBox BasisX:        ({srcTransform.BasisX.X:F4}, {srcTransform.BasisX.Y:F4}, {srcTransform.BasisX.Z:F4})");
+                _logger.LogInformation($"║ CropBox BasisY:        ({srcTransform.BasisY.X:F4}, {srcTransform.BasisY.Y:F4}, {srcTransform.BasisY.Z:F4})");
+                _logger.LogInformation($"║ CropBox BasisZ:        ({srcTransform.BasisZ.X:F4}, {srcTransform.BasisZ.Y:F4}, {srcTransform.BasisZ.Z:F4})");
+                _logger.LogInformation($"║ CropBox Min:           ({sourceBoundingBox.Min.X:F4}, {sourceBoundingBox.Min.Y:F4}, {sourceBoundingBox.Min.Z:F4})");
+                _logger.LogInformation($"║ CropBox Max:           ({sourceBoundingBox.Max.X:F4}, {sourceBoundingBox.Max.Y:F4}, {sourceBoundingBox.Max.Z:F4})");
+                _logger.LogInformation($"╚══════════════════════════════════════════════════════════════════");
+                _logger.LogInformation($"");
 
                 // Check if this is a callout - if so, need parent-relative positioning
                 Transform finalTransform;
@@ -113,7 +129,73 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 string linkedFileName = System.IO.Path.GetFileNameWithoutExtension(linkedDoc.Title);
                 StoreSourceViewInfo(sourceView, newSection, linkedFileName);
 
-                _logger.LogInformation($"Successfully cloned view: {newSection.Name}");
+                // Copy View Template if source has one (transfer if needed)
+                CopyViewTemplate(hostDoc, sourceView, newSection, linkedDoc);
+
+                // Final comparison logging to help identify position issues
+                _logger.LogInformation($"");
+                _logger.LogInformation($"╔══════════════════════════════════════════════════════════════════");
+                _logger.LogInformation($"║ POSITION COMPARISON: Source vs Created");
+                _logger.LogInformation($"╠══════════════════════════════════════════════════════════════════");
+                _logger.LogInformation($"║ EXPECTED (Source in Linked File):                                ");
+                _logger.LogInformation($"║   Origin:            ({sourceOrigin.X:F4}, {sourceOrigin.Y:F4}, {sourceOrigin.Z:F4})");
+                _logger.LogInformation($"║   Direction:         ({sourceDirection.X:F4}, {sourceDirection.Y:F4}, {sourceDirection.Z:F4})");
+                _logger.LogInformation($"║   CropBox Origin:    ({srcTransform.Origin.X:F4}, {srcTransform.Origin.Y:F4}, {srcTransform.Origin.Z:F4})");
+                _logger.LogInformation($"║                                                                      ");
+                _logger.LogInformation($"║ ACTUAL (Created in Host Document):                                ");
+                _logger.LogInformation($"║   Origin:            ({newSection.Origin.X:F4}, {newSection.Origin.Y:F4}, {newSection.Origin.Z:F4})");
+                _logger.LogInformation($"║   Direction:         ({newSection.ViewDirection.X:F4}, {newSection.ViewDirection.Y:F4}, {newSection.ViewDirection.Z:F4})");
+                _logger.LogInformation($"║   CropBox Origin:    ({newSection.CropBox.Transform.Origin.X:F4}, {newSection.CropBox.Transform.Origin.Y:F4}, {newSection.CropBox.Transform.Origin.Z:F4})");
+                _logger.LogInformation($"║                                                                      ");
+
+                // Calculate differences
+                var originDiff = new XYZ(
+                    Math.Abs(newSection.Origin.X - sourceOrigin.X),
+                    Math.Abs(newSection.Origin.Y - sourceOrigin.Y),
+                    Math.Abs(newSection.Origin.Z - sourceOrigin.Z)
+                );
+                var cropBoxOriginDiff = new XYZ(
+                    Math.Abs(newSection.CropBox.Transform.Origin.X - srcTransform.Origin.X),
+                    Math.Abs(newSection.CropBox.Transform.Origin.Y - srcTransform.Origin.Y),
+                    Math.Abs(newSection.CropBox.Transform.Origin.Z - srcTransform.Origin.Z)
+                );
+
+                _logger.LogInformation($"║ DIFFERENCES:                                                         ");
+                _logger.LogInformation($"║   Origin Δ:          ({originDiff.X:F4}, {originDiff.Y:F4}, {originDiff.Z:F4})");
+                _logger.LogInformation($"║   CropBox Origin Δ:  ({cropBoxOriginDiff.X:F4}, {cropBoxOriginDiff.Y:F4}, {cropBoxOriginDiff.Z:F4})");
+                _logger.LogInformation($"║                                                                      ");
+
+                // Check if link transform was applied
+                if (linkTransform != null && !linkTransform.IsIdentity)
+                {
+                    _logger.LogInformation($"║ Link Transform Applied: YES                                          ");
+                    _logger.LogInformation($"║   Link Offset:       ({linkTransform.Origin.X:F4}, {linkTransform.Origin.Y:F4}, {linkTransform.Origin.Z:F4})");
+
+                    // Calculate what the expected position should be with link transform
+                    var expectedOriginWithLink = linkTransform.OfPoint(sourceOrigin);
+                    var expectedCropBoxOriginWithLink = linkTransform.OfPoint(srcTransform.Origin);
+
+                    _logger.LogInformation($"║                                                                      ");
+                    _logger.LogInformation($"║ EXPECTED WITH LINK TRANSFORM:                                       ");
+                    _logger.LogInformation($"║   Expected Origin:   ({expectedOriginWithLink.X:F4}, {expectedOriginWithLink.Y:F4}, {expectedOriginWithLink.Z:F4})");
+                    _logger.LogInformation($"║   Expected CropBox:  ({expectedCropBoxOriginWithLink.X:F4}, {expectedCropBoxOriginWithLink.Y:F4}, {expectedCropBoxOriginWithLink.Z:F4})");
+
+                    var adjustedOriginDiff = new XYZ(
+                        Math.Abs(newSection.Origin.X - expectedOriginWithLink.X),
+                        Math.Abs(newSection.Origin.Y - expectedOriginWithLink.Y),
+                        Math.Abs(newSection.Origin.Z - expectedOriginWithLink.Z)
+                    );
+                    _logger.LogInformation($"║   Δ from expected:   ({adjustedOriginDiff.X:F4}, {adjustedOriginDiff.Y:F4}, {adjustedOriginDiff.Z:F4})");
+                }
+                else
+                {
+                    _logger.LogInformation($"║ Link Transform Applied: NO (Identity transform)                      ");
+                }
+
+                _logger.LogInformation($"╚══════════════════════════════════════════════════════════════════");
+                _logger.LogInformation($"");
+
+                _logger.LogInformation($"✓ Successfully cloned view: {newSection.Name}");
                 return newSection;
             }
             catch (Exception ex)
@@ -131,7 +213,11 @@ namespace LoBIM.Features.ViewCloning.Strategies
             Transform linkTransform,
             ViewPositioningMode positioningMode)
         {
-            _logger.LogInformation($"=== APPLYING POSITIONING MODE: {positioningMode} ===");
+            _logger.LogInformation($"");
+            _logger.LogInformation($"▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+            _logger.LogInformation($"▓▓▓ APPLYING POSITIONING MODE: {positioningMode}");
+            _logger.LogInformation($"▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓");
+            _logger.LogInformation($"");
 
             Transform finalTransform;
 
@@ -140,7 +226,7 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 case ViewPositioningMode.ProjectBasePointToProjectBasePoint:
                 case ViewPositioningMode.BySharedCoordinates:
                     // For shared coordinates, use the view's coordinates as-is from the linked file
-                    _logger.LogInformation($"Using shared coordinates - no link transform applied");
+                    _logger.LogInformation($"⚠️⚠️⚠️ USING SHARED COORDINATES MODE - NO LINK TRANSFORM APPLIED ⚠️⚠️⚠️");
                     _logger.LogInformation($"View origin: {srcTransform.Origin}");
                     _logger.LogInformation($"View direction: BasisZ = {srcTransform.BasisZ}");
 
@@ -150,22 +236,64 @@ namespace LoBIM.Features.ViewCloning.Strategies
                 case ViewPositioningMode.InternalOriginToInternalOrigin:
                 default:
                     // Apply link transform to position view relative to link placement
-                    _logger.LogInformation($"Applying link transform based on link placement mode");
+                    _logger.LogInformation($"✓✓✓ USING INTERNAL ORIGIN MODE - APPLYING LINK TRANSFORM ✓✓✓");
                     _logger.LogInformation($"Link transform origin offset: {linkTransform.Origin}");
                     _logger.LogInformation($"View cropbox origin (in linked file): {srcTransform.Origin}");
 
-                    // Standard transform composition for regular views
-                    finalTransform = linkTransform.Multiply(srcTransform);
+                    // Log link transform details
+                    _logger.LogInformation($"");
+                    _logger.LogInformation($"Link Transform Details:");
+                    _logger.LogInformation($"  Origin: ({linkTransform.Origin.X:F4}, {linkTransform.Origin.Y:F4}, {linkTransform.Origin.Z:F4})");
+                    _logger.LogInformation($"  BasisX: ({linkTransform.BasisX.X:F4}, {linkTransform.BasisX.Y:F4}, {linkTransform.BasisX.Z:F4})");
+                    _logger.LogInformation($"  BasisY: ({linkTransform.BasisY.X:F4}, {linkTransform.BasisY.Y:F4}, {linkTransform.BasisY.Z:F4})");
+                    _logger.LogInformation($"  BasisZ: ({linkTransform.BasisZ.X:F4}, {linkTransform.BasisZ.Y:F4}, {linkTransform.BasisZ.Z:F4})");
+                    _logger.LogInformation($"  IsIdentity: {linkTransform.IsIdentity}");
+
+                    _logger.LogInformation($"");
+                    _logger.LogInformation($"Source Transform Details:");
+                    _logger.LogInformation($"  Origin: ({srcTransform.Origin.X:F4}, {srcTransform.Origin.Y:F4}, {srcTransform.Origin.Z:F4})");
+                    _logger.LogInformation($"  BasisX: ({srcTransform.BasisX.X:F4}, {srcTransform.BasisX.Y:F4}, {srcTransform.BasisX.Z:F4})");
+                    _logger.LogInformation($"  BasisY: ({srcTransform.BasisY.X:F4}, {srcTransform.BasisY.Y:F4}, {srcTransform.BasisY.Z:F4})");
+                    _logger.LogInformation($"  BasisZ: ({srcTransform.BasisZ.X:F4}, {srcTransform.BasisZ.Y:F4}, {srcTransform.BasisZ.Z:F4})");
+
+                    // CRITICAL FIX: For section views, we need to transform the cropbox transform
+                    // into the host document's coordinate system by applying the link transform
+                    // to both the origin (position) and the basis vectors (orientation)
+                    //
+                    // NOTE: We do NOT use linkTransform.Multiply(srcTransform) because that's for
+                    // composing transforms, not for transforming a view's position/orientation.
+                    //
+                    // Instead, we need to:
+                    // 1. Transform the origin point using OfPoint()
+                    // 2. Transform the orientation vectors using OfVector()
+
+                    finalTransform = Transform.Identity;
+                    finalTransform.Origin = linkTransform.OfPoint(srcTransform.Origin);
+                    finalTransform.BasisX = linkTransform.OfVector(srcTransform.BasisX);
+                    finalTransform.BasisY = linkTransform.OfVector(srcTransform.BasisY);
+                    finalTransform.BasisZ = linkTransform.OfVector(srcTransform.BasisZ);
+
+                    _logger.LogInformation($"");
+                    _logger.LogInformation($"After Transforming CropBox Transform:");
+                    _logger.LogInformation($"  Transformed Origin: ({finalTransform.Origin.X:F4}, {finalTransform.Origin.Y:F4}, {finalTransform.Origin.Z:F4})");
+                    _logger.LogInformation($"  Transformed BasisX: ({finalTransform.BasisX.X:F4}, {finalTransform.BasisX.Y:F4}, {finalTransform.BasisX.Z:F4})");
+                    _logger.LogInformation($"  Transformed BasisY: ({finalTransform.BasisY.X:F4}, {finalTransform.BasisY.Y:F4}, {finalTransform.BasisY.Z:F4})");
+                    _logger.LogInformation($"  Transformed BasisZ: ({finalTransform.BasisZ.X:F4}, {finalTransform.BasisZ.Y:F4}, {finalTransform.BasisZ.Z:F4})");
 
                     _logger.LogInformation($"Composed origin (in host): {finalTransform.Origin}");
                     break;
             }
 
-            _logger.LogInformation($"=== FINAL TRANSFORM ===");
-            _logger.LogInformation($"Final Origin: {finalTransform.Origin}");
-            _logger.LogInformation($"Final BasisX: {finalTransform.BasisX}");
-            _logger.LogInformation($"Final BasisY: {finalTransform.BasisY}");
-            _logger.LogInformation($"Final BasisZ: {finalTransform.BasisZ}");
+            _logger.LogInformation($"");
+            _logger.LogInformation($"╔══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"║ FINAL TRANSFORM (Regular View)");
+            _logger.LogInformation($"╠══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"║ Final Origin:          ({finalTransform.Origin.X:F4}, {finalTransform.Origin.Y:F4}, {finalTransform.Origin.Z:F4})");
+            _logger.LogInformation($"║ Final BasisX:          ({finalTransform.BasisX.X:F4}, {finalTransform.BasisX.Y:F4}, {finalTransform.BasisX.Z:F4})");
+            _logger.LogInformation($"║ Final BasisY:          ({finalTransform.BasisY.X:F4}, {finalTransform.BasisY.Y:F4}, {finalTransform.BasisY.Z:F4})");
+            _logger.LogInformation($"║ Final BasisZ:          ({finalTransform.BasisZ.X:F4}, {finalTransform.BasisZ.Y:F4}, {finalTransform.BasisZ.Z:F4})");
+            _logger.LogInformation($"╚══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"");
 
             return finalTransform;
         }
@@ -283,11 +411,16 @@ namespace LoBIM.Features.ViewCloning.Strategies
                     break;
             }
 
-            _logger.LogInformation($"=== FINAL CALLOUT TRANSFORM ===");
-            _logger.LogInformation($"Final Origin: {finalTransform.Origin}");
-            _logger.LogInformation($"Final BasisX: {finalTransform.BasisX}");
-            _logger.LogInformation($"Final BasisY: {finalTransform.BasisY}");
-            _logger.LogInformation($"Final BasisZ: {finalTransform.BasisZ}");
+            _logger.LogInformation($"");
+            _logger.LogInformation($"╔══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"║ FINAL TRANSFORM (Callout View)");
+            _logger.LogInformation($"╠══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"║ Final Origin:          ({finalTransform.Origin.X:F4}, {finalTransform.Origin.Y:F4}, {finalTransform.Origin.Z:F4})");
+            _logger.LogInformation($"║ Final BasisX:          ({finalTransform.BasisX.X:F4}, {finalTransform.BasisX.Y:F4}, {finalTransform.BasisX.Z:F4})");
+            _logger.LogInformation($"║ Final BasisY:          ({finalTransform.BasisY.X:F4}, {finalTransform.BasisY.Y:F4}, {finalTransform.BasisY.Z:F4})");
+            _logger.LogInformation($"║ Final BasisZ:          ({finalTransform.BasisZ.X:F4}, {finalTransform.BasisZ.Y:F4}, {finalTransform.BasisZ.Z:F4})");
+            _logger.LogInformation($"╚══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"");
 
             return finalTransform;
         }
@@ -360,12 +493,15 @@ namespace LoBIM.Features.ViewCloning.Strategies
             XYZ normalizedMax = new XYZ(width, height, depth);
 
             // Create adjusted transform:
-            // - Keep the SAME origin as source cropbox transform
+            // - Use the full composed transform from finalTransform (includes link transform!)
             // - Flip BasisZ to compensate for Revit's reversal
-            Transform adjustedTransform = Transform.CreateTranslation(finalTransform.Origin);
-            adjustedTransform.BasisX = finalTransform.BasisX;
-            adjustedTransform.BasisY = finalTransform.BasisY;
-            adjustedTransform.BasisZ = -finalTransform.BasisZ;  // PRE-FLIP to compensate for Revit's reversal
+            // IMPORTANT: Cannot use Transform.CreateTranslation() as it discards rotation information!
+            // We need to preserve the full transform composition from linkTransform.Multiply(srcTransform)
+            Transform adjustedTransform = Transform.Identity;
+            adjustedTransform.Origin = finalTransform.Origin;      // Use composed origin
+            adjustedTransform.BasisX = finalTransform.BasisX;      // Use composed BasisX
+            adjustedTransform.BasisY = finalTransform.BasisY;      // Use composed BasisY
+            adjustedTransform.BasisZ = -finalTransform.BasisZ;     // PRE-FLIP to compensate for Revit's reversal
 
             _logger.LogInformation($"=== ADJUSTED VALUES FOR REVIT API ===");
             _logger.LogInformation($"Adjusted Transform Origin (same as source): {adjustedTransform.Origin}");
@@ -385,15 +521,23 @@ namespace LoBIM.Features.ViewCloning.Strategies
             var newSection = ViewSection.CreateSection(hostDoc, hostViewFamilyType.Id, sectionBox);
 
             // Log what was actually created
-            _logger.LogInformation($"=== CREATED VIEW PROPERTIES ===");
-            _logger.LogInformation($"Created Origin: {newSection.Origin}");
-            _logger.LogInformation($"Created Direction: {newSection.ViewDirection}");
-            _logger.LogInformation($"Created Up: {newSection.UpDirection}");
-            _logger.LogInformation($"Created Right: {newSection.RightDirection}");
-            _logger.LogInformation($"Created CropBox Origin: {newSection.CropBox.Transform.Origin}");
-            _logger.LogInformation($"Created CropBox BasisZ: {newSection.CropBox.Transform.BasisZ}");
-            _logger.LogInformation($"Created CropBox Min: {newSection.CropBox.Min}");
-            _logger.LogInformation($"Created CropBox Max: {newSection.CropBox.Max}");
+            var createdCropBox = newSection.CropBox;
+            _logger.LogInformation($"");
+            _logger.LogInformation($"╔══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"║ CREATED VIEW PROPERTIES (in Host Document)");
+            _logger.LogInformation($"╠══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"║ Created Origin:        ({newSection.Origin.X:F4}, {newSection.Origin.Y:F4}, {newSection.Origin.Z:F4})");
+            _logger.LogInformation($"║ Created Direction:     ({newSection.ViewDirection.X:F4}, {newSection.ViewDirection.Y:F4}, {newSection.ViewDirection.Z:F4})");
+            _logger.LogInformation($"║ Created Up:            ({newSection.UpDirection.X:F4}, {newSection.UpDirection.Y:F4}, {newSection.UpDirection.Z:F4})");
+            _logger.LogInformation($"║ Created Right:         ({newSection.RightDirection.X:F4}, {newSection.RightDirection.Y:F4}, {newSection.RightDirection.Z:F4})");
+            _logger.LogInformation($"║ CropBox Origin:        ({createdCropBox.Transform.Origin.X:F4}, {createdCropBox.Transform.Origin.Y:F4}, {createdCropBox.Transform.Origin.Z:F4})");
+            _logger.LogInformation($"║ CropBox BasisX:        ({createdCropBox.Transform.BasisX.X:F4}, {createdCropBox.Transform.BasisX.Y:F4}, {createdCropBox.Transform.BasisX.Z:F4})");
+            _logger.LogInformation($"║ CropBox BasisY:        ({createdCropBox.Transform.BasisY.X:F4}, {createdCropBox.Transform.BasisY.Y:F4}, {createdCropBox.Transform.BasisY.Z:F4})");
+            _logger.LogInformation($"║ CropBox BasisZ:        ({createdCropBox.Transform.BasisZ.X:F4}, {createdCropBox.Transform.BasisZ.Y:F4}, {createdCropBox.Transform.BasisZ.Z:F4})");
+            _logger.LogInformation($"║ CropBox Min:           ({createdCropBox.Min.X:F4}, {createdCropBox.Min.Y:F4}, {createdCropBox.Min.Z:F4})");
+            _logger.LogInformation($"║ CropBox Max:           ({createdCropBox.Max.X:F4}, {createdCropBox.Max.Y:F4}, {createdCropBox.Max.Z:F4})");
+            _logger.LogInformation($"╚══════════════════════════════════════════════════════════════════");
+            _logger.LogInformation($"");
 
             // Attempt to restore the original cropbox Min/Max after creation
             try
