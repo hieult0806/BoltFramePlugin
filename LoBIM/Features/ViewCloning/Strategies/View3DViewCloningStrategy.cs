@@ -11,7 +11,8 @@ namespace LoBIM.Features.ViewCloning.Strategies
     /// </summary>
     public class View3DViewCloningStrategy : BaseViewCloningStrategy
     {
-        public View3DViewCloningStrategy(ILoggingService logger) : base(logger)
+        public View3DViewCloningStrategy(ILoggingService logger, LoBIM.Services.Parameters.IProjectParameterService parameterService)
+            : base(logger, parameterService)
         {
         }
 

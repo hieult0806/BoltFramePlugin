@@ -7,6 +7,7 @@ using LoBIM.Features.SheetCloning.Models;
 using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Services;
+using LoBIM.Services.Parameters;
 using RevitView = Autodesk.Revit.DB.View;
 
 namespace LoBIM.Features.SheetCloning.Services
@@ -18,13 +19,15 @@ namespace LoBIM.Features.SheetCloning.Services
     {
         private readonly ILoggingService _logger;
         private readonly IViewCloningService _viewCloningService;
+        private readonly IProjectParameterService _parameterService;
         private readonly SheetSourceTrackingHelper _sourceTrackingHelper;
 
-        public SheetCloningService(ILoggingService logger, IViewCloningService viewCloningService)
+        public SheetCloningService(ILoggingService logger, IViewCloningService viewCloningService, IProjectParameterService parameterService)
         {
             _logger = logger;
             _viewCloningService = viewCloningService;
-            _sourceTrackingHelper = new SheetSourceTrackingHelper(logger);
+            _parameterService = parameterService;
+            _sourceTrackingHelper = new SheetSourceTrackingHelper(logger, parameterService);
         }
 
         /// <summary>

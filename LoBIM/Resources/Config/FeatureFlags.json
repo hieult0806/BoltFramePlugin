@@ -19,7 +19,7 @@
       "IconName": "design"
     },
     "LimitingDistance": {
-      "Enabled": false,
+      "Enabled": true,
       "Name": "Limiting Distance",
       "ButtonName": "LimitingDistanceButton",
       "ClassName": "LoBIM.Features.LimitingDistance.Commands.LimitingDistanceCommand",

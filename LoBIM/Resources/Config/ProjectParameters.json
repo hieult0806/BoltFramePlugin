@@ -3,6 +3,7 @@
     {
       "name": "LD_IsPerimeter",
       "parameterType": "YesNo",
+      "sharedParameterGroup": "LoBIM",
       "groupName": "Other",
       "description": "Indicates if the wall is a perimeter wall for limiting distance calculations",
       "isInstance": true,
@@ -11,6 +12,7 @@
     {
       "name": "FireCompartment",
       "parameterType": "Text",
+      "sharedParameterGroup": "LoBIM",
       "groupName": "Other",
       "description": "Distance from the property line to the wall",
       "isInstance": true,
@@ -19,6 +21,7 @@
     {
       "name": "IsTopMost",
       "parameterType": "YesNo",
+      "sharedParameterGroup": "LoBIM",
       "groupName": "Other",
       "description": "Distance group classification (0-1m, 1-2m, 2-3m, 3-5m, 5+m)",
       "isInstance": true,
@@ -27,6 +30,7 @@
     {
       "name": "Occupant",
       "parameterType": "Text",
+      "sharedParameterGroup": "LoBIM",
       "groupName": "Other",
       "description": "Gross wall area for limiting distance calculations",
       "isInstance": true,
@@ -35,6 +39,7 @@
     {
       "name": "OccupantGroup",
       "parameterType": "Text",
+      "sharedParameterGroup": "LoBIM",
       "groupName": "Other",
       "description": "Total area of openings in the wall",
       "isInstance": true,

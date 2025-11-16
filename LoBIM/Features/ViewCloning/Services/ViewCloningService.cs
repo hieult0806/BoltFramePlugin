@@ -6,6 +6,7 @@ using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Factories;
 using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
+using LoBIM.Services.Parameters;
 
 namespace LoBIM.Features.ViewCloning.Services
 {
@@ -16,12 +17,14 @@ namespace LoBIM.Features.ViewCloning.Services
     public class ViewCloningService : IViewCloningService
     {
         private readonly ILoggingService _logger;
+        private readonly IProjectParameterService _parameterService;
         private readonly ViewCloningStrategyFactory _strategyFactory;
 
-        public ViewCloningService(ILoggingService logger)
+        public ViewCloningService(ILoggingService logger, IProjectParameterService parameterService)
         {
             _logger = logger;
-            _strategyFactory = new ViewCloningStrategyFactory(logger);
+            _parameterService = parameterService;
+            _strategyFactory = new ViewCloningStrategyFactory(logger, parameterService);
         }
 
         public List<LinkedFileInfo> GetLinkedFiles(Document doc)
@@ -307,7 +310,7 @@ namespace LoBIM.Features.ViewCloning.Services
             try
             {
                 // Create a temporary strategy instance to access the public parameter creation method
-                var tempStrategy = new PlanViewCloningStrategy(_logger);
+                var tempStrategy = new PlanViewCloningStrategy(_logger, _parameterService);
                 tempStrategy.EnsureSourceTrackingParameters(hostDoc);
             }
             catch (Exception ex)

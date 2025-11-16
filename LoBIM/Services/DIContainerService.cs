@@ -26,6 +26,9 @@ namespace LoBIM.Services
             container.RegisterSingleton<IProjectConfigurationManager, ProjectConfigurationManager>();
             container.RegisterSingleton<IExtensibleStorageService, ExtensibleStorageService>();
 
+            // Parameter Management Service
+            container.RegisterSingleton<Parameters.IProjectParameterService, Parameters.ProjectParameterService>();
+
             // Shared Rendering Services
             container.RegisterSingleton<LoBIM.Services.Rendering.ITableRenderService, LoBIM.Services.Rendering.RevitTableRenderService>();
 

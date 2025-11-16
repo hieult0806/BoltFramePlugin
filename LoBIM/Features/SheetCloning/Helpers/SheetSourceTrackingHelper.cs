@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Autodesk.Revit.DB;
 using LoBIM.Services;
+using LoBIM.Services.Parameters;
 
 namespace LoBIM.Features.SheetCloning.Helpers
 {
@@ -11,10 +12,12 @@ namespace LoBIM.Features.SheetCloning.Helpers
     public class SheetSourceTrackingHelper
     {
         private readonly ILoggingService _logger;
+        private readonly IProjectParameterService _parameterService;
 
-        public SheetSourceTrackingHelper(ILoggingService logger)
+        public SheetSourceTrackingHelper(ILoggingService logger, IProjectParameterService parameterService)
         {
             _logger = logger;
+            _parameterService = parameterService;
         }
 
         /// <summary>
@@ -26,58 +29,25 @@ namespace LoBIM.Features.SheetCloning.Helpers
         {
             try
             {
-                // Check if parameters already exist by looking at one sheet
-                var testSheet = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ViewSheet))
-                    .Cast<ViewSheet>()
-                    .FirstOrDefault();
+                _logger.LogInformation($"Ensuring sheet source tracking parameters exist...");
 
-                if (testSheet == null)
+                // Get predefined sheet source tracking parameters
+                var parameterDefs = _parameterService.GetSheetSourceTrackingParameters();
+
+                // Ensure all parameters exist
+                var results = _parameterService.EnsureParametersExist(doc, parameterDefs);
+
+                // Log results
+                foreach (var result in results)
                 {
-                    _logger.LogWarning($"No sheets found to check for parameters");
-                    return;
-                }
-
-                bool hasSourceFile = testSheet.LookupParameter("LoBIM_SourceFile") != null;
-                bool hasSourceSheet = testSheet.LookupParameter("LoBIM_SourceSheet") != null;
-                bool hasSourceId = testSheet.LookupParameter("LoBIM_SourceSheetId") != null;
-
-                // If all parameters exist, no need to create them
-                if (hasSourceFile && hasSourceSheet && hasSourceId)
-                {
-                    return;
-                }
-
-                _logger.LogInformation($"Creating sheet source tracking project parameters...");
-
-                using (Transaction trans = new Transaction(doc, "Create LoBIM Sheet Source Tracking Parameters"))
-                {
-                    trans.Start();
-
-                    CategorySet categories = doc.Application.Create.NewCategorySet();
-                    categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_Sheets));
-
-                    DefinitionFile defFile = doc.Application.OpenSharedParameterFile();
-                    DefinitionGroup defGroup = null;
-
-                    // Try to get or create definition group
-                    if (defFile != null)
+                    if (result.Success)
                     {
-                        defGroup = defFile.Groups.get_Item("LoBIM") ?? defFile.Groups.Create("LoBIM");
+                        _logger.LogInformation($"Parameter {result.ParameterName}: {result.Status}");
                     }
-
-                    // Create parameters (or update bindings if they exist for other categories)
-                    CreateOrUpdateProjectParameter(doc, defGroup, "LoBIM_SourceFile",
-                        SpecTypeId.String.Text, categories, GroupTypeId.IdentityData, !hasSourceFile);
-
-                    CreateOrUpdateProjectParameter(doc, defGroup, "LoBIM_SourceSheet",
-                        SpecTypeId.String.Text, categories, GroupTypeId.IdentityData, !hasSourceSheet);
-
-                    CreateOrUpdateProjectParameter(doc, defGroup, "LoBIM_SourceSheetId",
-                        SpecTypeId.String.Text, categories, GroupTypeId.IdentityData, !hasSourceId);
-
-                    trans.Commit();
-                    _logger.LogInformation($"Successfully created sheet source tracking parameters");
+                    else
+                    {
+                        _logger.LogWarning($"Failed to create parameter {result.ParameterName}: {result.ErrorMessage}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -96,123 +66,20 @@ namespace LoBIM.Features.SheetCloning.Helpers
             {
                 _logger.LogInformation($"=== STORING SOURCE SHEET METADATA ===");
 
-                Document doc = clonedSheet.Document;
+                // Use the parameter service to store source tracking
+                _parameterService.StoreSheetSourceTracking(
+                    clonedSheet,
+                    linkedFileName,
+                    sourceSheet.SheetNumber,
+                    sourceSheet.Id
+                );
 
-                // Check if parameters exist
-                var sourceFileParam = clonedSheet.LookupParameter("LoBIM_SourceFile");
-                var sourceSheetParam = clonedSheet.LookupParameter("LoBIM_SourceSheet");
-                var sourceIdParam = clonedSheet.LookupParameter("LoBIM_SourceSheetId");
-
-                if (sourceFileParam == null || sourceSheetParam == null || sourceIdParam == null)
-                {
-                    _logger.LogWarning($"Source tracking parameters not found. They should have been created before cloning.");
-                }
-
-                // Store source file name
-                if (sourceFileParam != null && !sourceFileParam.IsReadOnly)
-                {
-                    sourceFileParam.Set(linkedFileName);
-                    _logger.LogInformation($"Stored source file: {linkedFileName}");
-                }
-                else
-                {
-                    _logger.LogWarning($"LoBIM_SourceFile parameter not found or read-only");
-                }
-
-                // Store source sheet number
-                if (sourceSheetParam != null && !sourceSheetParam.IsReadOnly)
-                {
-                    sourceSheetParam.Set(sourceSheet.SheetNumber);
-                    _logger.LogInformation($"Stored source sheet: {sourceSheet.SheetNumber}");
-                }
-                else
-                {
-                    _logger.LogWarning($"LoBIM_SourceSheet parameter not found or read-only");
-                }
-
-                // Store source sheet ID
-                if (sourceIdParam != null && !sourceIdParam.IsReadOnly)
-                {
-                    sourceIdParam.Set(sourceSheet.Id.ToString());
-                    _logger.LogInformation($"Stored source sheet ID: {sourceSheet.Id}");
-                }
-                else
-                {
-                    _logger.LogWarning($"LoBIM_SourceSheetId parameter not found or read-only");
-                }
+                _logger.LogInformation($"Successfully stored source tracking: {linkedFileName} > {sourceSheet.SheetNumber}");
             }
             catch (Exception ex)
             {
                 _logger.LogWarning($"Could not store source sheet info: {ex.Message}");
                 _logger.LogError($"Exception details: {ex}");
-            }
-        }
-
-        /// <summary>
-        /// Creates a project parameter or updates its binding to include the new categories
-        /// </summary>
-        private void CreateOrUpdateProjectParameter(Document doc, DefinitionGroup defGroup,
-            string paramName, ForgeTypeId paramType, CategorySet newCategories, ForgeTypeId group, bool shouldCreate)
-        {
-            try
-            {
-                Definition def = defGroup?.Definitions.get_Item(paramName);
-
-                // Create definition if it doesn't exist
-                if (def == null && defGroup != null && shouldCreate)
-                {
-                    ExternalDefinitionCreationOptions options = new ExternalDefinitionCreationOptions(paramName, paramType);
-                    def = defGroup.Definitions.Create(options);
-                }
-
-                if (def != null)
-                {
-                    // Check if parameter binding already exists
-                    Autodesk.Revit.DB.Binding existingBinding = doc.ParameterBindings.get_Item(def);
-
-                    if (existingBinding != null)
-                    {
-                        // Parameter exists - add new categories to existing binding
-                        CategorySet existingCategories = null;
-
-                        if (existingBinding is InstanceBinding instBinding)
-                        {
-                            existingCategories = instBinding.Categories;
-                        }
-                        else if (existingBinding is TypeBinding typeBinding)
-                        {
-                            existingCategories = typeBinding.Categories;
-                        }
-
-                        // Add new categories to existing ones
-                        if (existingCategories != null)
-                        {
-                            foreach (Category cat in newCategories)
-                            {
-                                if (!existingCategories.Contains(cat))
-                                {
-                                    existingCategories.Insert(cat);
-                                }
-                            }
-
-                            // Re-insert binding with updated categories
-                            InstanceBinding updatedBinding = doc.Application.Create.NewInstanceBinding(existingCategories);
-                            doc.ParameterBindings.ReInsert(def, updatedBinding, group);
-                            _logger.LogInformation($"Updated parameter binding: {paramName}");
-                        }
-                    }
-                    else if (shouldCreate)
-                    {
-                        // Parameter doesn't exist - create new binding
-                        InstanceBinding binding = doc.Application.Create.NewInstanceBinding(newCategories);
-                        doc.ParameterBindings.Insert(def, binding, group);
-                        _logger.LogInformation($"Created parameter: {paramName}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Could not create/update parameter {paramName}: {ex.Message}");
             }
         }
     }

@@ -10,6 +10,7 @@ using LoBIM.Features.LimitingDistance.Models;
 using LoBIM.Features.LimitingDistance.Services;
 using LoBIM.Filters;
 using LoBIM.Services;
+using LoBIM.Services.Parameters;
 using LoBIM.ViewModels;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 
@@ -327,7 +328,8 @@ namespace LoBIM.Features.LimitingDistance.ViewModels
             _deleteViewEvent = ExternalEvent.Create(_deleteViewHandler);
 
             // Initialize ExternalEvent for initializing project parameters
-            _initializeProjectParametersHandler = new InitializeProjectParametersEventHandler(_logger);
+            var parameterService = DIContainerService.Container.GetInstance<IProjectParameterService>();
+            _initializeProjectParametersHandler = new InitializeProjectParametersEventHandler(_logger, parameterService);
             _initializeProjectParametersEvent = ExternalEvent.Create(_initializeProjectParametersHandler);
 
             // Initialize ExternalEvent for loading families

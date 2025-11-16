@@ -7,6 +7,7 @@ using LoBIM.Features.SheetCloning.Models;
 using LoBIM.Features.SheetCloning.Services;
 using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
+using LoBIM.Services.Parameters;
 
 namespace LoBIM.Features.SheetCloning.EventHandlers
 {
@@ -17,15 +18,17 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
     {
         private readonly ILoggingService _logger;
         private readonly ISheetCloningService _sheetCloningService;
+        private readonly IProjectParameterService _parameterService;
         private UIDocument _uidoc;
         private List<LinkedSheetInfo> _sheetsToClone;
         private Dictionary<string, Document> _linkedDocuments;
         private Action<int> _onComplete;
 
-        public CloneSheetsEventHandler(ILoggingService logger, ISheetCloningService sheetCloningService)
+        public CloneSheetsEventHandler(ILoggingService logger, ISheetCloningService sheetCloningService, IProjectParameterService parameterService)
         {
             _logger = logger;
             _sheetCloningService = sheetCloningService;
+            _parameterService = parameterService;
         }
 
         /// <summary>
@@ -57,11 +60,11 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
                 try
                 {
                     // Ensure view source tracking parameters
-                    var strategy = new PlanViewCloningStrategy(_logger);
+                    var strategy = new PlanViewCloningStrategy(_logger, _parameterService);
                     strategy.EnsureSourceTrackingParameters(_uidoc.Document);
 
                     // Ensure sheet source tracking parameters
-                    var sheetTrackingHelper = new SheetSourceTrackingHelper(_logger);
+                    var sheetTrackingHelper = new SheetSourceTrackingHelper(_logger, _parameterService);
                     sheetTrackingHelper.EnsureSourceTrackingParameters(_uidoc.Document);
                 }
                 catch (Exception ex)

@@ -12,7 +12,8 @@ namespace LoBIM.Features.ViewCloning.Strategies
     /// </summary>
     public class SectionViewCloningStrategy : BaseViewCloningStrategy
     {
-        public SectionViewCloningStrategy(ILoggingService logger) : base(logger)
+        public SectionViewCloningStrategy(ILoggingService logger, LoBIM.Services.Parameters.IProjectParameterService parameterService)
+            : base(logger, parameterService)
         {
         }
 

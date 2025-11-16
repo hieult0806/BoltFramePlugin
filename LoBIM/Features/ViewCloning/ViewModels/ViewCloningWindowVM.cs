@@ -9,6 +9,7 @@ using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
+using LoBIM.Services.Parameters;
 using LoBIM.ViewModels;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 
@@ -185,8 +186,10 @@ namespace LoBIM.Features.ViewCloning.ViewModels
             {
                 _logger.LogInformation("Ensuring view source tracking parameters exist...");
 
+                var parameterService = DIContainerService.Container.GetInstance<IProjectParameterService>();
+
                 // Ensure view source tracking parameters
-                var viewStrategy = new PlanViewCloningStrategy(_logger);
+                var viewStrategy = new PlanViewCloningStrategy(_logger, parameterService);
                 viewStrategy.EnsureSourceTrackingParameters(_document.Document);
 
                 _logger.LogInformation("View source tracking parameters ready");

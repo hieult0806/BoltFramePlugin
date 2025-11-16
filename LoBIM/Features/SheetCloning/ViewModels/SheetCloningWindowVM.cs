@@ -13,6 +13,7 @@ using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
+using LoBIM.Services.Parameters;
 using LoBIM.ViewModels;
 using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 
@@ -142,13 +143,14 @@ namespace LoBIM.Features.SheetCloning.ViewModels
             _sheetCloningService = DIContainerService.Container.GetInstance<ISheetCloningService>();
             _viewCloningService = DIContainerService.Container.GetInstance<IViewCloningService>();
             _logger = DIContainerService.Container.GetInstance<ILoggingService>();
+            var parameterService = DIContainerService.Container.GetInstance<IProjectParameterService>();
 
             _linkedFiles = new ObservableCollection<LinkedFileInfo>();
             _availableSheets = new ObservableCollection<LinkedSheetInfo>();
             _allSheets = new List<LinkedSheetInfo>();
 
             // Initialize ExternalEvent for cloning sheets
-            _cloneSheetsHandler = new CloneSheetsEventHandler(_logger, _sheetCloningService);
+            _cloneSheetsHandler = new CloneSheetsEventHandler(_logger, _sheetCloningService, parameterService);
             _cloneSheetsEvent = ExternalEvent.Create(_cloneSheetsHandler);
 
             // Initialize ExternalEvent for opening sheets
@@ -184,12 +186,14 @@ namespace LoBIM.Features.SheetCloning.ViewModels
             {
                 _logger.LogInformation("Ensuring source tracking parameters exist...");
 
+                var parameterService = DIContainerService.Container.GetInstance<IProjectParameterService>();
+
                 // Ensure view source tracking parameters
-                var viewStrategy = new PlanViewCloningStrategy(_logger);
+                var viewStrategy = new PlanViewCloningStrategy(_logger, parameterService);
                 viewStrategy.EnsureSourceTrackingParameters(_document.Document);
 
                 // Ensure sheet source tracking parameters
-                var sheetTrackingHelper = new SheetSourceTrackingHelper(_logger);
+                var sheetTrackingHelper = new SheetSourceTrackingHelper(_logger, parameterService);
                 sheetTrackingHelper.EnsureSourceTrackingParameters(_document.Document);
 
                 _logger.LogInformation("Source tracking parameters ready");

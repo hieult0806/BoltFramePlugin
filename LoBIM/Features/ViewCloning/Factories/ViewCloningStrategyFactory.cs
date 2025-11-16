@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
+using LoBIM.Services.Parameters;
 using System;
 
 namespace LoBIM.Features.ViewCloning.Factories
@@ -17,19 +18,19 @@ namespace LoBIM.Features.ViewCloning.Factories
         private readonly View3DViewCloningStrategy _view3DStrategy;
         private readonly ILoggingService _logger;
 
-        public ViewCloningStrategyFactory(ILoggingService logger)
+        public ViewCloningStrategyFactory(ILoggingService logger, IProjectParameterService parameterService)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             // Initialize strategies based on concrete view types
             // ViewSection handles: Section views, Elevation views (both regular and callouts)
-            _sectionStrategy = new SectionViewCloningStrategy(logger);
+            _sectionStrategy = new SectionViewCloningStrategy(logger, parameterService);
 
             // ViewPlan handles: FloorPlan, CeilingPlan, EngineeringPlan (both regular and callouts)
-            _planStrategy = new PlanViewCloningStrategy(logger);
+            _planStrategy = new PlanViewCloningStrategy(logger, parameterService);
 
             // View3D handles: 3D views
-            _view3DStrategy = new View3DViewCloningStrategy(logger);
+            _view3DStrategy = new View3DViewCloningStrategy(logger, parameterService);
         }
 
         /// <summary>
