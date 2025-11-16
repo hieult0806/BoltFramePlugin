@@ -69,10 +69,12 @@ namespace LoBIM.Features.SheetCloning.ViewModels
                 _availableSheets = value;
                 OnPropertyChanged(nameof(AvailableSheets));
                 OnPropertyChanged(nameof(HasSheets));
+                OnPropertyChanged(nameof(HasNoSheets));
             }
         }
 
         public bool HasSheets => AvailableSheets?.Count > 0;
+        public bool HasNoSheets => !HasSheets;
 
         private LinkedSheetInfo? _selectedSheet;
         public LinkedSheetInfo? SelectedSheet

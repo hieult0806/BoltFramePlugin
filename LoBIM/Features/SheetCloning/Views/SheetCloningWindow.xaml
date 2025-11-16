@@ -299,7 +299,7 @@
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
                                TextAlignment="Center"
-                               Visibility="{Binding HasSheets, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                               Visibility="{Binding HasNoSheets, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </Grid>
             </GroupBox>
         </Grid>

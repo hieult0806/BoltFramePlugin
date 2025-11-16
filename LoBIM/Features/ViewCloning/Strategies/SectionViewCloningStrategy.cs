@@ -104,6 +104,15 @@ namespace LoBIM.Features.ViewCloning.Strategies
                     finalTransform = CalculateRegularTransform(srcTransform, linkTransform, positioningMode);
                 }
 
+                // Store the SOURCE crop box dimensions BEFORE creating the view
+                // The View Template can override crop settings, so we need to restore them after template application
+                // We must store the SOURCE dimensions because CreateSectionView normalizes them to (0,0,0)/(width,height,depth)
+                var sourceCropMin = sourceBoundingBox.Min;
+                var sourceCropMax = sourceBoundingBox.Max;
+                _logger.LogInformation($"=== STORING SOURCE CROP BOX (from linked view) ===");
+                _logger.LogInformation($"Source Min: ({sourceCropMin.X:F6}, {sourceCropMin.Y:F6}, {sourceCropMin.Z:F6})");
+                _logger.LogInformation($"Source Max: ({sourceCropMax.X:F6}, {sourceCropMax.Y:F6}, {sourceCropMax.Z:F6})");
+
                 // Create the section view (works for both sections and elevations)
                 var newSection = CreateSectionView(hostDoc, sourceView.ViewType, sourceBoundingBox, finalTransform);
 
@@ -131,6 +140,78 @@ namespace LoBIM.Features.ViewCloning.Strategies
 
                 // Copy View Template if source has one (transfer if needed)
                 CopyViewTemplate(hostDoc, sourceView, newSection, linkedDoc);
+
+                // CRITICAL: Restore SOURCE crop box AND scale AFTER template application
+                // The View Template may override both crop region and scale settings
+                // We need to restore both to maintain the correct view extent and viewport size
+                try
+                {
+                    _logger.LogInformation($"=== RESTORING SOURCE CROP BOX (after template) ===");
+                    _logger.LogInformation($"Restoring to source dimensions:");
+                    _logger.LogInformation($"  Min: ({sourceCropMin.X:F6}, {sourceCropMin.Y:F6}, {sourceCropMin.Z:F6})");
+                    _logger.LogInformation($"  Max: ({sourceCropMax.X:F6}, {sourceCropMax.Y:F6}, {sourceCropMax.Z:F6})");
+
+                    var currentCropBox = newSection.CropBox;
+                    currentCropBox.Min = sourceCropMin;
+                    currentCropBox.Max = sourceCropMax;
+                    newSection.CropBox = currentCropBox;
+
+                    _logger.LogInformation($"✓ Successfully restored SOURCE crop box after template application");
+                    _logger.LogInformation($"  Final Min: ({newSection.CropBox.Min.X:F6}, {newSection.CropBox.Min.Y:F6}, {newSection.CropBox.Min.Z:F6})");
+                    _logger.LogInformation($"  Final Max: ({newSection.CropBox.Max.X:F6}, {newSection.CropBox.Max.Y:F6}, {newSection.CropBox.Max.Z:F6})");
+
+                    // Verify the dimensions match
+                    var finalMin = newSection.CropBox.Min;
+                    var finalMax = newSection.CropBox.Max;
+                    var minMatch = Math.Abs(finalMin.X - sourceCropMin.X) < 0.001 &&
+                                  Math.Abs(finalMin.Y - sourceCropMin.Y) < 0.001 &&
+                                  Math.Abs(finalMin.Z - sourceCropMin.Z) < 0.001;
+                    var maxMatch = Math.Abs(finalMax.X - sourceCropMax.X) < 0.001 &&
+                                  Math.Abs(finalMax.Y - sourceCropMax.Y) < 0.001 &&
+                                  Math.Abs(finalMax.Z - sourceCropMax.Z) < 0.001;
+
+                    if (minMatch && maxMatch)
+                    {
+                        _logger.LogInformation($"✓✓✓ CROP BOX DIMENSIONS MATCH SOURCE EXACTLY");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"⚠️ CROP BOX DIMENSIONS DO NOT MATCH SOURCE");
+                        _logger.LogWarning($"  Min match: {minMatch}, Max match: {maxMatch}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"⚠ Could not restore crop box after template: {ex.Message}");
+                }
+
+                // CRITICAL: Re-apply SOURCE scale AFTER template application
+                // The View Template may override the scale, which affects viewport size on sheets
+                try
+                {
+                    var sourceScale = sourceView.Scale;
+                    var currentScale = newSection.Scale;
+
+                    _logger.LogInformation($"=== RESTORING SOURCE SCALE (after template) ===");
+                    _logger.LogInformation($"Source scale: {sourceScale}");
+                    _logger.LogInformation($"Current scale (after template): {currentScale}");
+
+                    if (sourceScale != currentScale)
+                    {
+                        _logger.LogWarning($"⚠️ View Template changed the scale from {sourceScale} to {currentScale}");
+                        _logger.LogInformation($"Restoring source scale: {sourceScale}");
+                        newSection.Scale = sourceScale;
+                        _logger.LogInformation($"✓ Successfully restored source scale to: {newSection.Scale}");
+                    }
+                    else
+                    {
+                        _logger.LogInformation($"✓ Scale unchanged by template (already {sourceScale})");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"⚠ Could not restore scale after template: {ex.Message}");
+                }
 
                 // Final comparison logging to help identify position issues
                 _logger.LogInformation($"");
@@ -539,27 +620,9 @@ namespace LoBIM.Features.ViewCloning.Strategies
             _logger.LogInformation($"╚══════════════════════════════════════════════════════════════════");
             _logger.LogInformation($"");
 
-            // Attempt to restore the original cropbox Min/Max after creation
-            try
-            {
-                _logger.LogInformation($"=== ATTEMPTING TO RESTORE ORIGINAL CROPBOX MIN/MAX ===");
-                _logger.LogInformation($"Target Min: {min}");
-                _logger.LogInformation($"Target Max: {max}");
-
-                var currentCropBox = newSection.CropBox;
-                currentCropBox.Min = min;
-                currentCropBox.Max = max;
-                newSection.CropBox = currentCropBox;
-
-                _logger.LogInformation($"Successfully restored original cropbox Min/Max");
-                _logger.LogInformation($"Final CropBox Min: {newSection.CropBox.Min}");
-                _logger.LogInformation($"Final CropBox Max: {newSection.CropBox.Max}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Could not restore original cropbox Min/Max: {ex.Message}");
-                _logger.LogInformation($"The section will use normalized cropbox coordinates (this is cosmetic only)");
-            }
+            // NOTE: Crop box restoration has been moved to AFTER template application
+            // in the CloneView method, because View Templates can override crop settings.
+            // Restoring here (before template) would be overwritten by the template.
 
             return newSection;
         }

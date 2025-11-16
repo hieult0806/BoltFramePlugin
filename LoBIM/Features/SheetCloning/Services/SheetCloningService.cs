@@ -1210,6 +1210,40 @@ namespace LoBIM.Features.SheetCloning.Services
                                         _logger?.LogInformation($"Final target viewport - Center: ({finalBoxCenter.X:F4}, {finalBoxCenter.Y:F4}), " +
                                             $"Min: ({finalMin.X:F4}, {finalMin.Y:F4}), Max: ({finalMax.X:F4}, {finalMax.Y:F4})");
 
+                                        // Position comparison
+                                        var centerDeltaX = Math.Abs(finalBoxCenter.X - sourceBoxCenter.X);
+                                        var centerDeltaY = Math.Abs(finalBoxCenter.Y - sourceBoxCenter.Y);
+                                        var minDeltaX = Math.Abs(finalMin.X - sourceMin.X);
+                                        var minDeltaY = Math.Abs(finalMin.Y - sourceMin.Y);
+                                        var maxDeltaX = Math.Abs(finalMax.X - sourceMax.X);
+                                        var maxDeltaY = Math.Abs(finalMax.Y - sourceMax.Y);
+
+                                        _logger?.LogInformation($"");
+                                        _logger?.LogInformation($"╔══════════════════════════════════════════════════════════════════");
+                                        _logger?.LogInformation($"║ VIEWPORT POSITION COMPARISON (on sheet)");
+                                        _logger?.LogInformation($"╠══════════════════════════════════════════════════════════════════");
+                                        _logger?.LogInformation($"║ POSITION DELTAS (Target - Source):");
+                                        _logger?.LogInformation($"║   Center Δ:  ({centerDeltaX:F6}, {centerDeltaY:F6})");
+                                        _logger?.LogInformation($"║   Min Δ:     ({minDeltaX:F6}, {minDeltaY:F6})");
+                                        _logger?.LogInformation($"║   Max Δ:     ({maxDeltaX:F6}, {maxDeltaY:F6})");
+                                        _logger?.LogInformation($"║");
+                                        _logger?.LogInformation($"║ SIZE COMPARISON:");
+                                        _logger?.LogInformation($"║   Source: {sourceMax.X - sourceMin.X:F4} x {sourceMax.Y - sourceMin.Y:F4}");
+                                        _logger?.LogInformation($"║   Target: {finalMax.X - finalMin.X:F4} x {finalMax.Y - finalMin.Y:F4}");
+                                        _logger?.LogInformation($"║   Size Δ: {Math.Abs((finalMax.X - finalMin.X) - (sourceMax.X - sourceMin.X)):F6} x {Math.Abs((finalMax.Y - finalMin.Y) - (sourceMax.Y - sourceMin.Y)):F6}");
+
+                                        if (centerDeltaX < 0.001 && centerDeltaY < 0.001)
+                                        {
+                                            _logger?.LogInformation($"║ ✓ Viewport is at CORRECT position (center matches)");
+                                        }
+                                        else
+                                        {
+                                            _logger?.LogInformation($"║ ⚠️ Viewport position DIFFERS from source!");
+                                            _logger?.LogInformation($"║   Shift: {centerDeltaX:F6} ft horizontally, {centerDeltaY:F6} ft vertically");
+                                        }
+                                        _logger?.LogInformation($"╚══════════════════════════════════════════════════════════════════");
+                                        _logger?.LogInformation($"");
+
                                         _logger?.LogInformation($"Successfully placed view '{sourceView.Name}' on sheet");
                                     }
                                 }
@@ -1254,6 +1288,55 @@ namespace LoBIM.Features.SheetCloning.Services
                     {
                         // Type might not exist in target document
                     }
+                }
+
+                // CRITICAL: Ensure crop region settings match source
+                // The viewport size is controlled by the view's crop region, not the viewport directly
+                try
+                {
+                    var sourceView = sourceViewport.get_Parameter(BuiltInParameter.VIEW_NAME)?.AsString();
+                    _logger?.LogInformation($"=== CHECKING CROP REGION SETTINGS ===");
+
+                    // Get the target view from the viewport
+                    var targetView = targetViewport.ViewId;
+                    var doc = targetViewport.Document;
+                    var view = doc.GetElement(targetView) as Autodesk.Revit.DB.View;
+
+                    if (view != null)
+                    {
+                        _logger?.LogInformation($"Target view: {view.Name}");
+                        _logger?.LogInformation($"CropBoxActive: {view.CropBoxActive}");
+                        _logger?.LogInformation($"CropBoxVisible: {view.CropBoxVisible}");
+
+                        // Log crop box dimensions
+                        if (view.CropBoxActive)
+                        {
+                            var cropBox = view.CropBox;
+                            _logger?.LogInformation($"CropBox Min: ({cropBox.Min.X:F6}, {cropBox.Min.Y:F6}, {cropBox.Min.Z:F6})");
+                            _logger?.LogInformation($"CropBox Max: ({cropBox.Max.X:F6}, {cropBox.Max.Y:F6}, {cropBox.Max.Z:F6})");
+                        }
+
+                        // Get viewport outline for comparison
+                        var targetOutline = targetViewport.GetBoxOutline();
+                        var sourceOutline = sourceViewport.GetBoxOutline();
+
+                        _logger?.LogInformation($"Source viewport size: {(sourceOutline.MaximumPoint.X - sourceOutline.MinimumPoint.X):F6} x {(sourceOutline.MaximumPoint.Y - sourceOutline.MinimumPoint.Y):F6}");
+                        _logger?.LogInformation($"Target viewport size: {(targetOutline.MaximumPoint.X - targetOutline.MinimumPoint.X):F6} x {(targetOutline.MaximumPoint.Y - targetOutline.MinimumPoint.Y):F6}");
+
+                        var widthRatio = (targetOutline.MaximumPoint.X - targetOutline.MinimumPoint.X) / (sourceOutline.MaximumPoint.X - sourceOutline.MinimumPoint.X);
+                        var heightRatio = (targetOutline.MaximumPoint.Y - targetOutline.MinimumPoint.Y) / (sourceOutline.MaximumPoint.Y - sourceOutline.MinimumPoint.Y);
+
+                        _logger?.LogInformation($"Size ratio: {widthRatio:F4} x {heightRatio:F4} (1.0000 = perfect match)");
+
+                        if (Math.Abs(widthRatio - 1.0) > 0.01 || Math.Abs(heightRatio - 1.0) > 0.01)
+                        {
+                            _logger?.LogWarning($"⚠️ VIEWPORT SIZE MISMATCH - crop region may have been modified by View Template");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning($"Could not check crop region settings: {ex.Message}");
                 }
 
                 // Copy label position offset if label is shown
