@@ -356,6 +356,30 @@
                     </Style>
                 </Button.Style>
             </Button>
+            <Button Content="Re-Clone Selected"
+                    Command="{Binding ReCloneSelectedSheetsCommand}"
+                    Padding="20,10"
+                    Margin="0,0,10,0"
+                    FontWeight="SemiBold"
+                    FontSize="13"
+                    Background="#FF9800"
+                    Foreground="White"
+                    BorderThickness="0"
+                    Cursor="Hand"
+                    ToolTip="Update already cloned sheets with latest content from linked file">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#F57C00"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#CCCCCC"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
             <Button Content="Close"
                     Command="{Binding CloseCommand}"
                     Padding="20,10"

@@ -156,7 +156,7 @@ namespace LoBIM.Features.SheetCloning.Services
         /// <summary>
         /// Clones selected sheets from linked files to the host document
         /// </summary>
-        public int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null, ViewPositioningMode viewPositioningMode = ViewPositioningMode.InternalOriginToInternalOrigin)
+        public int CloneSheets(Document hostDoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, HashSet<string>? createdSheetNumbers = null, ViewPositioningMode viewPositioningMode = ViewPositioningMode.InternalOriginToInternalOrigin, bool isReClone = false)
         {
             int successCount = 0;
             // Track sheet numbers created in this session to avoid conflicts
@@ -192,7 +192,7 @@ namespace LoBIM.Features.SheetCloning.Services
 
                     try
                     {
-                        var clonedSheet = CloneSingleSheet(hostDoc, sourceSheet, linkedDoc, createdSheetNumbers, clonedViewsCache, viewPositioningMode);
+                        var clonedSheet = CloneSingleSheet(hostDoc, sourceSheet, linkedDoc, createdSheetNumbers, clonedViewsCache, viewPositioningMode, isReClone);
                         if (clonedSheet != null)
                         {
                             // Note: The sheet number is already added to createdSheetNumbers inside CloneSingleSheet
@@ -221,7 +221,7 @@ namespace LoBIM.Features.SheetCloning.Services
         /// <summary>
         /// Clones a single sheet from linked document to host document
         /// </summary>
-        private ViewSheet CloneSingleSheet(Document hostDoc, ViewSheet sourceSheet, Document linkedDoc, HashSet<string> createdSheetNumbers, Dictionary<string, ElementId> clonedViewsCache, ViewPositioningMode viewPositioningMode)
+        private ViewSheet CloneSingleSheet(Document hostDoc, ViewSheet sourceSheet, Document linkedDoc, HashSet<string> createdSheetNumbers, Dictionary<string, ElementId> clonedViewsCache, ViewPositioningMode viewPositioningMode, bool isReClone = false)
         {
             // STEP 1: Calculate the unique sheet number BEFORE creating the sheet
             _logger?.LogInformation($"=== Calculating unique sheet number for '{sourceSheet.SheetNumber}' ===");
@@ -237,7 +237,8 @@ namespace LoBIM.Features.SheetCloning.Services
             }
 
             // Get or create matching titleblock
-            var titleblockId = GetOrCreateTitleblock(hostDoc, sourceSheet, linkedDoc);
+            // During re-clone, skip copying title block family (it should already exist from initial clone)
+            var titleblockId = GetOrCreateTitleblock(hostDoc, sourceSheet, linkedDoc, isReClone);
             if (titleblockId == null || titleblockId == ElementId.InvalidElementId)
             {
                 _logger?.LogWarning($"Could not find or create titleblock for sheet {sourceSheet.SheetNumber}");
@@ -467,9 +468,9 @@ namespace LoBIM.Features.SheetCloning.Services
         /// Gets or creates a matching titleblock type in the host document
         /// If the titleblock doesn't exist in the host, it will be transferred from the source document
         /// </summary>
-        private ElementId GetOrCreateTitleblock(Document hostDoc, ViewSheet sourceSheet, Document linkedDoc)
+        private ElementId GetOrCreateTitleblock(Document hostDoc, ViewSheet sourceSheet, Document linkedDoc, bool skipTransfer = false)
         {
-            _logger?.LogInformation($"=== GETTING OR CREATING TITLEBLOCK ===");
+            _logger?.LogInformation($"=== GETTING OR CREATING TITLEBLOCK (skipTransfer={skipTransfer}) ===");
 
             // STEP 1: Get the titleblock instance from the source sheet
             var sourceTitleblockInstances = new FilteredElementCollector(linkedDoc)
@@ -566,6 +567,14 @@ namespace LoBIM.Features.SheetCloning.Services
 
             // STEP 3: No matching titleblock found - need to transfer from source document
             _logger?.LogInformation($"No matching titleblock found in host. Checking if we need to transfer from source document...");
+
+            // If skipTransfer is true (during re-clone), don't copy the title block family
+            // It should already exist from the initial clone
+            if (skipTransfer)
+            {
+                _logger?.LogInformation($"Skip transfer flag is set (re-clone mode). Using first available titleblock instead of transferring.");
+                return GetFirstAvailableTitleblock(hostDoc);
+            }
 
             if (sourceFamily != null)
             {

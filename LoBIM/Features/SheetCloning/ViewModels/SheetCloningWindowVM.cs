@@ -137,6 +137,7 @@ namespace LoBIM.Features.SheetCloning.ViewModels
         public ICommand SelectAllSheetsCommand { get; }
         public ICommand DeselectAllSheetsCommand { get; }
         public ICommand CloneSelectedSheetsCommand { get; }
+        public ICommand ReCloneSelectedSheetsCommand { get; }
         public ICommand ShowInProjectBrowserCommand { get; }
         public ICommand CloseCommand { get; }
 
@@ -170,6 +171,7 @@ namespace LoBIM.Features.SheetCloning.ViewModels
             SelectAllSheetsCommand = new RelayCommand(SelectAllSheets);
             DeselectAllSheetsCommand = new RelayCommand(DeselectAllSheets);
             CloneSelectedSheetsCommand = new RelayCommand(CloneSelectedSheets, CanCloneSheets);
+            ReCloneSelectedSheetsCommand = new RelayCommand(ReCloneSelectedSheets, CanReCloneSheets);
             ShowInProjectBrowserCommand = new RelayCommand(ShowInProjectBrowser, param => CanShowInProjectBrowser);
             CloseCommand = new RelayCommand(Close);
 
@@ -473,6 +475,94 @@ namespace LoBIM.Features.SheetCloning.ViewModels
             }
 
             _logger.LogInformation($"Sheet cloning completed: {successCount} sheets cloned");
+        }
+
+        private bool CanReCloneSheets(object parameter)
+        {
+            // Can re-clone if at least one selected sheet is already cloned
+            return AvailableSheets?.Any(s => s.IsSelected && s.IsCloned) == true;
+        }
+
+        private void ReCloneSelectedSheets(object parameter)
+        {
+            try
+            {
+                var selectedClonedSheets = AvailableSheets.Where(s => s.IsSelected && s.IsCloned).ToList();
+
+                if (selectedClonedSheets.Count == 0)
+                {
+                    TaskDialog.Show("No Cloned Sheets Selected",
+                        "Please select at least one already-cloned sheet to re-clone.\n\n" +
+                        "Re-clone will update the selected sheets with the latest content from the linked file.");
+                    return;
+                }
+
+                // Confirm with user
+                var result = TaskDialog.Show("Confirm Re-Clone",
+                    $"Are you sure you want to re-clone {selectedClonedSheets.Count} sheet(s)?\n\n" +
+                    "This will:\n" +
+                    "• Delete the existing cloned sheets\n" +
+                    "• Create fresh copies from the linked file\n" +
+                    "• Preserve source tracking information\n\n" +
+                    "This action cannot be undone.",
+                    TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No);
+
+                if (result != TaskDialogResult.Yes)
+                {
+                    return;
+                }
+
+                IsLoading = true;
+                StatusMessage = $"Re-cloning {selectedClonedSheets.Count} sheet(s)...";
+
+                // Build dictionary of linked documents
+                var linkedDocs = new Dictionary<string, Document>();
+                foreach (var file in LinkedFiles)
+                {
+                    linkedDocs[file.FileName] = file.LinkedDocument;
+                }
+
+                // Mark these as re-clone operation by setting a flag
+                // The CloneSheetsEventHandler will handle deletion of existing sheets
+                foreach (var sheet in selectedClonedSheets)
+                {
+                    sheet.IsSelected = true; // Ensure they remain selected
+                }
+
+                // Use ExternalEvent to execute re-cloning in Revit API context
+                _cloneSheetsHandler.SetParameters(_document, selectedClonedSheets, linkedDocs, OnReCloningCompleted, isReClone: true);
+                _cloneSheetsEvent.Raise();
+
+                _logger.LogInformation($"Initiated re-cloning of {selectedClonedSheets.Count} sheets");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error initiating sheet re-cloning: {ex.Message}", ex);
+                StatusMessage = $"Error: {ex.Message}";
+                TaskDialog.Show("Error", $"Failed to initiate sheet re-cloning: {ex.Message}");
+                IsLoading = false;
+            }
+        }
+
+        private void OnReCloningCompleted(int successCount)
+        {
+            IsLoading = false;
+
+            if (successCount > 0)
+            {
+                StatusMessage = $"Successfully re-cloned {successCount} sheet(s)";
+                TaskDialog.Show("Success", $"Successfully re-cloned {successCount} sheet(s) with latest content from linked file.");
+
+                // Reload sheets from the selected file to refresh source tracking info
+                LoadSheetsFromSelectedFile();
+            }
+            else
+            {
+                StatusMessage = "No sheets were re-cloned";
+                TaskDialog.Show("Error", "Failed to re-clone sheets. Check the log for details.");
+            }
+
+            _logger.LogInformation($"Sheet re-cloning completed: {successCount} sheets re-cloned");
         }
 
         private void Close(object parameter)

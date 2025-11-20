@@ -5,6 +5,7 @@ using Autodesk.Revit.UI;
 using LoBIM.Features.SheetCloning.Helpers;
 using LoBIM.Features.SheetCloning.Models;
 using LoBIM.Features.SheetCloning.Services;
+using LoBIM.Features.ViewCloning.Models;
 using LoBIM.Features.ViewCloning.Services;
 using LoBIM.Features.ViewCloning.Strategies;
 using LoBIM.Services;
@@ -24,6 +25,7 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
         private List<LinkedSheetInfo> _sheetsToClone;
         private Dictionary<string, Document> _linkedDocuments;
         private Action<int> _onComplete;
+        private bool _isReClone;
 
         public CloneSheetsEventHandler(ILoggingService logger, ISheetCloningService sheetCloningService, IProjectParameterService parameterService)
         {
@@ -35,12 +37,13 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
         /// <summary>
         /// Sets the parameters for the sheet cloning operation
         /// </summary>
-        public void SetParameters(UIDocument uidoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, Action<int> onComplete)
+        public void SetParameters(UIDocument uidoc, List<LinkedSheetInfo> sheets, Dictionary<string, Document> linkedDocuments, Action<int> onComplete, bool isReClone = false)
         {
             _uidoc = uidoc;
             _sheetsToClone = sheets;
             _linkedDocuments = linkedDocuments;
             _onComplete = onComplete;
+            _isReClone = isReClone;
         }
 
         public void Execute(UIApplication app)
@@ -54,7 +57,7 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
 
             try
             {
-                _logger?.LogInformation($"Starting sheet cloning process for {_sheetsToClone.Count} sheets");
+                _logger?.LogInformation($"Starting sheet {(_isReClone ? "re-cloning" : "cloning")} process for {_sheetsToClone.Count} sheets");
 
                 // Ensure source tracking parameters exist BEFORE starting the transaction
                 // This must be done outside of any transaction since parameter creation requires its own transaction
@@ -85,16 +88,35 @@ namespace LoBIM.Features.SheetCloning.EventHandlers
                 // This ensures each sheet is fully committed before the next one starts
                 foreach (var sheetInfo in _sheetsToClone)
                 {
-                    using (Transaction trans = new Transaction(_uidoc.Document, $"Clone Sheet {sheetInfo.SheetNumber}"))
+                    using (Transaction trans = new Transaction(_uidoc.Document, $"{(_isReClone ? "Re-Clone" : "Clone")} Sheet {sheetInfo.SheetNumber}"))
                     {
                         trans.Start();
 
                         try
                         {
+                            // If re-cloning, delete the existing cloned sheet first
+                            if (_isReClone && sheetInfo.ClonedSheetId != null)
+                            {
+                                try
+                                {
+                                    var existingSheet = _uidoc.Document.GetElement(sheetInfo.ClonedSheetId) as ViewSheet;
+                                    if (existingSheet != null)
+                                    {
+                                        _logger?.LogInformation($"Deleting existing cloned sheet: {existingSheet.SheetNumber} - {existingSheet.Name}");
+                                        _uidoc.Document.Delete(sheetInfo.ClonedSheetId);
+                                        _logger?.LogInformation($"Successfully deleted existing sheet");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger?.LogWarning($"Could not delete existing sheet {sheetInfo.SheetNumber}: {ex.Message}");
+                                }
+                            }
+
                             // Create a single-item list for this sheet
                             var singleSheetList = new List<LinkedSheetInfo> { sheetInfo };
 
-                            int result = _sheetCloningService.CloneSheets(_uidoc.Document, singleSheetList, _linkedDocuments, createdSheetNumbers);
+                            int result = _sheetCloningService.CloneSheets(_uidoc.Document, singleSheetList, _linkedDocuments, createdSheetNumbers, ViewPositioningMode.InternalOriginToInternalOrigin, _isReClone);
 
                             if (result > 0)
                             {
