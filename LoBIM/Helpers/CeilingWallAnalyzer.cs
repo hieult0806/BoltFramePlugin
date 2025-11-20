@@ -273,12 +273,12 @@ namespace LoBIM.Helpers
         }
 
         /// <summary>
-        /// Checks if a wall is a perimeter wall based on LD_IsPerimeter parameter
+        /// Checks if a wall is a perimeter wall based on IsPerimeter parameter
         /// </summary>
         private static bool IsPerimeterWall(Wall wall)
         {
-            // Check for LD_IsPerimeter parameter
-            var isPerimeterParam = wall.LookupParameter("LD_IsPerimeter");
+            // Check for IsPerimeter parameter
+            var isPerimeterParam = wall.LookupParameter("IsPerimeter");
             if (isPerimeterParam != null && isPerimeterParam.StorageType == StorageType.Integer)
             {
                 return isPerimeterParam.AsInteger() == 1;

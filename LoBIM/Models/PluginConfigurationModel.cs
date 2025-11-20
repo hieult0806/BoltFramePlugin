@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using LoBIM.Features.LimitingDistance.Models;
+using LoBIM.Features.NBCReview.Models;
 
 namespace LoBIM.Models
 {
@@ -14,7 +14,7 @@ namespace LoBIM.Models
         public bool EnableLogging { get; set; }
         public string LogLevel { get; set; }
 
-        // Limiting Distance Plugin Settings
+        // NBC Review Plugin Settings
         public string DefaultBuildingClassification { get; set; } = "Type IIA";
         public double DefaultRayLengthLimit { get; set; } = 100.0; // feet
         public bool AutoCreateArrows { get; set; } = false; // Automatically create arrows when detecting reference lines
@@ -24,7 +24,7 @@ namespace LoBIM.Models
 
         // UI Settings
         public string UITheme { get; set; } = "Light";
-        public WindowPosition LimitingDistanceWindowPosition { get; set; } = new WindowPosition();
+        public WindowPosition NBCReviewWindowPosition { get; set; } = new WindowPosition();
 
         // Recent Projects
         public List<string> RecentProjects { get; set; } = new List<string>();

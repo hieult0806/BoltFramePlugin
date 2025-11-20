@@ -116,7 +116,7 @@ namespace LoBIM.Services
                 {
                     { "BoltFrame", new FeatureFlagModel { Enabled = true, Name = "Bolt Frame" } },
                     { "SwitchViewPanel", new FeatureFlagModel { Enabled = true, Name = "View Plans" } },
-                    { "LimitingDistance", new FeatureFlagModel { Enabled = true, Name = "Limiting Distance" } },
+                    { "NBCReview", new FeatureFlagModel { Enabled = true, Name = "NBC Review" } },
                     { "DataImport", new FeatureFlagModel { Enabled = true, Name = "Import Table" } },
                     { "SheetManagement", new FeatureFlagModel { Enabled = true, Name = "Manage Sheets" } },
                     { "ViewCloning", new FeatureFlagModel { Enabled = true, Name = "Clone Views" } },

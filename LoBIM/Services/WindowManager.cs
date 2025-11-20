@@ -4,8 +4,8 @@ using System.Windows.Interop;
 using Autodesk.Revit.DB;
 using LoBIM.Features.Framing.ViewModels;
 using LoBIM.Features.Framing.Views;
-using LoBIM.Features.LimitingDistance.ViewModels;
-using LoBIM.Features.LimitingDistance.Views;
+using LoBIM.Features.NBCReview.ViewModels;
+using LoBIM.Features.NBCReview.Views;
 using LoBIM.Models;
 using LoBIM.ViewModels;
 using LoBIM.Views;
@@ -190,7 +190,7 @@ namespace LoBIM.Services
                 { typeof(BoltFrameMainWindowVM), typeof(BoltFrameMainWindow) },
                 { typeof(BoltWallFrameWindowVM), typeof(BoltWallFrameWindow) },
                 { typeof(FramingSummaryVM), typeof(FramingSummaryWindow) },
-                { typeof(LimitingDistanceWindowVM), typeof(LimitingDistanceWindow) },
+                { typeof(NBCReviewWindowVM), typeof(NBCReviewWindow) },
                 { typeof(TypeSelectionPopupVM), typeof(TypeSelectionWindow) },
                 { typeof(ConfigurationWindowVM), typeof(Views.ConfigurationWindow) },
                 { typeof(SwitchViewShortcutDockablePaneVM), typeof(Views.SwitchViewShortcutPanel) },

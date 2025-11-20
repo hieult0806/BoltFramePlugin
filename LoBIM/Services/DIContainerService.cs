@@ -39,10 +39,10 @@ namespace LoBIM.Services
             container.RegisterSingleton<LoBIM.Features.DataImport.Services.FileWatcherService>();
             container.RegisterSingleton<LoBIM.Features.DataImport.EventHandlers.AutoSyncEventHandler>();
 
-            // Limiting Distance Services
-            container.RegisterSingleton<LoBIM.Features.LimitingDistance.Services.LimitingDistanceReportService>();
-            container.RegisterSingleton<LoBIM.Features.LimitingDistance.Services.INBCConfigurationService, LoBIM.Features.LimitingDistance.Services.NBCConfigurationService>();
-            container.RegisterSingleton<LoBIM.Features.LimitingDistance.Services.IElementHighlightService, LoBIM.Features.LimitingDistance.Services.ElementHighlightService>();
+            // NBC Review Services
+            container.RegisterSingleton<LoBIM.Features.NBCReview.Services.NBCComplianceReportService>();
+            container.RegisterSingleton<LoBIM.Features.NBCReview.Services.INBCConfigurationService, LoBIM.Features.NBCReview.Services.NBCConfigurationService>();
+            container.RegisterSingleton<LoBIM.Features.NBCReview.Services.IElementHighlightService, LoBIM.Features.NBCReview.Services.ElementHighlightService>();
 
             // Sheet Management Services
             container.RegisterSingleton<LoBIM.Features.SheetManagement.Services.ISheetManagementService, LoBIM.Features.SheetManagement.Services.SheetManagementService>();

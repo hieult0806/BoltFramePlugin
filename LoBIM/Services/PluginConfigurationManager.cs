@@ -62,7 +62,7 @@ namespace LoBIM.Services
                 DefaultRayLengthLimit = 100.0,
                 AutoCreateArrows = false,
                 UITheme = "Light",
-                LimitingDistanceWindowPosition = new WindowPosition(),
+                NBCReviewWindowPosition = new WindowPosition(),
                 RecentProjects = new List<string>()
             };
         }

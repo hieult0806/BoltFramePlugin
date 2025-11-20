@@ -30,9 +30,9 @@ LoBIM/Resources/Config/FeatureFlags.json
       "Name": "Bolt Frame",
       ...
     },
-    "LimitingDistance": {
+    "NBCReview": {
       "Enabled": true,
-      "Name": "Limiting Distance",
+      "Name": "NBC Review",
       ...
     }
   }
@@ -53,9 +53,9 @@ LoBIM/Resources/Config/FeatureFlags.json
       "Name": "Clone Views",
       ...
     },
-    "LimitingDistance": {
+    "NBCReview": {
       "Enabled": false,   // ← This feature won't appear in the ribbon
-      "Name": "Limiting Distance",
+      "Name": "NBC Review",
       ...
     }
   }
@@ -68,7 +68,7 @@ LoBIM/Resources/Config/FeatureFlags.json
 |------------|--------------|-------------|
 | `BoltFrame` | Bolt Frame | Structural framing automation |
 | `SwitchViewPanel` | View Plans | Quick view switching panel |
-| `LimitingDistance` | Limiting Distance | NBC limiting distance calculations |
+| `NBCReview` | NBC Review | NBC compliance review and limiting distance calculations |
 | `DataImport` | Import Table | Import CSV/Excel to drafting views |
 | `SheetManagement` | Manage Sheets | Sheet organization and renumbering |
 | `ViewCloning` | Clone Views | Clone views from linked files |

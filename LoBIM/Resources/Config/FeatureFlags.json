@@ -18,13 +18,13 @@
       "LongDescription": "Show or hide the Switch View Plans panel.",
       "IconName": "design"
     },
-    "LimitingDistance": {
+    "NBCReview": {
       "Enabled": true,
-      "Name": "Limiting Distance",
-      "ButtonName": "LimitingDistanceButton",
-      "ClassName": "LoBIM.Features.LimitingDistance.Commands.LimitingDistanceCommand",
-      "Tooltip": "Calculate Limiting Distance",
-      "LongDescription": "Select property line and highlight perimeter walls for limiting distance calculation.",
+      "Name": "NBC Review",
+      "ButtonName": "NBCReviewButton",
+      "ClassName": "LoBIM.Features.NBCReview.Commands.NBCReviewCommand",
+      "Tooltip": "NBC Compliance Review",
+      "LongDescription": "Review and validate building envelope compliance with National Building Code (NBC) limiting distance requirements.",
       "IconName": "firewall"
     },
     "DataImport": {
