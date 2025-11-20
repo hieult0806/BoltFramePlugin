@@ -110,29 +110,30 @@ namespace LoBIM.Features.SheetCloning.Services
                         {
                             // Check source tracking parameters
                             var sourceFileParam = hostSheet.LookupParameter("LoBIM_SourceFile");
-                            var sourceSheetParam = hostSheet.LookupParameter("LoBIM_SourceSheet");
+                            var sourceNameParam = hostSheet.LookupParameter("LoBIM_SourceSheetName");
                             var sourceIdParam = hostSheet.LookupParameter("LoBIM_SourceSheetId");
 
-                            if (sourceFileParam != null && sourceSheetParam != null && sourceIdParam != null)
+                            if (sourceFileParam != null && sourceIdParam != null)
                             {
                                 string sourceFile = sourceFileParam.AsString();
-                                string sourceSheetNumber = sourceSheetParam.AsString();
+                                string sourceSheetName = sourceNameParam?.AsString();
                                 string sourceSheetId = sourceIdParam.AsString();
 
                                 // Check if this host sheet was cloned from the current linked sheet
+                                // Match by source file and source sheet ID
                                 if (!string.IsNullOrEmpty(sourceFile) &&
-                                    !string.IsNullOrEmpty(sourceSheetNumber) &&
+                                    !string.IsNullOrEmpty(sourceSheetId) &&
                                     sourceFile.Contains(linkedFileName) &&
-                                    sourceSheetNumber == linkedSheetInfo.SheetNumber)
+                                    sourceSheetId == linkedSheetInfo.SheetId.ToString())
                                 {
                                     // This sheet in the host was cloned from this linked sheet
                                     linkedSheetInfo.SourceTrackingFileName = sourceFile;
-                                    linkedSheetInfo.SourceTrackingSheetNumber = sourceSheetNumber;
+                                    linkedSheetInfo.SourceTrackingSheetName = sourceSheetName;
                                     linkedSheetInfo.SourceTrackingSheetId = sourceSheetId;
                                     linkedSheetInfo.IsCloned = true;
                                     linkedSheetInfo.ClonedSheetId = hostSheet.Id;
 
-                                    _logger?.LogInformation($"✓ Found existing cloned sheet: {hostSheet.SheetNumber} from {sourceFile} > {sourceSheetNumber}");
+                                    _logger?.LogInformation($"✓ Found existing cloned sheet: {hostSheet.SheetNumber} from {sourceFile} > {sourceSheetName}");
                                     break; // Found the match, no need to check other host sheets for this linked sheet
                                 }
                             }

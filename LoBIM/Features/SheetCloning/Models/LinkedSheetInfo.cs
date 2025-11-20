@@ -113,19 +113,19 @@ namespace LoBIM.Features.SheetCloning.Models
             }
         }
 
-        private string _sourceTrackingSheetNumber;
+        private string _sourceTrackingSheetName;
         /// <summary>
-        /// Source sheet number (from LoBIM_SourceSheet parameter in host document)
+        /// Source sheet name (from LoBIM_SourceSheetName parameter in host document)
         /// </summary>
-        public string SourceTrackingSheetNumber
+        public string SourceTrackingSheetName
         {
-            get => _sourceTrackingSheetNumber;
+            get => _sourceTrackingSheetName;
             set
             {
-                if (_sourceTrackingSheetNumber != value)
+                if (_sourceTrackingSheetName != value)
                 {
-                    _sourceTrackingSheetNumber = value;
-                    OnPropertyChanged(nameof(SourceTrackingSheetNumber));
+                    _sourceTrackingSheetName = value;
+                    OnPropertyChanged(nameof(SourceTrackingSheetName));
                     OnPropertyChanged(nameof(SourceTrackingText));
                 }
             }
@@ -160,8 +160,8 @@ namespace LoBIM.Features.SheetCloning.Models
         {
             get
             {
-                if (HasSourceTracking)
-                    return $"From: {SourceTrackingFileName} > {SourceTrackingSheetNumber}";
+                if (HasSourceTracking && !string.IsNullOrEmpty(SourceTrackingSheetName))
+                    return $"From: {SourceTrackingFileName} > {SourceTrackingSheetName}";
                 return "";
             }
         }

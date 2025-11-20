@@ -90,7 +90,7 @@
                                Foreground="Gray"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
-                               Visibility="{Binding HasLinkedFiles, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                               Visibility="{Binding HasNoLinkedFiles, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </Grid>
             </GroupBox>
 

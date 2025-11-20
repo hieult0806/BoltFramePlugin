@@ -389,108 +389,88 @@ namespace LoBIM.Services.Parameters
 
         public IEnumerable<ProjectParameterDefinition> GetSheetSourceTrackingParameters()
         {
-            return new List<ProjectParameterDefinition>
+            try
             {
-                new ProjectParameterDefinition
+                // Load from JSON configuration file
+                var assemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var assemblyDir = System.IO.Path.GetDirectoryName(assemblyPath);
+                var configPath = System.IO.Path.Combine(assemblyDir!, "Resources", "Config", "ProjectParameters.json");
+
+                if (System.IO.File.Exists(configPath))
                 {
-                    Name = "LoBIM_SourceFile",
-                    ParameterType = "Text",
-                    SharedParameterGroup = LOBIM_SHARED_PARAM_GROUP,
-                    GroupName = "Other",
-                    Description = "Source linked file name",
-                    IsInstance = true,
-                    IsProjectParameter = true, // Project parameter - NOT locked by templates
-                    Categories = new List<string> { "Sheets" },
-                    ForgeParameterType = SpecTypeId.String.Text,
-                    ForgeGroupType = GroupTypeId.IdentityData
-                },
-                new ProjectParameterDefinition
-                {
-                    Name = "LoBIM_SourceSheet",
-                    ParameterType = "Text",
-                    SharedParameterGroup = LOBIM_SHARED_PARAM_GROUP,
-                    GroupName = "Other",
-                    Description = "Source sheet number",
-                    IsInstance = true,
-                    IsProjectParameter = true, // Project parameter - NOT locked by templates
-                    Categories = new List<string> { "Sheets" },
-                    ForgeParameterType = SpecTypeId.String.Text,
-                    ForgeGroupType = GroupTypeId.IdentityData
-                },
-                new ProjectParameterDefinition
-                {
-                    Name = "LoBIM_SourceSheetId",
-                    ParameterType = "Text",
-                    SharedParameterGroup = LOBIM_SHARED_PARAM_GROUP,
-                    GroupName = "Other",
-                    Description = "Source sheet element ID",
-                    IsInstance = true,
-                    IsProjectParameter = true, // Project parameter - NOT locked by templates
-                    Categories = new List<string> { "Sheets" },
-                    ForgeParameterType = SpecTypeId.String.Text,
-                    ForgeGroupType = GroupTypeId.IdentityData
+                    var allParams = LoadParametersFromJson(configPath);
+
+                    // Filter for sheet source tracking parameters
+                    var sheetParams = allParams.Where(p =>
+                        p.Name.StartsWith("LoBIM_Source") &&
+                        p.Categories.Contains("Sheets"))
+                        .ToList();
+
+                    if (sheetParams.Any())
+                    {
+                        _logger.LogInformation($"Loaded {sheetParams.Count} sheet source tracking parameters from JSON");
+                        return sheetParams;
+                    }
                 }
-            };
+
+                _logger.LogWarning("Could not load sheet parameters from JSON, returning empty list");
+                return new List<ProjectParameterDefinition>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading sheet source tracking parameters: {ex.Message}", ex);
+                return new List<ProjectParameterDefinition>();
+            }
         }
 
         public IEnumerable<ProjectParameterDefinition> GetViewSourceTrackingParameters()
         {
-            return new List<ProjectParameterDefinition>
+            try
             {
-                new ProjectParameterDefinition
+                // Load from JSON configuration file
+                var assemblyPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var assemblyDir = System.IO.Path.GetDirectoryName(assemblyPath);
+                var configPath = System.IO.Path.Combine(assemblyDir!, "Resources", "Config", "ProjectParameters.json");
+
+                if (System.IO.File.Exists(configPath))
                 {
-                    Name = "LoBIM_SourceFile",
-                    ParameterType = "Text",
-                    SharedParameterGroup = LOBIM_SHARED_PARAM_GROUP,
-                    GroupName = "Other",
-                    Description = "Source linked file name",
-                    IsInstance = true,
-                    IsProjectParameter = true, // Project parameter - NOT locked by templates
-                    Categories = new List<string> { "Views" },
-                    ForgeParameterType = SpecTypeId.String.Text,
-                    ForgeGroupType = GroupTypeId.IdentityData
-                },
-                new ProjectParameterDefinition
-                {
-                    Name = "LoBIM_SourceView",
-                    ParameterType = "Text",
-                    SharedParameterGroup = LOBIM_SHARED_PARAM_GROUP,
-                    GroupName = "Other",
-                    Description = "Source view name",
-                    IsInstance = true,
-                    IsProjectParameter = true, // Project parameter - NOT locked by templates
-                    Categories = new List<string> { "Views" },
-                    ForgeParameterType = SpecTypeId.String.Text,
-                    ForgeGroupType = GroupTypeId.IdentityData
-                },
-                new ProjectParameterDefinition
-                {
-                    Name = "LoBIM_SourceViewId",
-                    ParameterType = "Text",
-                    SharedParameterGroup = LOBIM_SHARED_PARAM_GROUP,
-                    GroupName = "Other",
-                    Description = "Source view element ID",
-                    IsInstance = true,
-                    IsProjectParameter = true, // Project parameter - NOT locked by templates
-                    Categories = new List<string> { "Views" },
-                    ForgeParameterType = SpecTypeId.String.Text,
-                    ForgeGroupType = GroupTypeId.IdentityData
+                    var allParams = LoadParametersFromJson(configPath);
+
+                    // Filter for view source tracking parameters
+                    var viewParams = allParams.Where(p =>
+                        p.Name.StartsWith("LoBIM_Source") &&
+                        p.Categories.Contains("Views"))
+                        .ToList();
+
+                    if (viewParams.Any())
+                    {
+                        _logger.LogInformation($"Loaded {viewParams.Count} view source tracking parameters from JSON");
+                        return viewParams;
+                    }
                 }
-            };
+
+                _logger.LogWarning("Could not load view parameters from JSON, returning empty list");
+                return new List<ProjectParameterDefinition>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error loading view source tracking parameters: {ex.Message}", ex);
+                return new List<ProjectParameterDefinition>();
+            }
         }
 
         #endregion
 
         #region Source Tracking - Storage and Retrieval
 
-        public void StoreSheetSourceTracking(ViewSheet clonedSheet, string sourceFileName, string sourceSheetNumber, ElementId sourceSheetId)
+        public void StoreSheetSourceTracking(ViewSheet clonedSheet, string sourceFileName, string sourceSheetName, ElementId sourceSheetId)
         {
             try
             {
-                _logger.LogInformation($"Storing sheet source tracking: {sourceFileName} > {sourceSheetNumber}");
+                _logger.LogInformation($"Storing sheet source tracking: {sourceFileName} > {sourceSheetName} (ID: {sourceSheetId})");
 
                 SetParameterValue(clonedSheet, "LoBIM_SourceFile", sourceFileName);
-                SetParameterValue(clonedSheet, "LoBIM_SourceSheet", sourceSheetNumber);
+                SetParameterValue(clonedSheet, "LoBIM_SourceSheetName", sourceSheetName);
                 SetParameterValue(clonedSheet, "LoBIM_SourceSheetId", sourceSheetId.ToString());
             }
             catch (Exception ex)
@@ -522,7 +502,7 @@ namespace LoBIM.Services.Parameters
                 var info = new SourceTrackingInfo
                 {
                     SourceFileName = GetParameterValue(sheet, "LoBIM_SourceFile"),
-                    SourceSheetNumber = GetParameterValue(sheet, "LoBIM_SourceSheet"),
+                    SourceSheetName = GetParameterValue(sheet, "LoBIM_SourceSheetName"),
                     SourceSheetId = GetParameterValue(sheet, "LoBIM_SourceSheetId")
                 };
 

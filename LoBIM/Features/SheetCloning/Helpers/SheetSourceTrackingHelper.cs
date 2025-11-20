@@ -70,11 +70,11 @@ namespace LoBIM.Features.SheetCloning.Helpers
                 _parameterService.StoreSheetSourceTracking(
                     clonedSheet,
                     linkedFileName,
-                    sourceSheet.SheetNumber,
+                    sourceSheet.Name,
                     sourceSheet.Id
                 );
 
-                _logger.LogInformation($"Successfully stored source tracking: {linkedFileName} > {sourceSheet.SheetNumber}");
+                _logger.LogInformation($"Successfully stored source tracking: {linkedFileName} > {sourceSheet.Name} (ID: {sourceSheet.Id})");
             }
             catch (Exception ex)
             {

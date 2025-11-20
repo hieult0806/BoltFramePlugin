@@ -40,10 +40,12 @@ namespace LoBIM.Features.SheetCloning.ViewModels
                 _linkedFiles = value;
                 OnPropertyChanged(nameof(LinkedFiles));
                 OnPropertyChanged(nameof(HasLinkedFiles));
+                OnPropertyChanged(nameof(HasNoLinkedFiles));
             }
         }
 
         public bool HasLinkedFiles => LinkedFiles?.Count > 0;
+        public bool HasNoLinkedFiles => !HasLinkedFiles;
 
         private LinkedFileInfo? _selectedLinkedFile;
         public LinkedFileInfo? SelectedLinkedFile
@@ -362,7 +364,7 @@ namespace LoBIM.Features.SheetCloning.ViewModels
             if (success)
             {
                 StatusMessage = $"Opened sheet '{sheetNumber}'";
-                _logger.LogInformation($"Opened sheet '{sheetNumber}' (Source: {SelectedSheet?.SourceTrackingFileName} > {SelectedSheet?.SourceTrackingSheetNumber})");
+                _logger.LogInformation($"Opened sheet '{sheetNumber}' (Source: {SelectedSheet?.SourceTrackingFileName} > {SelectedSheet?.SourceTrackingSheetName})");
             }
             else
             {

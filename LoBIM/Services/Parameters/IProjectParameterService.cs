@@ -85,17 +85,17 @@ namespace LoBIM.Services.Parameters
         bool SetParameterValue(Element element, string parameterName, double value);
 
         /// <summary>
-        /// Gets the LoBIM source tracking parameters for sheets
-        /// Returns pre-configured parameter definitions for:
+        /// Gets the LoBIM source tracking parameters for sheets from ProjectParameters.json
+        /// Returns parameter definitions for:
         /// - LoBIM_SourceFile
-        /// - LoBIM_SourceSheet
+        /// - LoBIM_SourceSheetName
         /// - LoBIM_SourceSheetId
         /// </summary>
         IEnumerable<ProjectParameterDefinition> GetSheetSourceTrackingParameters();
 
         /// <summary>
-        /// Gets the LoBIM source tracking parameters for views
-        /// Returns pre-configured parameter definitions for:
+        /// Gets the LoBIM source tracking parameters for views from ProjectParameters.json
+        /// Returns parameter definitions for:
         /// - LoBIM_SourceFile
         /// - LoBIM_SourceView
         /// - LoBIM_SourceViewId
@@ -108,9 +108,9 @@ namespace LoBIM.Services.Parameters
         /// </summary>
         /// <param name="clonedSheet">The cloned sheet</param>
         /// <param name="sourceFileName">Name of the source linked file</param>
-        /// <param name="sourceSheetNumber">Sheet number from source</param>
+        /// <param name="sourceSheetName">Sheet name (title) from source</param>
         /// <param name="sourceSheetId">Sheet ID from source</param>
-        void StoreSheetSourceTracking(ViewSheet clonedSheet, string sourceFileName, string sourceSheetNumber, ElementId sourceSheetId);
+        void StoreSheetSourceTracking(ViewSheet clonedSheet, string sourceFileName, string sourceSheetName, ElementId sourceSheetId);
 
         /// <summary>
         /// Stores source tracking information for a cloned view

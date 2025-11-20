@@ -11,9 +11,9 @@ namespace LoBIM.Services.Parameters.Models
         public string SourceFileName { get; set; }
 
         /// <summary>
-        /// Sheet number from source (for sheets only)
+        /// Sheet name (title) from source (for sheets only)
         /// </summary>
-        public string SourceSheetNumber { get; set; }
+        public string SourceSheetName { get; set; }
 
         /// <summary>
         /// Sheet ID from source (for sheets only)
@@ -45,8 +45,8 @@ namespace LoBIM.Services.Parameters.Models
                 if (!HasSourceTracking)
                     return string.Empty;
 
-                if (!string.IsNullOrEmpty(SourceSheetNumber))
-                    return $"From: {SourceFileName} > {SourceSheetNumber}";
+                if (!string.IsNullOrEmpty(SourceSheetName))
+                    return $"From: {SourceFileName} > {SourceSheetName}";
 
                 if (!string.IsNullOrEmpty(SourceViewName))
                     return $"From: {SourceFileName} > {SourceViewName}";
