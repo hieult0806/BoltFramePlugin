@@ -1,1 +1,0 @@
-Start-Process "C:\Program Files\Autodesk\Revit 2025\Revit.exe" -ArgumentList "D:\GameDevelopments\BoltFramePlugin\Bed.rvt"

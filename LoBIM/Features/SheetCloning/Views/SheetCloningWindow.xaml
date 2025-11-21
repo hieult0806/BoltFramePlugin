@@ -1,0 +1,389 @@
+<Window x:Class="LoBIM.Features.SheetCloning.Views.SheetCloningWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Clone Sheets from Linked Files"
+        Height="650"
+        Width="1200"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </Window.Resources>
+
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,15">
+            <TextBlock Text="Clone Sheets from Linked Revit Files"
+                       FontSize="18"
+                       FontWeight="Bold"
+                       Margin="0,0,0,5"/>
+            <TextBlock Text="Select sheets from linked files to clone into the current document"
+                       FontSize="12"
+                       Foreground="Gray"/>
+        </StackPanel>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panel: Linked Files -->
+            <GroupBox Grid.Column="0"
+                      Header="Linked Files"
+                      Margin="0,0,10,0"
+                      Padding="10">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Refresh Button -->
+                    <Button Grid.Row="0"
+                            Content="↻ Refresh"
+                            Command="{Binding RefreshLinkedFilesCommand}"
+                            Margin="0,0,0,10"
+                            Padding="8"
+                            HorizontalAlignment="Stretch"
+                            FontWeight="SemiBold"/>
+
+                    <!-- Linked Files List -->
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding LinkedFiles}"
+                             SelectedItem="{Binding SelectedLinkedFile}"
+                             SelectionMode="Single"
+                             BorderBrush="#CCCCCC"
+                             BorderThickness="1">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="5">
+                                    <TextBlock Text="{Binding FileName}"
+                                               FontWeight="SemiBold"
+                                               FontSize="13"/>
+                                    <TextBlock Text="{Binding FilePath}"
+                                               FontSize="10"
+                                               Foreground="#666666"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- No Files Message -->
+                    <TextBlock Grid.Row="1"
+                               Text="No linked files found"
+                               FontStyle="Italic"
+                               Foreground="Gray"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding HasNoLinkedFiles, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                </Grid>
+            </GroupBox>
+
+            <!-- Right Panel: Sheets -->
+            <GroupBox Grid.Column="1"
+                      Header="Available Sheets"
+                      Margin="10,0,0,0"
+                      Padding="10">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Search and Selection Controls -->
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Search Box -->
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Padding="8"
+                                 Margin="0,0,10,0"
+                                 VerticalContentAlignment="Center"
+                                 BorderBrush="#CCCCCC">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox">
+                                    <Style.Triggers>
+                                        <Trigger Property="Text" Value="">
+                                            <Setter Property="Background">
+                                                <Setter.Value>
+                                                    <VisualBrush Stretch="None" AlignmentX="Left">
+                                                        <VisualBrush.Visual>
+                                                            <TextBlock Text="🔍 Search sheets..."
+                                                                     Foreground="LightGray"
+                                                                     Margin="5,0,0,0"/>
+                                                        </VisualBrush.Visual>
+                                                    </VisualBrush>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+
+                        <!-- Selection Buttons -->
+                        <Button Grid.Column="1"
+                                Content="Select All"
+                                Command="{Binding SelectAllSheetsCommand}"
+                                Padding="12,8"
+                                Margin="0,0,5,0"
+                                FontSize="11"/>
+                        <Button Grid.Column="2"
+                                Content="Deselect All"
+                                Command="{Binding DeselectAllSheetsCommand}"
+                                Padding="12,8"
+                                FontSize="11"/>
+                    </Grid>
+
+                    <!-- Sheet Count -->
+                    <TextBlock Grid.Row="1"
+                               Margin="0,0,0,8"
+                               FontSize="11"
+                               Foreground="#666666">
+                        <Run Text="{Binding AvailableSheets.Count, Mode=OneWay}"/>
+                        <Run Text="sheet(s) available"/>
+                    </TextBlock>
+
+                    <!-- Sheets DataGrid -->
+                    <DataGrid Grid.Row="2"
+                              x:Name="SheetsDataGrid"
+                              ItemsSource="{Binding AvailableSheets}"
+                              SelectedItem="{Binding SelectedSheet}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserResizeRows="False"
+                              SelectionMode="Single"
+                              GridLinesVisibility="Horizontal"
+                              AlternatingRowBackground="#F9F9F9"
+                              HeadersVisibility="Column"
+                              IsReadOnly="False"
+                              BorderBrush="#CCCCCC"
+                              BorderThickness="1"
+                              RowHeight="32"
+                              SelectionUnit="FullRow"
+                              MouseDoubleClick="SheetsDataGrid_MouseDoubleClick"
+                              PreviewMouseLeftButtonDown="SheetsDataGrid_PreviewMouseLeftButtonDown">
+
+                        <DataGrid.Columns>
+                            <!-- Selection Checkbox -->
+                            <DataGridTemplateColumn Header="Clone" Width="60">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Sheet Number -->
+                            <DataGridTextColumn Header="Sheet No."
+                                              Binding="{Binding SheetNumber}"
+                                              Width="60"
+                                              IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="5,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Sheet Name -->
+                            <DataGridTextColumn Header="Sheet Name"
+                                              Binding="{Binding SheetName}"
+                                              Width="150"
+                                              IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="5,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Viewport Count -->
+                            <DataGridTextColumn Header="Views"
+                                              Binding="{Binding ViewportCountDisplay}"
+                                              Width="80"
+                                              IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#2196F3"/>
+                                        <Setter Property="FontSize" Value="11"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="5,0"/>
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Status -->
+                            <DataGridTextColumn Header="Status"
+                                              Binding="{Binding StatusText}"
+                                              Width="80"
+                                              IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="Green"/>
+                                        <Setter Property="FontWeight" Value="Bold"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="5,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Source Tracking -->
+                            <DataGridTextColumn Header="Source"
+                                              Binding="{Binding SourceTrackingText}"
+                                              Width="*"
+                                              IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="Blue"/>
+                                        <Setter Property="FontStyle" Value="Italic"/>
+                                        <Setter Property="FontSize" Value="11"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="5,0"/>
+                                        <Setter Property="ToolTip" Value="{Binding SourceTrackingText}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Source File -->
+                            <DataGridTextColumn Header="Linked File"
+                                              Binding="{Binding SourceFileName}"
+                                              Width="150"
+                                              IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#666666"/>
+                                        <Setter Property="FontSize" Value="11"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="5,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- No Sheets Message -->
+                    <TextBlock Grid.Row="2"
+                               Text="No sheets available. Select a linked file to view its sheets."
+                               FontStyle="Italic"
+                               Foreground="Gray"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               TextAlignment="Center"
+                               Visibility="{Binding HasNoSheets, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                </Grid>
+            </GroupBox>
+        </Grid>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="2"
+                Background="#F0F0F0"
+                BorderBrush="#CCCCCC"
+                BorderThickness="0,1,0,0"
+                Padding="10"
+                Margin="0,15,0,0">
+            <Grid>
+                <TextBlock Text="{Binding StatusMessage}"
+                           VerticalAlignment="Center"
+                           FontSize="12"/>
+                <ProgressBar IsIndeterminate="True"
+                             Height="4"
+                             VerticalAlignment="Bottom"
+                             Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            </Grid>
+        </Border>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,15,0,0">
+            <Button Content="Show in Project Browser"
+                    Command="{Binding ShowInProjectBrowserCommand}"
+                    Padding="15,10"
+                    Margin="0,0,10,0"
+                    FontSize="12"
+                    ToolTip="Highlight the selected cloned sheet in the Project Browser"/>
+            <Button Content="Clone Selected Sheets"
+                    Command="{Binding CloneSelectedSheetsCommand}"
+                    Padding="20,10"
+                    Margin="0,0,10,0"
+                    FontWeight="SemiBold"
+                    FontSize="13"
+                    Background="#2196F3"
+                    Foreground="White"
+                    BorderThickness="0"
+                    Cursor="Hand">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#1976D2"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#CCCCCC"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            <Button Content="Re-Clone Selected"
+                    Command="{Binding ReCloneSelectedSheetsCommand}"
+                    Padding="20,10"
+                    Margin="0,0,10,0"
+                    FontWeight="SemiBold"
+                    FontSize="13"
+                    Background="#FF9800"
+                    Foreground="White"
+                    BorderThickness="0"
+                    Cursor="Hand"
+                    ToolTip="Update already cloned sheets with latest content from linked file">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#F57C00"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#CCCCCC"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            <Button Content="Close"
+                    Command="{Binding CloseCommand}"
+                    Padding="20,10"
+                    FontSize="13"/>
+        </StackPanel>
+    </Grid>
+</Window>
