@@ -14,7 +14,7 @@
       "groupName": "Other",
       "description": "Distance from the property line to the wall",
       "isInstance": true,
-      "categories": ["Walls", "Curtain Walls", "Doors", "Windows"]
+      "categories": ["Walls", "Doors", "Windows"]
     },
     {
       "name": "IsTopMost",

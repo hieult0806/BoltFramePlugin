@@ -140,6 +140,12 @@ namespace LoBIM.Features.NBCReview.Models
 
         public XYZ? Orientation { get; set; } // Wall normal direction (from interior to exterior)
 
+        // Transform for linked walls (Identity transform for host document walls)
+        public Transform? LinkTransform { get; set; }
+
+        // Indicates if this wall is from a linked document
+        public bool IsFromLinkedDocument => LinkTransform != null && !LinkTransform.IsIdentity;
+
         public event PropertyChangedEventHandler? PropertyChanged;
 
         protected virtual void OnPropertyChanged(string propertyName)

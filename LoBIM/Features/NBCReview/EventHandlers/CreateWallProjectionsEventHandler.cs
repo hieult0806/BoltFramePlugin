@@ -1239,7 +1239,7 @@ namespace LoBIM.Features.NBCReview.EventHandlers
             var orientationGroups = _perimeterWalls
                 .Where(w => w.LinkedRegion != null)
                 .GroupBy(w => w.Orientation)
-                .OrderBy(g => g.Key);
+                .OrderBy(g => DirectionNaming.BuildViewNameFromNormal(g.Key));
 
             _logger.LogInformation($"Processing {orientationGroups.Count()} orientation groups for NBC report");
 

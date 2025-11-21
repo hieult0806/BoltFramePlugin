@@ -21,6 +21,10 @@ namespace LoBIM.Features.NBCReview.ViewModels
         private IRevitService _revitService;
         private ILoggingService _logger;
         private INBCConfigurationService _nbcConfig;
+        private IWallAnalysisService _wallAnalysisService;
+        private INBCComplianceService _nbcComplianceService;
+        private INBCInitializationService _nbcInitializationService;
+        private IViewNavigationService _viewNavigationService;
         public ILoggingService Logger => _logger; // Expose for code-behind
         private ExternalEvent _createArrowsEvent;
         private CreateArrowsEventHandler _createArrowsHandler;
@@ -71,6 +75,7 @@ namespace LoBIM.Features.NBCReview.ViewModels
 
         // Properties
         private Element? _selectedPropertyLine;
+
         public Element? SelectedPropertyLine
         {
             get => _selectedPropertyLine;
@@ -294,6 +299,10 @@ namespace LoBIM.Features.NBCReview.ViewModels
             _nbcConfig = DIContainerService.Container.GetInstance<INBCConfigurationService>();
             _extensibleStorage = DIContainerService.Container.GetInstance<IExtensibleStorageService>();
             _pluginConfig = DIContainerService.Container.GetInstance<IPluginConfigurationManager>();
+            _wallAnalysisService = DIContainerService.Container.GetInstance<IWallAnalysisService>();
+            _nbcComplianceService = DIContainerService.Container.GetInstance<INBCComplianceService>();
+            _nbcInitializationService = DIContainerService.Container.GetInstance<INBCInitializationService>();
+            _viewNavigationService = DIContainerService.Container.GetInstance<IViewNavigationService>();
 
             _perimeterWalls = new ObservableCollection<WallInfo>();
             _referenceLines = new ObservableCollection<ReferenceLineInfo>();
@@ -499,8 +508,13 @@ namespace LoBIM.Features.NBCReview.ViewModels
             {
                 _logger.LogInformation("Selecting property line...");
 
-                // Use the PropertyLineSelectionFilter to only allow property lines
+                // Clear any existing selection first
+                _document.Selection.SetElementIds(new List<ElementId>());
+
+                // Use the PropertyLineSelectionFilter to only allow property lines from host document
                 var filter = new PropertyLineSelectionFilter();
+
+                // Select property line from host document only
                 var reference = _document.Selection.PickObject(
                     ObjectType.Element,
                     filter,
@@ -509,9 +523,9 @@ namespace LoBIM.Features.NBCReview.ViewModels
                 if (reference != null)
                 {
                     var element = _document.Document.GetElement(reference);
+                    _logger.LogInformation($"Property line selected: {element.Id.Value}");
 
                     SelectedPropertyLine = element;
-                    _logger.LogInformation($"Property line selected: {element.Id.Value}");
 
                     // Automatically find perimeter walls
                     FindPerimeterWalls();
@@ -550,55 +564,16 @@ namespace LoBIM.Features.NBCReview.ViewModels
                     return;
                 }
 
-                // Get the property line boundary curve loop
-                var propertyLineBoundary = GetPropertyLineBoundary(_selectedPropertyLine);
-                if (propertyLineBoundary == null)
+                // Use the WallAnalysisService to find perimeter walls
+                var rayLengthLimit = RayLengthLimit; // Use the configured ray length limit
+                var wallInfos = _wallAnalysisService.FindPerimeterWalls(_document.Document, _selectedPropertyLine, rayLengthLimit);
+
+                // Add walls to the ObservableCollection and subscribe to events
+                foreach (var wallInfo in wallInfos)
                 {
-                    TaskDialog.Show("Error", "Could not extract boundary from the selected property line.");
-                    _logger.LogError("Failed to extract property line boundary.");
-                    return;
-                }
-
-                // Get all walls in the document
-                var walls = new FilteredElementCollector(_document.Document)
-                    .OfClass(typeof(Wall))
-                    .Cast<Wall>()
-                    .ToList();
-
-                _logger.LogInformation($"Total walls found: {walls.Count}");
-
-                // Filter walls that have IsPerimeter parameter set to true AND are inside the property line
-                foreach (var wall in walls)
-                {
-                    var parameter = wall.LookupParameter("IsPerimeter");
-
-                    if (parameter != null && parameter.AsInteger() == 1)
-                    {
-                        // Check if wall is inside the property line boundary
-                        if (IsWallInsidePropertyLine(wall, propertyLineBoundary))
-                        {
-                            // Calculate areas
-                            var grossArea = CalculateWallGrossArea(wall);
-                            var openingsArea = CalculateWallOpeningsArea(wall);
-
-                            var wallInfo = new WallInfo
-                            {
-                                Wall = wall,
-                                ElementId = wall.Id,
-                                Name = wall.Name,
-                                Length = wall.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH)?.AsDouble() ?? 0,
-                                GrossArea = grossArea,
-                                OpeningsArea = openingsArea,
-                                Orientation = wall.Orientation // Set wall orientation (normal vector)
-                            };
-
-                            // Subscribe to parameter update events
-                            wallInfo.ParameterUpdateRequested += WallInfo_ParameterUpdateRequested;
-
-                            PerimeterWalls.Add(wallInfo);
-                            _logger.LogInformation($"Perimeter wall found inside property line: {wall.Name} (ID: {wall.Id.Value}) - Gross: {grossArea:F2} ft², Openings: {openingsArea:F2} ft², Net: {wallInfo.NetArea:F2} ft²");
-                        }
-                    }
+                    // Subscribe to parameter update events
+                    wallInfo.ParameterUpdateRequested += WallInfo_ParameterUpdateRequested;
+                    PerimeterWalls.Add(wallInfo);
                 }
 
                 _logger.LogInformation($"Total perimeter walls found inside property line: {PerimeterWalls.Count}");
@@ -615,189 +590,6 @@ namespace LoBIM.Features.NBCReview.ViewModels
             }
         }
 
-        private CurveLoop? GetPropertyLineBoundary(Element propertyLine)
-        {
-            try
-            {
-                // Try to get the geometry from the property line
-                var options = new Options
-                {
-                    ComputeReferences = false,
-                    DetailLevel = ViewDetailLevel.Fine
-                };
-
-                var geometryElement = propertyLine.get_Geometry(options);
-                if (geometryElement == null)
-                    return null;
-
-                var curves = new List<Curve>();
-
-                foreach (var geomObj in geometryElement)
-                {
-                    if (geomObj is Curve curve)
-                    {
-                        curves.Add(curve);
-                    }
-                    else if (geomObj is GeometryInstance geomInstance)
-                    {
-                        var instanceGeometry = geomInstance.GetInstanceGeometry();
-                        foreach (var instObj in instanceGeometry)
-                        {
-                            if (instObj is Curve instCurve)
-                            {
-                                curves.Add(instCurve);
-                            }
-                        }
-                    }
-                }
-
-                if (curves.Count > 0)
-                {
-                    // Sort curves to make them contiguous
-                    var sortedCurves = SortCurvesContiguous(curves);
-
-                    if (sortedCurves != null && sortedCurves.Count > 0)
-                    {
-                        // Create a CurveLoop from the sorted curves
-                        return CurveLoop.Create(sortedCurves);
-                    }
-                }
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Error extracting property line boundary", ex);
-                return null;
-            }
-        }
-
-        private List<Curve> SortCurvesContiguous(List<Curve> curves)
-        {
-            if (curves == null || curves.Count == 0)
-                return curves;
-
-            var sortedCurves = new List<Curve>();
-            var remainingCurves = new List<Curve>(curves);
-
-            // Start with the first curve
-            sortedCurves.Add(remainingCurves[0]);
-            remainingCurves.RemoveAt(0);
-
-            double tolerance = 0.001; // 1mm tolerance for endpoint matching
-
-            // Keep adding curves until all are sorted or we can't find a match
-            while (remainingCurves.Count > 0)
-            {
-                var lastCurve = sortedCurves[sortedCurves.Count - 1];
-                var lastEndPoint = lastCurve.GetEndPoint(1);
-
-                bool foundMatch = false;
-
-                for (int i = 0; i < remainingCurves.Count; i++)
-                {
-                    var candidate = remainingCurves[i];
-                    var candidateStart = candidate.GetEndPoint(0);
-                    var candidateEnd = candidate.GetEndPoint(1);
-
-                    // Check if candidate starts where last curve ends
-                    if (lastEndPoint.DistanceTo(candidateStart) < tolerance)
-                    {
-                        sortedCurves.Add(candidate);
-                        remainingCurves.RemoveAt(i);
-                        foundMatch = true;
-                        break;
-                    }
-                    // Check if candidate is reversed (ends where last curve ends)
-                    else if (lastEndPoint.DistanceTo(candidateEnd) < tolerance)
-                    {
-                        // Create a reversed curve
-                        var reversedCurve = candidate.CreateReversed();
-                        sortedCurves.Add(reversedCurve);
-                        remainingCurves.RemoveAt(i);
-                        foundMatch = true;
-                        break;
-                    }
-                }
-
-                // If no match found, the curves are not forming a closed loop
-                if (!foundMatch)
-                {
-                    _logger.LogWarning($"Could not find contiguous curve. {remainingCurves.Count} curves remaining. Last endpoint: {lastEndPoint}");
-
-                    // Try to find any curve close to the start point to close the loop
-                    var firstCurve = sortedCurves[0];
-                    var firstStartPoint = firstCurve.GetEndPoint(0);
-
-                    if (lastEndPoint.DistanceTo(firstStartPoint) < tolerance)
-                    {
-                        // Loop is closed, we're done
-                        _logger.LogInformation($"Curve loop closed successfully with {sortedCurves.Count} curves");
-                        break;
-                    }
-
-                    // Cannot continue, return what we have
-                    _logger.LogError($"Curves are not contiguous. Sorted {sortedCurves.Count} out of {curves.Count} curves");
-                    return null;
-                }
-            }
-
-            return sortedCurves;
-        }
-
-        private bool IsWallInsidePropertyLine(Wall wall, CurveLoop propertyLineBoundary)
-        {
-            try
-            {
-                // Get the wall location curve
-                var locationCurve = wall.Location as LocationCurve;
-                if (locationCurve == null)
-                    return false;
-
-                var wallCurve = locationCurve.Curve;
-
-                // Get the midpoint of the wall
-                var midpoint = wallCurve.Evaluate(0.5, true);
-
-                // Extract polygon points from the curve loop
-                var polygonPoints = new List<XYZ>();
-                foreach (var curve in propertyLineBoundary)
-                {
-                    polygonPoints.Add(curve.GetEndPoint(0));
-                }
-
-                // Use ray casting algorithm for point-in-polygon test
-                return IsPointInsidePolygon(midpoint, polygonPoints);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error checking if wall {wall.Id.Value} is inside property line", ex);
-                return false;
-            }
-        }
-
-        // Ray casting algorithm to check if a point is inside a polygon
-        private bool IsPointInsidePolygon(XYZ point, List<XYZ> polygon)
-        {
-            bool inside = false;
-            int count = polygon.Count;
-
-            for (int i = 0, j = count - 1; i < count; j = i++)
-            {
-                var xi = polygon[i].X;
-                var yi = polygon[i].Y;
-                var xj = polygon[j].X;
-                var yj = polygon[j].Y;
-
-                var intersect = ((yi > point.Y) != (yj > point.Y)) &&
-                               (point.X < (xj - xi) * (point.Y - yi) / (yj - yi) + xi);
-
-                if (intersect)
-                    inside = !inside;
-            }
-
-            return inside;
-        }
 
         private bool CanHighlightWalls(object parameter)
         {
@@ -808,32 +600,26 @@ namespace LoBIM.Features.NBCReview.ViewModels
         {
             try
             {
-                _logger.LogInformation("Highlighting perimeter walls in 3D view...");
+                // Separate host walls from linked walls
+                var hostWalls = PerimeterWalls.Where(w => !w.IsFromLinkedDocument).Select(w => w.ElementId).ToList();
+                var linkedWalls = PerimeterWalls.Where(w => w.IsFromLinkedDocument).ToList();
 
-                var doc = _document.Document;
-
-                // Find or create a 3D view
-                var view3D = new FilteredElementCollector(doc)
-                    .OfClass(typeof(View3D))
-                    .Cast<View3D>()
-                    .FirstOrDefault(v => !v.IsTemplate);
-
-                if (view3D == null)
+                if (linkedWalls.Count > 0)
                 {
-                    TaskDialog.Show("No 3D View", "No 3D view found in the document.");
-                    _logger.LogWarning("No 3D view found.");
-                    return;
+                    _logger.LogWarning($"Found {linkedWalls.Count} walls from linked files that cannot be highlighted in selection");
+                    var message = $"Found {hostWalls.Count} walls in host document and {linkedWalls.Count} walls in linked files.\n\n" +
+                                  $"Note: Walls from linked files cannot be selected in Revit, only host document walls will be highlighted.";
+                    TaskDialog.Show("Linked Walls Detected", message);
                 }
 
-                // Set the active view to 3D
-                _document.ActiveView = view3D;
-
-                // Select the perimeter walls
-                var wallIds = PerimeterWalls.Select(w => w.ElementId).ToList();
-                _document.Selection.SetElementIds(wallIds);
-
-                _logger.LogInformation($"Highlighted {wallIds.Count} perimeter walls in 3D view.");
-                // TaskDialog.Show("Success", $"Highlighted {wallIds.Count} perimeter walls in 3D view.");
+                if (hostWalls.Count > 0)
+                {
+                    _viewNavigationService.HighlightWallsIn3DView(_document, hostWalls);
+                }
+                else
+                {
+                    TaskDialog.Show("No Host Walls", "All perimeter walls are from linked files and cannot be selected in the host document.");
+                }
             }
             catch (Exception ex)
             {
@@ -869,82 +655,6 @@ namespace LoBIM.Features.NBCReview.ViewModels
             }
         }
 
-        private double CalculateWallGrossArea(Wall wall)
-        {
-            try
-            {
-                // Try to get the gross area from built-in parameter
-                var areaParam = wall.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
-                if (areaParam != null && areaParam.HasValue)
-                {
-                    return areaParam.AsDouble();
-                }
-
-                // Fallback: calculate from height and length
-                var heightParam = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM);
-                var lengthParam = wall.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH);
-
-                if (heightParam != null && lengthParam != null)
-                {
-                    var height = heightParam.AsDouble();
-                    var length = lengthParam.AsDouble();
-                    return height * length;
-                }
-
-                return 0.0;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error calculating gross area for wall {wall.Id.Value}", ex);
-                return 0.0;
-            }
-        }
-
-        private double CalculateWallOpeningsArea(Wall wall)
-        {
-            try
-            {
-                double totalOpeningsArea = 0.0;
-
-                // Get all inserts (windows, doors, etc.) hosted in this wall
-                var insertIds = wall.FindInserts(true, true, true, true);
-
-                foreach (var insertId in insertIds)
-                {
-                    var insert = _document.Document.GetElement(insertId);
-
-                    if (insert is FamilyInstance familyInstance)
-                    {
-                        // Try to get the area from the instance
-                        var areaParam = familyInstance.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
-                        if (areaParam != null && areaParam.HasValue)
-                        {
-                            totalOpeningsArea += areaParam.AsDouble();
-                        }
-                        else
-                        {
-                            // Fallback: calculate from width and height parameters
-                            var widthParam = familyInstance.Symbol?.get_Parameter(BuiltInParameter.FAMILY_WIDTH_PARAM);
-                            var heightParam = familyInstance.Symbol?.get_Parameter(BuiltInParameter.FAMILY_HEIGHT_PARAM);
-
-                            if (widthParam != null && heightParam != null)
-                            {
-                                var width = widthParam.AsDouble();
-                                var height = heightParam.AsDouble();
-                                totalOpeningsArea += width * height;
-                            }
-                        }
-                    }
-                }
-
-                return totalOpeningsArea;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error calculating openings area for wall {wall.Id.Value}", ex);
-                return 0.0;
-            }
-        }
 
         private void HighlightWallIn3D(object parameter)
         {
@@ -952,29 +662,16 @@ namespace LoBIM.Features.NBCReview.ViewModels
             {
                 if (parameter is WallInfo wallInfo)
                 {
-                    _logger.LogInformation($"Highlighting wall {wallInfo.ElementId.Value} in 3D view...");
-
-                    var doc = _document.Document;
-
-                    // Find a 3D view
-                    var view3D = new FilteredElementCollector(doc)
-                        .OfClass(typeof(View3D))
-                        .Cast<View3D>()
-                        .FirstOrDefault(v => !v.IsTemplate);
-
-                    if (view3D == null)
+                    if (wallInfo.IsFromLinkedDocument)
                     {
-                        TaskDialog.Show("No 3D View", "No 3D view found in the document.");
+                        _logger.LogWarning($"Cannot select wall {wallInfo.ElementId.Value} - it's from a linked file");
+                        TaskDialog.Show("Linked Wall",
+                            $"Wall '{wallInfo.Name}' is from a linked Revit file and cannot be selected in the host document.\n\n" +
+                            "Only walls in the host document can be highlighted.");
                         return;
                     }
 
-                    // Set the active view to 3D
-                    _document.ActiveView = view3D;
-
-                    // Select the wall
-                    _document.Selection.SetElementIds(new List<ElementId> { wallInfo.ElementId });
-
-                    _logger.LogInformation($"Highlighted wall in 3D view.");
+                    _viewNavigationService.HighlightWallIn3DView(_document, wallInfo.ElementId);
                 }
             }
             catch (Exception ex)
@@ -990,39 +687,16 @@ namespace LoBIM.Features.NBCReview.ViewModels
             {
                 if (parameter is WallInfo wallInfo)
                 {
-                    _logger.LogInformation($"Highlighting wall {wallInfo.ElementId.Value} in floor plan...");
-
-                    var doc = _document.Document;
-                    var wall = wallInfo.Wall;
-
-                    // Get the wall's base level
-                    var baseLevelParam = wall.get_Parameter(BuiltInParameter.WALL_BASE_CONSTRAINT);
-                    if (baseLevelParam != null && baseLevelParam.AsElementId() != ElementId.InvalidElementId)
+                    if (wallInfo.IsFromLinkedDocument)
                     {
-                        var level = doc.GetElement(baseLevelParam.AsElementId()) as Level;
-                        if (level != null)
-                        {
-                            // Find the floor plan view for this level
-                            var floorPlan = new FilteredElementCollector(doc)
-                                .OfClass(typeof(ViewPlan))
-                                .Cast<ViewPlan>()
-                                .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == level.Id);
-
-                            if (floorPlan != null)
-                            {
-                                // Set the active view to floor plan
-                                _document.ActiveView = floorPlan;
-
-                                // Select the wall
-                                _document.Selection.SetElementIds(new List<ElementId> { wallInfo.ElementId });
-
-                                _logger.LogInformation($"Highlighted wall in floor plan {floorPlan.Name}.");
-                                return;
-                            }
-                        }
+                        _logger.LogWarning($"Cannot select wall {wallInfo.ElementId.Value} - it's from a linked file");
+                        TaskDialog.Show("Linked Wall",
+                            $"Wall '{wallInfo.Name}' is from a linked Revit file and cannot be selected in the host document.\n\n" +
+                            "Only walls in the host document can be highlighted.");
+                        return;
                     }
 
-                    TaskDialog.Show("No Floor Plan", "Could not find floor plan for this wall's level.");
+                    _viewNavigationService.HighlightWallInFloorPlan(_document, wallInfo.Wall);
                 }
             }
             catch (Exception ex)
@@ -1170,68 +844,23 @@ namespace LoBIM.Features.NBCReview.ViewModels
         {
             try
             {
-                _logger.LogInformation("Calculating distance groups from walls with created regions...");
-                _logger.LogInformation($"Walls with regions: {wallsWithRegions?.Count ?? 0}");
+                DistanceGroups.Clear();
 
-                if (wallsWithRegions == null || wallsWithRegions.Count == 0)
+                // Check if distance ranges are loaded
+                if (_filledRegionTypeRanges == null || _filledRegionTypeRanges.Count == 0)
                 {
-                    DistanceGroups.Clear();
-                    _logger.LogWarning("No walls with regions to calculate distance groups");
+                    _logger.LogWarning("No filled region type ranges loaded from JSON");
+                    TaskDialog.Show("Warning", "No distance ranges loaded from configuration, using default ranges.");
                     return;
                 }
 
-                // Group walls by their assigned reference line
-                var wallsByOrientation = wallsWithRegions
-                    .Where(w => w.LimitingDistance.HasValue && w.ReferenceLine != null)
-                    .GroupBy(w => w.Orientation)
-                    .ToList();
+                // Use the wall analysis service to calculate distance groups
+                var distanceGroupsList = _wallAnalysisService.CalculateDistanceGroupsFromRegions(
+                    wallsWithRegions,
+                    _filledRegionTypeRanges);
 
-                _logger.LogInformation($"Grouped into {wallsByOrientation.Count} orientation groups");
-
-                // Load distance ranges from JSON configuration
-                // If no ranges loaded, use fallback defaults
-                if (_filledRegionTypeRanges == null || _filledRegionTypeRanges.Count == 0)
-                {
-                    _logger.LogWarning("No filled region type ranges loaded from JSON, using fallback defaults");
-                    TaskDialog.Show("Warning", "No distance ranges loaded from configuration, using default ranges.");
-                }
-                else
-                {
-                    // Use ranges from JSON configuration
-                    _logger.LogInformation($"Using {_filledRegionTypeRanges.Count} distance ranges from JSON configuration");
-
-                    foreach (IGrouping<XYZ?, WallInfo>? orientationGroup in wallsByOrientation)
-                    {
-                        var orientationName = DirectionNaming.BuildViewNameFromNormal(orientationGroup.Key);
-
-                        foreach (var range in _filledRegionTypeRanges)
-                        {
-                            // For the last range, handle very large max values properly
-                            var wallsInRange = orientationGroup
-                                .Where(w => w.LimitingDistance.Value >= range.MinDistanceFeet &&
-                                           (w.LimitingDistance.Value < range.MaxDistanceFeet || range.MaxDistanceFeet > 900000))
-                                .ToList();
-
-                            if (wallsInRange.Any())
-                            {
-                                var group = new DistanceGroupSummary
-                                {
-                                    Orientation = orientationName,
-                                    DistanceRange = range.Label,
-                                    MinDistance = range.MinDistanceFeet,
-                                    MaxDistance = range.MaxDistanceFeet,
-                                    TotalGrossArea = wallsInRange.Sum(w => w.GrossArea),
-                                    TotalOpeningsArea = wallsInRange.Sum(w => w.OpeningsArea)
-                                };
-
-                                DistanceGroups.Add(group);
-                                _logger.LogInformation($"Added group: {orientationName} - {range.Label}");
-                            }
-                        }
-                    }
-                }
-
-                _logger.LogInformation($"Distance groups calculated: {DistanceGroups.Count} groups");
+                // Replace the collection
+                DistanceGroups = new ObservableCollection<DistanceGroupSummary>(distanceGroupsList);
             }
             catch (Exception ex)
             {
@@ -1248,63 +877,14 @@ namespace LoBIM.Features.NBCReview.ViewModels
             try
             {
                 _logger.LogInformation("Calculating building code compliance...");
-                BuildingCodeCompliance.Clear();
 
-                if (DistanceGroups == null || DistanceGroups.Count == 0)
-                {
-                    _logger.LogWarning("No distance groups available for compliance calculation");
-                    return;
-                }
+                // Use the compliance service to calculate compliance by orientation
+                var complianceSummaries = _nbcComplianceService.CalculateBuildingCodeComplianceByOrientation(
+                    DistanceGroups.ToList(),
+                    BuildingClassification);
 
-                var groupedByOrientation = DistanceGroups
-                    .GroupBy(g => g.Orientation)
-                    .OrderBy(g => g.Key);
-
-                foreach (var orientationGroup in groupedByOrientation)
-                {
-                    var orientation = orientationGroup.Key;
-
-                    // Calculate total area for this orientation
-                    var totalGrossArea = orientationGroup.Sum(g => g.TotalGrossArea);
-                    var totalOpeningsArea = orientationGroup.Sum(g => g.TotalOpeningsArea);
-
-                    // Get the minimum limiting distance for this orientation (most restrictive)
-                    var minLimitingDistance = orientationGroup.Min(g => g.MinDistance);
-
-                    // Calculate proposed unprotected openings percentage
-                    var proposedOpeningsPercent = totalGrossArea > 0
-                        ? (totalOpeningsArea / totalGrossArea * 100)
-                        : 0;
-
-                    // Determine maximum allowed openings based on limiting distance and building classification
-                    var maxAllowedPercent = GetMaxAllowedOpeningsPercent(minLimitingDistance, BuildingClassification);
-                    var frr = GetFireResistanceRating(minLimitingDistance, BuildingClassification);
-                    var constructionType = GetConstructionTypeRequired(minLimitingDistance, BuildingClassification);
-                    var claddingType = GetCladdingTypeRequired(minLimitingDistance, BuildingClassification);
-
-                    // Convert from ft² to m² (1 ft² = 0.092903 m²)
-                    var totalGrossAreaM2 = totalGrossArea * 0.092903;
-                    var limitingDistanceM = minLimitingDistance * 0.3048; // ft to m
-
-                    var compliance = new BuildingCodeComplianceSummary
-                    {
-                        OccupancyClassification = BuildingClassification,
-                        Orientation = orientation,
-                        ExposingBuildingFaceArea = totalGrossAreaM2,
-                        LimitingDistance = limitingDistanceM,
-                        MaxUnprotectedOpeningsPercent = maxAllowedPercent,
-                        ProposedUnprotectedOpeningsPercent = proposedOpeningsPercent,
-                        FireResistanceRating = frr,
-                        ConstructionTypeRequired = constructionType,
-                        CladdingTypeRequired = claddingType
-                    };
-
-                    BuildingCodeCompliance.Add(compliance);
-
-                    _logger.LogInformation($"  {orientation}: Area={totalGrossAreaM2:F1}m², LD={limitingDistanceM:F1}m, Max={maxAllowedPercent}%, Proposed={proposedOpeningsPercent:F1}%, Status={compliance.ComplianceStatus}");
-                }
-
-                _logger.LogInformation($"Building code compliance calculated: {BuildingCodeCompliance.Count} orientations");
+                // Replace the collection
+                BuildingCodeCompliance = new ObservableCollection<BuildingCodeComplianceSummary>(complianceSummaries);
             }
             catch (Exception ex)
             {
@@ -1316,74 +896,6 @@ namespace LoBIM.Features.NBCReview.ViewModels
         /// Determines maximum allowed unprotected openings percentage based on limiting distance
         /// Uses NBCConfigurationService to load requirements from NBCRequirements.json
         /// </summary>
-        private double GetMaxAllowedOpeningsPercent(double limitingDistanceFt, string buildingClassification)
-        {
-            var limitingDistanceM = limitingDistanceFt * 0.3048; // Convert ft to m
-
-            // Default to Group D if classification not specified or not found
-            string classificationKey = "GroupD";
-
-            // Map building classification to NBC group key if needed
-            if (!string.IsNullOrEmpty(buildingClassification))
-            {
-                // Try to map the classification string to a group key
-                if (buildingClassification.Contains("A", StringComparison.OrdinalIgnoreCase))
-                    classificationKey = "GroupA";
-                else if (buildingClassification.Contains("C", StringComparison.OrdinalIgnoreCase))
-                    classificationKey = "GroupC";
-                else if (buildingClassification.Contains("D", StringComparison.OrdinalIgnoreCase))
-                    classificationKey = "GroupD";
-                else if (buildingClassification.Contains("E", StringComparison.OrdinalIgnoreCase))
-                    classificationKey = "GroupE";
-            }
-
-            var requirement = _nbcConfig.GetRequirement(classificationKey, limitingDistanceM);
-
-            if (requirement != null)
-            {
-                return requirement.MaxUnprotectedOpeningPercent;
-            }
-
-            // Fallback: no restriction if no requirement found
-            _logger.LogWarning($"No NBC requirement found for {classificationKey} at {limitingDistanceM}m, returning 100%");
-            return 100;
-        }
-
-        /// <summary>
-        /// Determines required fire resistance rating based on limiting distance
-        /// </summary>
-        private string GetFireResistanceRating(double limitingDistanceFt, string buildingClassification)
-        {
-            var limitingDistanceM = limitingDistanceFt * 0.3048;
-
-            if (limitingDistanceM <= 2.0) return "1 h";
-            if (limitingDistanceM <= 3.0) return "2 h";
-            if (limitingDistanceM <= 5.0) return "1 h";
-            return "45 min";
-        }
-
-        /// <summary>
-        /// Determines required construction type based on limiting distance
-        /// </summary>
-        private string GetConstructionTypeRequired(double limitingDistanceFt, string buildingClassification)
-        {
-            var limitingDistanceM = limitingDistanceFt * 0.3048;
-
-            if (limitingDistanceM <= 2.0) return "Combustible / Noncombustible";
-            return "Noncombustible";
-        }
-
-        /// <summary>
-        /// Determines required cladding type based on limiting distance
-        /// </summary>
-        private string GetCladdingTypeRequired(double limitingDistanceFt, string buildingClassification)
-        {
-            var limitingDistanceM = limitingDistanceFt * 0.3048;
-
-            if (limitingDistanceM <= 2.0) return "Combustible / Noncombustible";
-            if (limitingDistanceM <= 5.0) return "Noncombustible";
-            return "Noncombustible";
-        }
 
         private void CreateWallProjections(object parameter)
         {
@@ -1460,19 +972,11 @@ namespace LoBIM.Features.NBCReview.ViewModels
             // Set closing flag to prevent OnIdling from accessing disposed objects
             _isClosing = true;
 
-            // Unsubscribe from events
-            try
-            {
-                if (_document?.Application != null)
-                {
-                    _document.Application.Idling -= OnIdling;
-                    _logger.LogInformation("Cleanup: Unsubscribed from Idling event.");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Cleanup: Error unsubscribing from Idling event", ex);
-            }
+            // Note: We don't unsubscribe from Idling event here because:
+            // 1. The OnIdling handler checks _isClosing flag and returns early
+            // 2. Unsubscribing outside Revit API context throws "Invalid call to Revit API" exception
+            // 3. The event handler is lightweight and won't cause issues if called after cleanup
+            _logger.LogInformation("Cleanup: Set closing flag, Idling event handler will exit early.");
         }
 
         private void Close(object parameter)

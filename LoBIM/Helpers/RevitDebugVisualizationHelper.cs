@@ -194,15 +194,23 @@ namespace LoBIM.Helpers
         /// <summary>
         /// Draws a debug distance line between two points with green color override.
         /// </summary>
+        /// <param name="hostDoc">The host document where the line will be drawn.</param>
         /// <param name="wall">The wall associated with the distance line.</param>
         /// <param name="pointOnWall">Point on the wall.</param>
         /// <param name="pointOnRefLine">Point on the reference line.</param>
+        /// <param name="wallTransform">Optional transform for walls from linked files.</param>
         /// <param name="logger">Logger service.</param>
-        public static void DrawDebugDistanceLine(Wall wall, XYZ pointOnWall, XYZ pointOnRefLine, ILoggingService logger)
+        public static void DrawDebugDistanceLine(Document hostDoc, Wall wall, XYZ pointOnWall, XYZ pointOnRefLine, Transform wallTransform, ILoggingService logger)
         {
             try
             {
-                var doc = wall.Document;
+                // Apply transform to points if this is a linked wall
+                if (wallTransform != null && !wallTransform.IsIdentity)
+                {
+                    pointOnWall = wallTransform.OfPoint(pointOnWall);
+                    pointOnRefLine = wallTransform.OfPoint(pointOnRefLine);
+                }
+
                 var levelId = wall.LookupParameter("Base Constraint")?.AsElementId();
 
                 if (levelId == null || levelId == ElementId.InvalidElementId)
@@ -211,18 +219,20 @@ namespace LoBIM.Helpers
                     return;
                 }
 
-                var level = doc.GetElement(levelId) as Level;
+                // Get level from wall's document (might be linked)
+                var level = wall.Document.GetElement(levelId) as Level;
                 if (level == null)
                     return;
 
-                var floorPlan = new FilteredElementCollector(doc)
+                // Find floor plan in HOST document with matching level name
+                var floorPlan = new FilteredElementCollector(hostDoc)
                     .OfClass(typeof(ViewPlan))
                     .Cast<ViewPlan>()
-                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Id == levelId);
+                    .FirstOrDefault(v => v.ViewType == ViewType.FloorPlan && !v.IsTemplate && v.GenLevel?.Name == level.Name);
 
                 if (floorPlan == null)
                 {
-                    logger.LogWarning($"No floor plan found for level {level.Name}, skipping distance line drawing for wall {wall.Id.Value}");
+                    logger.LogWarning($"No floor plan found for level {level.Name} in host document, skipping distance line drawing for wall {wall.Id.Value}");
                     return;
                 }
 
@@ -237,15 +247,28 @@ namespace LoBIM.Helpers
                     return;
                 }
 
-                using (Transaction trans = new Transaction(doc, "Draw Debug Distance Line"))
+                using (Transaction trans = new Transaction(hostDoc, "Draw Debug Distance Line"))
                 {
                     trans.Start();
                     try
                     {
                         var wallCurve = (wall.Location as LocationCurve);
                         XYZ wallPos = wallCurve.Curve.Evaluate(0.5, true);
-                        Line distanceLine = Line.CreateBound(pointOnRefLine2D, pointOnRefLine2D + RotatePoint(wall.Orientation.Normalize()) * wallCurve.Curve.Length);
-                        var detailCurve = doc.Create.NewDetailCurve(floorPlan, distanceLine);
+
+                        // Apply transform to wall position and orientation if needed
+                        if (wallTransform != null && !wallTransform.IsIdentity)
+                        {
+                            wallPos = wallTransform.OfPoint(wallPos);
+                        }
+
+                        var orientation = wall.Orientation.Normalize();
+                        if (wallTransform != null && !wallTransform.IsIdentity)
+                        {
+                            orientation = wallTransform.OfVector(orientation);
+                        }
+
+                        Line distanceLine = Line.CreateBound(pointOnRefLine2D, pointOnRefLine2D + RotatePoint(orientation) * wallCurve.Curve.Length);
+                        var detailCurve = hostDoc.Create.NewDetailCurve(floorPlan, distanceLine);
 
                         // Apply green color override
                         var overrideSettings = new OverrideGraphicSettings();

@@ -60,7 +60,8 @@ namespace LoBIM.Services
                 .SetDocumentation("Selected building classification (e.g., Type IIA, Type IIB)");
 
             schemaBuilder.AddSimpleField("RayLengthLimit", typeof(double))
-                .SetDocumentation("Ray casting length limit in feet");
+                .SetDocumentation("Ray casting length limit in feet")
+                .SetSpec(SpecTypeId.Length);
 
             schemaBuilder.AddArrayField("ReferenceLineIds", typeof(string))
                 .SetDocumentation("List of ElementIds of detected reference lines");
@@ -69,7 +70,8 @@ namespace LoBIM.Services
                 .SetDocumentation("List of ElementIds of views created by the plugin");
 
             schemaBuilder.AddMapField("WallDistances", typeof(string), typeof(double))
-                .SetDocumentation("Map of wall ElementId to calculated limiting distance");
+                .SetDocumentation("Map of wall ElementId to calculated limiting distance")
+                .SetSpec(SpecTypeId.Length);
 
             schemaBuilder.AddSimpleField("LastCalculationDate", typeof(string))
                 .SetDocumentation("Timestamp of last calculation");

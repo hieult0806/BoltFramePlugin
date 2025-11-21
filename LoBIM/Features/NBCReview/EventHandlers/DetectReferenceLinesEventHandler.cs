@@ -368,7 +368,7 @@ namespace LoBIM.Features.NBCReview.EventHandlers
                 // Draw debug line showing the limiting distance if enabled
                 if ((closestDistance < wallInfo.LimitingDistance || !wallInfo.LimitingDistance.HasValue) && closestPointOnRefLine != null && closestPointOnWall != null)
                 {
-                    RevitDebugVisualizationHelper.DrawDebugDistanceLine(wall, closestPointOnWall, closestPointOnRefLine, _logger);
+                    RevitDebugVisualizationHelper.DrawDebugDistanceLine(_uidoc.Document, wall, closestPointOnWall, closestPointOnRefLine, wallInfo.LinkTransform, _logger);
                 }
 
                 return closestDistance;

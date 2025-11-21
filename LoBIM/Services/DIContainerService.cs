@@ -43,6 +43,11 @@ namespace LoBIM.Services
             container.RegisterSingleton<LoBIM.Features.NBCReview.Services.NBCComplianceReportService>();
             container.RegisterSingleton<LoBIM.Features.NBCReview.Services.INBCConfigurationService, LoBIM.Features.NBCReview.Services.NBCConfigurationService>();
             container.RegisterSingleton<LoBIM.Features.NBCReview.Services.IElementHighlightService, LoBIM.Features.NBCReview.Services.ElementHighlightService>();
+            container.RegisterSingleton<LoBIM.Features.NBCReview.Services.IGeometryService, LoBIM.Features.NBCReview.Services.GeometryService>();
+            container.RegisterSingleton<LoBIM.Features.NBCReview.Services.IWallAnalysisService, LoBIM.Features.NBCReview.Services.WallAnalysisService>();
+            container.RegisterSingleton<LoBIM.Features.NBCReview.Services.INBCComplianceService, LoBIM.Features.NBCReview.Services.NBCComplianceService>();
+            container.RegisterSingleton<LoBIM.Features.NBCReview.Services.INBCInitializationService, LoBIM.Features.NBCReview.Services.NBCInitializationService>();
+            container.RegisterSingleton<LoBIM.Features.NBCReview.Services.IViewNavigationService, LoBIM.Features.NBCReview.Services.ViewNavigationService>();
 
             // Sheet Management Services
             container.RegisterSingleton<LoBIM.Features.SheetManagement.Services.ISheetManagementService, LoBIM.Features.SheetManagement.Services.SheetManagementService>();

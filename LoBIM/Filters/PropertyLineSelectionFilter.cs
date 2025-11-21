@@ -8,14 +8,7 @@ namespace LoBIM.Filters
         public bool AllowElement(Element elem)
         {
             // Check if the element is a property line
-            // Property lines are typically in the OST_SitePropertyLineSegment category
-            // if (elem.Category != null &&
-            //     elem.Category.Id.Value == (long)BuiltInCategory.OST_SitePropertyLineSegment)
-            // {
-            //     return true;
-            // }
-
-            // Also check for property lines in OST_SiteProperty category
+            // Property lines are typically in the OST_SiteProperty category
             if (elem.Category != null &&
                 elem.Category.Id.Value == (long)BuiltInCategory.OST_SiteProperty)
             {
@@ -27,7 +20,8 @@ namespace LoBIM.Filters
 
         public bool AllowReference(Reference reference, XYZ position)
         {
-            return false; // We are filtering based on elements, not geometry references.
+            // Not used for element selection
+            return false;
         }
     }
 }
